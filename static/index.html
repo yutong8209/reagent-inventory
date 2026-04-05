@@ -16,7 +16,7 @@
                 <a href="#" class="nav-link" data-page="outbound">出库</a>
                 <a href="#" class="nav-link" data-page="inventory">库存</a>
                 <a href="#" class="nav-link" data-page="reports">流水及用量</a>
-                <a href="#" class="nav-link" data-page="catalog">资料维护</a>
+                <a href="#" class="nav-link" data-page="catalog">资料设置</a>
             </nav>
         </header>
 
@@ -30,7 +30,7 @@
                         <button class="btn btn-primary" onclick="app.navigate('outbound')">试剂出库</button>
                         <button class="btn btn-secondary" onclick="app.navigate('inventory')">查看库存</button>
                         <button class="btn btn-secondary" onclick="app.navigate('reports')">流水及用量</button>
-                        <button class="btn btn-secondary" onclick="app.navigate('catalog')">基础资料维护</button>
+                        <button class="btn btn-secondary" onclick="app.navigate('catalog')">资料设置</button>
                     </div>
                 </div>
             </div>
@@ -520,18 +520,36 @@
             </div>
 
             <div id="page-catalog" class="page">
-                <h2>基础资料维护</h2>
-                <div class="form-section"><h3>基础资料维护</h3><div class="catalog-layout catalog-layout-wide"><div class="catalog-panel"><h4>工作组维护</h4><div class="form-group"><label for="catalog-work-group-name">工作组名称</label><input type="text" id="catalog-work-group-name" class="form-input" placeholder="例如：临检组"></div><div class="button-group"><button class="btn btn-primary" onclick="catalogPage.submitWorkGroup()">保存工作组</button><button class="btn btn-secondary" onclick="catalogPage.resetWorkGroupForm()">清空</button></div><div id="catalog-work-group-list" class="catalog-list"></div></div><div class="catalog-panel"><h4>仪器维护</h4><div class="form-group"><label for="catalog-instrument-work-group">所属工作组</label><select id="catalog-instrument-work-group" class="form-select"><option value="">请选择工作组</option></select></div><div class="form-group"><label for="catalog-instrument-name">仪器名称</label><input type="text" id="catalog-instrument-name" class="form-input" placeholder="例如：DXI800"></div><div class="form-group"><label for="catalog-instrument-model">型号</label><input type="text" id="catalog-instrument-model" class="form-input" placeholder="可选"></div><div class="form-row"><div class="form-group"><label for="catalog-instrument-warning-days">默认失效预警天数</label><input type="number" id="catalog-instrument-warning-days" class="form-input" min="0" value="30"></div><div class="form-group"><label for="catalog-instrument-warning-stock">默认库存报警最小单位数</label><input type="number" id="catalog-instrument-warning-stock" class="form-input" min="0" value="5"></div></div><div class="button-group"><button class="btn btn-primary" onclick="catalogPage.submitInstrument()">保存仪器</button><button class="btn btn-secondary" onclick="catalogPage.resetInstrumentForm()">清空</button></div><div id="catalog-instrument-list" class="catalog-list"></div></div><div class="catalog-panel"><h4>操作人维护</h4><div class="form-group"><label for="catalog-operator-name">姓名</label><input type="text" id="catalog-operator-name" class="form-input" placeholder="输入操作人姓名"></div><label class="checkbox-row"><input type="checkbox" id="catalog-operator-active" checked><span>启用状态</span></label><div class="button-group"><button class="btn btn-primary" onclick="catalogPage.submitOperator()">保存操作人</button><button class="btn btn-secondary" onclick="catalogPage.resetOperatorForm()">清空</button></div><div id="catalog-operator-list" class="catalog-list"></div></div></div></div>
-                <div class="form-section"><h3>试剂档案维护</h3><div class="form-row"><div class="form-group"><label for="catalog-reagent-filter-work-group">筛选工作组</label><select id="catalog-reagent-filter-work-group" class="form-select" onchange="catalogPage.loadReagentFilterInstruments()"><option value="">全部工作组</option></select></div><div class="form-group"><label for="catalog-reagent-filter-instrument">筛选仪器</label><select id="catalog-reagent-filter-instrument" class="form-select"><option value="">全部仪器</option></select></div><div class="form-group"><label for="catalog-reagent-filter-keyword">关键词</label><input type="text" id="catalog-reagent-filter-keyword" class="form-input" placeholder="输入试剂名称关键词"></div></div><div class="button-group"><button class="btn btn-secondary" onclick="catalogPage.loadReagents()">查询试剂档案</button><button class="btn btn-secondary" onclick="catalogPage.clearReagentFilters()">重置筛选</button></div><div class="catalog-archive-layout"><div class="catalog-panel"><h4>试剂档案列表</h4><div id="catalog-reagent-list" class="catalog-list"></div></div><div class="catalog-panel"><h4>编辑当前试剂</h4><p class="hint">新试剂请从入库页首次建档；这里保存时会按“试剂单独设置”更新预警值。</p><div class="form-row"><div class="form-group"><label for="catalog-reagent-work-group">工作组</label><select id="catalog-reagent-work-group" class="form-select" onchange="catalogPage.loadReagentFormInstruments()"><option value="">请选择工作组</option></select></div><div class="form-group"><label for="catalog-reagent-instrument">仪器</label><select id="catalog-reagent-instrument" class="form-select"><option value="">请选择仪器</option></select></div></div><div class="form-row"><div class="form-group"><label for="catalog-reagent-name">试剂名称</label><input type="text" id="catalog-reagent-name" class="form-input" placeholder="选择试剂后可编辑"></div><div class="form-group"><label for="catalog-reagent-manufacturer">厂家</label><input type="text" id="catalog-reagent-manufacturer" class="form-input" placeholder="可选"></div></div><div class="form-row"><div class="form-group"><label for="catalog-reagent-package-unit">包装单位</label><input type="text" id="catalog-reagent-package-unit" class="form-input" list="package-unit-options" value="盒" oninput="catalogPage.refreshReagentRelationPreview()"></div><div class="form-group"><label for="catalog-reagent-min-unit">最小单位</label><input type="text" id="catalog-reagent-min-unit" class="form-input" list="min-unit-options" value="瓶" oninput="catalogPage.refreshReagentRelationPreview()"></div><div class="form-group"><label for="catalog-reagent-package-to-min-qty">包装关系</label><input type="number" id="catalog-reagent-package-to-min-qty" class="form-input" min="1" value="1" oninput="catalogPage.refreshReagentRelationPreview()"><div id="catalog-reagent-package-relation-preview" class="field-hint"></div></div></div><div class="form-row"><div class="form-group"><label for="catalog-reagent-warning-days">近效期预警天数</label><input type="number" id="catalog-reagent-warning-days" class="form-input" min="0" value="30"></div><div class="form-group"><label for="catalog-reagent-warning-stock">低库存预警值（按最小单位）</label><input type="number" id="catalog-reagent-warning-stock" class="form-input" min="0" value="5"></div></div><div class="button-group"><button class="btn btn-primary" onclick="catalogPage.submitReagent()">保存试剂档案</button><button class="btn btn-secondary" onclick="catalogPage.resetReagentForm()">清空</button></div></div></div></div>
-                <div class="form-section danger-section"><h3>重置试剂与库存数据</h3><p class="hint">会清空试剂档案、批次库存、出入库流水和条码解析日志，但保留工作组、仪器与操作人。</p><button class="btn btn-danger" onclick="catalogPage.resetReagentData()">执行重置</button></div>
+                <div class="settings-shell">
+                    <aside class="settings-sidebar">
+                        <h2>资料设置</h2>
+                        <p class="settings-sidebar-copy">把主档案、常用选项和系统维护统一放在这里管理。</p>
+                        <div class="settings-nav" id="catalog-module-nav">
+                            <button class="settings-nav-item active" data-module="structure">工作组与仪器</button>
+                            <button class="settings-nav-item" data-module="reagents">试剂档案</button>
+                            <button class="settings-nav-item" data-module="operators">操作人</button>
+                            <button class="settings-nav-item" data-module="units">常用单位与选项</button>
+                            <button class="settings-nav-item" data-module="system">系统维护</button>
+                        </div>
+                    </aside>
+                    <section class="settings-content">
+                        <div class="settings-page-header">
+                            <div>
+                                <h3 id="catalog-module-title">工作组与仪器</h3>
+                                <p id="catalog-module-copy" class="dashboard-copy">集中维护工作组和仪器结构，库存页只保留现场快捷设置。</p>
+                            </div>
+                        </div>
+                        <div id="catalog-module-body"></div>
+                    </section>
+                </div>
             </div>
         </main>
 
         <div id="toast" class="toast hidden"></div>
     </div>
 
-    <datalist id="package-unit-options"><option value="盒"></option><option value="瓶"></option><option value="支"></option><option value="袋"></option><option value="箱"></option><option value="套"></option></datalist>
-    <datalist id="min-unit-options"><option value="瓶"></option><option value="支"></option><option value="人份"></option><option value="测试"></option><option value="ml"></option><option value="片"></option></datalist>
+    <datalist id="package-unit-options"></datalist>
+    <datalist id="min-unit-options"></datalist>
 
     <script src="/js/utils.js"></script>
     <script src="/js/api.js"></script>

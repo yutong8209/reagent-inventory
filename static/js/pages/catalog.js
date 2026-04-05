@@ -1,17 +1,182 @@
 const catalogPage = {
+    initialized: false,
+    activeModule: 'structure',
     catalog: [],
     reagents: [],
     operators: [],
-    editingWorkGroupId: null,
-    editingInstrumentId: null,
-    editingOperatorId: null,
-    editingReagentId: null,
+    unitOptions: [],
+    structureEditor: {
+        type: 'workGroup',
+        id: null,
+        mode: 'create'
+    },
+    selectedReagentId: null,
+    selectedOperatorId: null,
+    selectedUnitOptionId: null,
+    reagentFilters: {
+        workGroupId: '',
+        instrumentId: '',
+        keyword: '',
+        status: 'active'
+    },
+    maintenanceFilters: {
+        workGroupId: '',
+        instrumentId: '',
+        reagentId: '',
+        startDate: '',
+        endDate: ''
+    },
+    maintenanceReagents: [],
+    unitFilterScope: 'all',
+    moduleCopy: {
+        structure: {
+            title: '工作组与仪器',
+            copy: '维护工作组和仪器结构，预警默认值仍留在库存页现场调整。'
+        },
+        reagents: {
+            title: '试剂档案',
+            copy: '这里是试剂主档案入口，可统一修改归属、包装关系、预警值和归档状态。'
+        },
+        operators: {
+            title: '操作人',
+            copy: '入库、出库等业务页面使用这里的启用名单。'
+        },
+        units: {
+            title: '常用单位与选项',
+            copy: '包装单位和最小单位都从这里维护，所有页面统一读取。'
+        },
+        system: {
+            title: '系统维护',
+            copy: '危险操作集中放在这里，避免和日常资料维护混在一起。'
+        }
+    },
 
     async init() {
-        this.refreshReagentRelationPreview();
-        await this.loadCatalog();
-        await this.loadOperators();
-        await this.loadReagents();
+        if (!this.initialized) {
+            this.bindModuleNav();
+            this.initialized = true;
+        }
+
+        await this.reloadBaseData();
+        if (this.activeModule === 'reagents') {
+            await this.loadReagents();
+        }
+        this.ensureSelections();
+        this.render();
+    },
+
+    bindModuleNav() {
+        document.querySelectorAll('#catalog-module-nav .settings-nav-item').forEach((button) => {
+            button.addEventListener('click', async () => {
+                const module = button.dataset.module || 'structure';
+                if (module === this.activeModule) {
+                    return;
+                }
+                this.activeModule = module;
+                if (module === 'reagents') {
+                    await this.loadReagents();
+                }
+                if (module === 'system') {
+                    await this.loadMaintenanceReagents();
+                }
+                this.ensureSelections();
+                this.render();
+            });
+        });
+    },
+
+    async reloadBaseData() {
+        await Promise.all([
+            this.loadCatalog(),
+            this.loadOperators(),
+            this.loadUnitOptions()
+        ]);
+    },
+
+    async loadCatalog() {
+        this.catalog = await API.inventory.getWorkGroupCatalog();
+    },
+
+    async loadOperators() {
+        this.operators = await API.operators.list();
+    },
+
+    async loadUnitOptions() {
+        this.unitOptions = await API.unitOptions.list({ include_inactive: true });
+        await Utils.loadUnitOptions(true);
+    },
+
+    async loadReagents() {
+        const params = {
+            work_group_id: this.reagentFilters.workGroupId || null,
+            instrument_id: this.reagentFilters.instrumentId || null,
+            keyword: this.reagentFilters.keyword || null,
+            status: this.reagentFilters.status || 'active'
+        };
+        this.reagents = await API.reagents.list(params);
+    },
+
+    async loadMaintenanceReagents() {
+        const params = {
+            status: 'all',
+            work_group_id: this.maintenanceFilters.workGroupId || null,
+            instrument_id: this.maintenanceFilters.instrumentId || null
+        };
+        this.maintenanceReagents = await API.reagents.list(params);
+    },
+
+    ensureSelections() {
+        this.ensureStructureSelection();
+        this.ensureReagentSelection();
+        this.ensureOperatorSelection();
+        this.ensureUnitSelection();
+    },
+
+    ensureStructureSelection() {
+        if (this.structureEditor.id) {
+            if (this.structureEditor.type === 'workGroup' && this.getWorkGroupById(this.structureEditor.id)) {
+                return;
+            }
+            if (this.structureEditor.type === 'instrument' && this.getInstrumentById(this.structureEditor.id)) {
+                return;
+            }
+        }
+        const firstGroup = this.catalog[0] || null;
+        if (firstGroup) {
+            this.structureEditor = {
+                type: 'workGroup',
+                id: firstGroup.id,
+                mode: 'edit'
+            };
+            return;
+        }
+        this.structureEditor = {
+            type: 'workGroup',
+            id: null,
+            mode: 'create'
+        };
+    },
+
+    ensureReagentSelection() {
+        if (this.selectedReagentId && this.reagents.some((item) => item.id === this.selectedReagentId)) {
+            return;
+        }
+        this.selectedReagentId = this.reagents[0]?.id || null;
+    },
+
+    ensureOperatorSelection() {
+        if (this.selectedOperatorId && this.operators.some((item) => item.id === this.selectedOperatorId)) {
+            return;
+        }
+        this.selectedOperatorId = this.operators[0]?.id || null;
+    },
+
+    ensureUnitSelection() {
+        const filtered = this.getFilteredUnitOptions();
+        if (this.selectedUnitOptionId && filtered.some((item) => item.id === this.selectedUnitOptionId)) {
+            return;
+        }
+        this.selectedUnitOptionId = filtered[0]?.id || null;
     },
 
     escapeHtml(value) {
@@ -23,323 +188,843 @@ const catalogPage = {
             .replace(/'/g, '&#39;');
     },
 
+    normalizeText(value) {
+        return String(value ?? '').trim();
+    },
+
+    parseNonNegative(value, fallback = 0) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    },
+
     formatRelation(packageUnit, qty, minUnit) {
-        const packageLabel = String(packageUnit || '盒').trim() || '盒';
-        const minLabel = String(minUnit || '瓶').trim() || '瓶';
+        const packageLabel = this.normalizeText(packageUnit) || Utils.getDefaultUnit('package', '盒');
+        const minLabel = this.normalizeText(minUnit) || Utils.getDefaultUnit('min', '瓶');
         const ratio = Math.max(parseInt(qty, 10) || 1, 1);
         return `1${packageLabel} = ${ratio}${minLabel}`;
+    },
+
+    getWorkGroupById(id) {
+        return this.catalog.find((group) => group.id === Number(id)) || null;
+    },
+
+    getInstrumentById(id) {
+        for (const group of this.catalog) {
+            const instrument = (group.instruments || []).find((item) => item.id === Number(id));
+            if (instrument) {
+                return { instrument, group };
+            }
+        }
+        return null;
+    },
+
+    getSelectedReagent() {
+        return this.reagents.find((item) => item.id === this.selectedReagentId) || null;
+    },
+
+    getSelectedOperator() {
+        return this.operators.find((item) => item.id === this.selectedOperatorId) || null;
+    },
+
+    getSelectedUnitOption() {
+        return this.unitOptions.find((item) => item.id === this.selectedUnitOptionId) || null;
+    },
+
+    getFilteredUnitOptions() {
+        const scope = this.unitFilterScope || 'all';
+        return [...this.unitOptions]
+            .filter((item) => {
+                if (scope === 'all') return true;
+                if (scope === 'package') return item.scope === 'package' || item.scope === 'both';
+                if (scope === 'min') return item.scope === 'min' || item.scope === 'both';
+                return true;
+            })
+            .sort((left, right) => {
+                return (
+                    (left.sort_order ?? 100) - (right.sort_order ?? 100)
+                    || left.name.localeCompare(right.name, 'zh-CN')
+                );
+            });
+    },
+
+    getWorkGroupOptions(selectedValue = '') {
+        return ['<option value="">请选择工作组</option>'].concat(
+            this.catalog.map((group) => (
+                `<option value="${group.id}" ${String(group.id) === String(selectedValue) ? 'selected' : ''}>${this.escapeHtml(group.name)}</option>`
+            ))
+        ).join('');
+    },
+
+    getInstrumentOptions(workGroupId = '', selectedValue = '') {
+        const instruments = workGroupId
+            ? (this.getWorkGroupById(workGroupId)?.instruments || [])
+            : this.catalog.flatMap((group) => group.instruments || []);
+
+        return ['<option value="">请选择仪器</option>'].concat(
+            instruments.map((instrument) => (
+                `<option value="${instrument.id}" ${String(instrument.id) === String(selectedValue) ? 'selected' : ''}>${this.escapeHtml(instrument.name)}</option>`
+            ))
+        ).join('');
+    },
+
+    getScopeLabel(scope) {
+        if (scope === 'package') return '包装单位';
+        if (scope === 'min') return '最小单位';
+        return '包装/最小都可用';
+    },
+
+    getReagentStatusLabel(item) {
+        return item.is_archived ? '已归档' : '启用中';
+    },
+
+    setModuleHeader() {
+        const current = this.moduleCopy[this.activeModule];
+        document.getElementById('catalog-module-title').textContent = current.title;
+        document.getElementById('catalog-module-copy').textContent = current.copy;
+        document.querySelectorAll('#catalog-module-nav .settings-nav-item').forEach((button) => {
+            button.classList.toggle('active', button.dataset.module === this.activeModule);
+        });
+    },
+
+    render() {
+        this.setModuleHeader();
+        const body = document.getElementById('catalog-module-body');
+        if (this.activeModule === 'structure') {
+            body.innerHTML = this.renderStructureModule();
+            return;
+        }
+        if (this.activeModule === 'reagents') {
+            body.innerHTML = this.renderReagentModule();
+            this.refreshReagentRelationPreview();
+            return;
+        }
+        if (this.activeModule === 'operators') {
+            body.innerHTML = this.renderOperatorModule();
+            return;
+        }
+        if (this.activeModule === 'units') {
+            body.innerHTML = this.renderUnitModule();
+            return;
+        }
+        body.innerHTML = this.renderSystemModule();
+    },
+
+    renderStructureModule() {
+        const selectedGroup = this.structureEditor.type === 'workGroup'
+            ? this.getWorkGroupById(this.structureEditor.id)
+            : this.getInstrumentById(this.structureEditor.id)?.group || this.getWorkGroupById(this.structureEditor.parentWorkGroupId);
+        const selectedInstrumentBundle = this.structureEditor.type === 'instrument'
+            ? this.getInstrumentById(this.structureEditor.id)
+            : null;
+        const selectedInstrument = selectedInstrumentBundle?.instrument || null;
+        const defaultGroupId = selectedInstrument?.work_group_id || selectedGroup?.id || '';
+
+        const editorHtml = this.structureEditor.type === 'instrument'
+            ? `
+                <div class="settings-editor-header">
+                    <h4>${selectedInstrument ? '编辑仪器' : '新建仪器'}</h4>
+                    <p class="hint">这里只维护仪器结构信息；默认预警值请到库存页当前仪器中批量设置。</p>
+                </div>
+                <div class="form-group">
+                    <label for="catalog-structure-instrument-work-group">所属工作组</label>
+                    <select id="catalog-structure-instrument-work-group" class="form-select">
+                        ${this.getWorkGroupOptions(defaultGroupId)}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="catalog-structure-instrument-name">仪器名称</label>
+                    <input type="text" id="catalog-structure-instrument-name" class="form-input" placeholder="例如：DXI800" value="${this.escapeHtml(selectedInstrument?.name || '')}">
+                </div>
+                <div class="form-group">
+                    <label for="catalog-structure-instrument-model">型号</label>
+                    <input type="text" id="catalog-structure-instrument-model" class="form-input" placeholder="可选" value="${this.escapeHtml(selectedInstrument?.model || '')}">
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="catalogPage.submitInstrument()">保存仪器</button>
+                    <button class="btn btn-secondary" onclick="catalogPage.startCreateInstrument(${defaultGroupId || 'null'})">新建仪器</button>
+                    <button class="btn btn-secondary" onclick="catalogPage.selectWorkGroup(${defaultGroupId || 'null'})">返回工作组</button>
+                </div>
+            `
+            : `
+                <div class="settings-editor-header">
+                    <h4>${selectedGroup ? '编辑工作组' : '新建工作组'}</h4>
+                    <p class="hint">工作组用于组织仪器和试剂档案，是资料设置页的第一层结构。</p>
+                </div>
+                <div class="form-group">
+                    <label for="catalog-structure-work-group-name">工作组名称</label>
+                    <input type="text" id="catalog-structure-work-group-name" class="form-input" placeholder="例如：免疫组" value="${this.escapeHtml(selectedGroup?.name || '')}">
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="catalogPage.submitWorkGroup()">保存工作组</button>
+                    <button class="btn btn-secondary" onclick="catalogPage.startCreateWorkGroup()">新建工作组</button>
+                    <button class="btn btn-secondary" onclick="catalogPage.startCreateInstrument(${selectedGroup?.id || 'null'})">在此组下新建仪器</button>
+                </div>
+            `;
+
+        return `
+            <div class="settings-module-grid">
+                <div class="settings-panel">
+                    <div class="settings-panel-head">
+                        <h4>结构树</h4>
+                        <div class="button-group">
+                            <button class="btn btn-secondary btn-small" onclick="catalogPage.startCreateWorkGroup()">新建工作组</button>
+                            <button class="btn btn-secondary btn-small" onclick="catalogPage.startCreateInstrument(${selectedGroup?.id || 'null'})">新建仪器</button>
+                        </div>
+                    </div>
+                    <div class="settings-tree">
+                        ${this.catalog.length ? this.catalog.map((group) => `
+                            <div class="settings-tree-group">
+                                <button class="settings-tree-item ${this.structureEditor.type === 'workGroup' && group.id === this.structureEditor.id ? 'active' : ''}" onclick="catalogPage.selectWorkGroup(${group.id})">
+                                    <span>${this.escapeHtml(group.name)}</span>
+                                    <span class="settings-tree-meta">${(group.instruments || []).length} 台仪器</span>
+                                </button>
+                                <div class="settings-tree-children">
+                                    ${(group.instruments || []).length ? group.instruments.map((instrument) => `
+                                        <button class="settings-tree-item child ${this.structureEditor.type === 'instrument' && instrument.id === this.structureEditor.id ? 'active' : ''}" onclick="catalogPage.selectInstrument(${instrument.id})">
+                                            <span>${this.escapeHtml(instrument.name)}</span>
+                                            <span class="settings-tree-meta">${this.escapeHtml(instrument.model || '未填写型号')}</span>
+                                        </button>
+                                    `).join('') : '<p class="catalog-empty">该工作组下还没有仪器</p>'}
+                                </div>
+                            </div>
+                        `).join('') : '<p class="catalog-empty">还没有工作组，请先新建。</p>'}
+                    </div>
+                </div>
+                <div class="settings-panel">
+                    ${editorHtml}
+                </div>
+            </div>
+        `;
+    },
+
+    renderReagentModule() {
+        const selected = this.getSelectedReagent();
+        const workGroupId = selected?.work_group_id || '';
+        const instrumentId = selected?.instrument_id || '';
+        const packageOptions = Utils.getUnitOptions('package');
+        const minOptions = Utils.getUnitOptions('min');
+        const packageValue = selected?.package_unit || packageOptions[0]?.name || '盒';
+        const minValue = selected?.unit || minOptions[0]?.name || '瓶';
+
+        return `
+            <div class="form-section">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="catalog-reagent-filter-work-group">工作组</label>
+                        <select id="catalog-reagent-filter-work-group" class="form-select" onchange="catalogPage.handleReagentFilterGroupChange()">
+                            <option value="">全部工作组</option>
+                            ${this.catalog.map((group) => `
+                                <option value="${group.id}" ${String(group.id) === String(this.reagentFilters.workGroupId) ? 'selected' : ''}>${this.escapeHtml(group.name)}</option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-reagent-filter-instrument">仪器</label>
+                        <select id="catalog-reagent-filter-instrument" class="form-select">
+                            <option value="">全部仪器</option>
+                            ${this.getReagentFilterInstruments().map((instrument) => `
+                                <option value="${instrument.id}" ${String(instrument.id) === String(this.reagentFilters.instrumentId) ? 'selected' : ''}>${this.escapeHtml(instrument.name)}</option>
+                            `).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-reagent-filter-keyword">关键词</label>
+                        <input type="text" id="catalog-reagent-filter-keyword" class="form-input" placeholder="输入试剂名称关键词" value="${this.escapeHtml(this.reagentFilters.keyword)}">
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-reagent-filter-status">状态</label>
+                        <select id="catalog-reagent-filter-status" class="form-select">
+                            <option value="active" ${this.reagentFilters.status === 'active' ? 'selected' : ''}>启用中</option>
+                            <option value="archived" ${this.reagentFilters.status === 'archived' ? 'selected' : ''}>已归档</option>
+                            <option value="all" ${this.reagentFilters.status === 'all' ? 'selected' : ''}>全部</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button class="btn btn-primary" onclick="catalogPage.applyReagentFilters()">查询试剂档案</button>
+                    <button class="btn btn-secondary" onclick="catalogPage.resetReagentFilters()">重置筛选</button>
+                </div>
+            </div>
+            <div class="settings-module-grid">
+                <div class="settings-panel">
+                    <div class="settings-panel-head">
+                        <h4>试剂档案列表</h4>
+                        <span class="catalog-item-meta">${this.reagents.length} 条结果</span>
+                    </div>
+                    <div class="settings-list">
+                        ${this.reagents.length ? this.reagents.map((item) => `
+                            <button class="settings-list-item ${item.id === this.selectedReagentId ? 'active' : ''}" onclick="catalogPage.selectReagent(${item.id})">
+                                <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
+                                <span class="settings-list-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</span>
+                                <span class="settings-list-meta">${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</span>
+                                <span class="settings-list-meta">${this.getReagentStatusLabel(item)}</span>
+                            </button>
+                        `).join('') : '<p class="catalog-empty">当前筛选下没有试剂档案。</p>'}
+                    </div>
+                </div>
+                <div class="settings-panel">
+                    ${selected ? `
+                        <div class="settings-editor-header">
+                            <h4>编辑试剂档案</h4>
+                            <p class="hint">库存页里的“设置试剂信息”只是快捷入口，改的是同一份试剂主档案。</p>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="catalog-reagent-work-group">工作组</label>
+                                <select id="catalog-reagent-work-group" class="form-select" onchange="catalogPage.handleReagentWorkGroupChange()">
+                                    ${this.getWorkGroupOptions(workGroupId)}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="catalog-reagent-instrument">仪器</label>
+                                <select id="catalog-reagent-instrument" class="form-select">
+                                    ${this.getInstrumentOptions(workGroupId, instrumentId)}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="catalog-reagent-name">试剂名称</label>
+                                <input type="text" id="catalog-reagent-name" class="form-input" value="${this.escapeHtml(selected.name)}">
+                            </div>
+                            <div class="form-group">
+                                <label for="catalog-reagent-manufacturer">厂家</label>
+                                <input type="text" id="catalog-reagent-manufacturer" class="form-input" value="${this.escapeHtml(selected.manufacturer || '')}" placeholder="可选">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="catalog-reagent-package-unit">包装单位</label>
+                                <input type="text" id="catalog-reagent-package-unit" class="form-input" list="package-unit-options" value="${this.escapeHtml(packageValue)}" oninput="catalogPage.refreshReagentRelationPreview()">
+                            </div>
+                            <div class="form-group">
+                                <label for="catalog-reagent-min-unit">最小单位</label>
+                                <input type="text" id="catalog-reagent-min-unit" class="form-input" list="min-unit-options" value="${this.escapeHtml(minValue)}" oninput="catalogPage.refreshReagentRelationPreview()">
+                            </div>
+                            <div class="form-group">
+                                <label for="catalog-reagent-package-to-min-qty">包装关系</label>
+                                <input type="number" id="catalog-reagent-package-to-min-qty" class="form-input" min="1" value="${selected.package_to_min_qty}" oninput="catalogPage.refreshReagentRelationPreview()">
+                                <div id="catalog-reagent-package-relation-preview" class="field-hint"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="catalog-reagent-warning-days">失效预警天数</label>
+                                <input type="number" id="catalog-reagent-warning-days" class="form-input" min="0" value="${selected.warning_days}">
+                            </div>
+                            <div class="form-group">
+                                <label for="catalog-reagent-warning-stock">库存预警最小单位数</label>
+                                <input type="number" id="catalog-reagent-warning-stock" class="form-input" min="0" value="${selected.warning_stock}">
+                            </div>
+                        </div>
+                        <div class="settings-inline-note">${selected.is_archived ? '当前试剂已归档，不会出现在库存页。' : '当前试剂处于启用中。'}</div>
+                        <div class="button-group">
+                            <button class="btn btn-primary" onclick="catalogPage.submitReagent()">保存试剂档案</button>
+                            ${selected.is_archived
+                                ? '<button class="btn btn-secondary" onclick="catalogPage.restoreSelectedReagent()">恢复归档</button>'
+                                : ''}
+                        </div>
+                    ` : `
+                        <div class="settings-empty-state">
+                            <h4>还没有选中试剂</h4>
+                            <p class="hint">先从左侧列表选择一个试剂档案，再在这里维护详细资料。</p>
+                        </div>
+                    `}
+                </div>
+            </div>
+        `;
+    },
+
+    renderOperatorModule() {
+        const selected = this.getSelectedOperator();
+        return `
+            <div class="settings-module-grid">
+                <div class="settings-panel">
+                    <div class="settings-panel-head">
+                        <h4>操作人列表</h4>
+                        <button class="btn btn-secondary btn-small" onclick="catalogPage.startCreateOperator()">新建操作人</button>
+                    </div>
+                    <div class="settings-list">
+                        ${this.operators.length ? this.operators.map((item) => `
+                            <button class="settings-list-item ${item.id === this.selectedOperatorId ? 'active' : ''}" onclick="catalogPage.selectOperator(${item.id})">
+                                <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
+                                <span class="settings-list-meta">${item.is_active ? '启用中' : '已停用'}</span>
+                            </button>
+                        `).join('') : '<p class="catalog-empty">还没有操作人。</p>'}
+                    </div>
+                </div>
+                <div class="settings-panel">
+                    <div class="settings-editor-header">
+                        <h4>${selected ? '编辑操作人' : '新建操作人'}</h4>
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-operator-name">姓名</label>
+                        <input type="text" id="catalog-operator-name" class="form-input" placeholder="输入操作人姓名" value="${this.escapeHtml(selected?.name || '')}">
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="catalog-operator-active" ${selected ? (selected.is_active ? 'checked' : '') : 'checked'}>
+                        <span>启用状态</span>
+                    </label>
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="catalogPage.submitOperator()">保存操作人</button>
+                        <button class="btn btn-secondary" onclick="catalogPage.startCreateOperator()">新建操作人</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    renderUnitModule() {
+        const selected = this.getSelectedUnitOption();
+        return `
+            <div class="form-section">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="catalog-unit-filter-scope">查看范围</label>
+                        <select id="catalog-unit-filter-scope" class="form-select" onchange="catalogPage.changeUnitFilterScope(this.value)">
+                            <option value="all" ${this.unitFilterScope === 'all' ? 'selected' : ''}>全部</option>
+                            <option value="package" ${this.unitFilterScope === 'package' ? 'selected' : ''}>包装单位</option>
+                            <option value="min" ${this.unitFilterScope === 'min' ? 'selected' : ''}>最小单位</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-module-grid">
+                <div class="settings-panel">
+                    <div class="settings-panel-head">
+                        <h4>单位选项</h4>
+                        <button class="btn btn-secondary btn-small" onclick="catalogPage.startCreateUnitOption()">新建单位</button>
+                    </div>
+                    <div class="settings-list">
+                        ${this.getFilteredUnitOptions().length ? this.getFilteredUnitOptions().map((item) => `
+                            <button class="settings-list-item ${item.id === this.selectedUnitOptionId ? 'active' : ''}" onclick="catalogPage.selectUnitOption(${item.id})">
+                                <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
+                                <span class="settings-list-meta">${this.getScopeLabel(item.scope)}</span>
+                                <span class="settings-list-meta">${item.is_active ? '启用中' : '已停用'} / 排序 ${item.sort_order}</span>
+                            </button>
+                        `).join('') : '<p class="catalog-empty">当前范围下还没有单位选项。</p>'}
+                    </div>
+                </div>
+                <div class="settings-panel">
+                    <div class="settings-editor-header">
+                        <h4>${selected ? '编辑单位选项' : '新建单位选项'}</h4>
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-unit-name">名称</label>
+                        <input type="text" id="catalog-unit-name" class="form-input" placeholder="例如：盒、瓶、人份" value="${this.escapeHtml(selected?.name || '')}">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="catalog-unit-scope">适用类型</label>
+                            <select id="catalog-unit-scope" class="form-select">
+                                <option value="both" ${selected?.scope === 'both' || !selected ? 'selected' : ''}>包装/最小都可用</option>
+                                <option value="package" ${selected?.scope === 'package' ? 'selected' : ''}>仅包装单位</option>
+                                <option value="min" ${selected?.scope === 'min' ? 'selected' : ''}>仅最小单位</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="catalog-unit-sort-order">排序</label>
+                            <input type="number" id="catalog-unit-sort-order" class="form-input" min="0" value="${selected?.sort_order ?? 100}">
+                        </div>
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="catalog-unit-active" ${selected ? (selected.is_active ? 'checked' : '') : 'checked'}>
+                        <span>启用状态</span>
+                    </label>
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="catalogPage.submitUnitOption()">保存单位选项</button>
+                        <button class="btn btn-secondary" onclick="catalogPage.startCreateUnitOption()">新建单位</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    },
+
+    renderSystemModule() {
+        const maintenanceInstruments = this.maintenanceFilters.workGroupId
+            ? (this.getWorkGroupById(this.maintenanceFilters.workGroupId)?.instruments || [])
+            : this.catalog.flatMap((group) => group.instruments || []);
+        return `
+            <div class="settings-system-stack">
+                <div class="settings-panel danger-section">
+                    <div class="settings-editor-header">
+                        <h4>清空库存</h4>
+                        <p class="hint">只清空所有试剂库存批次，不删除试剂档案，也不影响已保存的条码识别信息。</p>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-danger" onclick="catalogPage.clearStock()">清空所有库存</button>
+                    </div>
+                </div>
+                <div class="settings-panel danger-section">
+                    <div class="settings-editor-header">
+                        <h4>清空流水</h4>
+                        <p class="hint">只删除流水记录，不回滚库存。可按工作组、仪器、试剂和时间范围清空，也可全部清空。</p>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="catalog-maintenance-work-group">工作组</label>
+                            <select id="catalog-maintenance-work-group" class="form-select" onchange="catalogPage.handleMaintenanceGroupChange()">
+                                <option value="">全部工作组</option>
+                                ${this.catalog.map((group) => `
+                                    <option value="${group.id}" ${String(group.id) === String(this.maintenanceFilters.workGroupId) ? 'selected' : ''}>${this.escapeHtml(group.name)}</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="catalog-maintenance-instrument">仪器</label>
+                            <select id="catalog-maintenance-instrument" class="form-select" onchange="catalogPage.handleMaintenanceInstrumentChange()">
+                                <option value="">全部仪器</option>
+                                ${maintenanceInstruments.map((instrument) => `
+                                    <option value="${instrument.id}" ${String(instrument.id) === String(this.maintenanceFilters.instrumentId) ? 'selected' : ''}>${this.escapeHtml(instrument.name)}</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="catalog-maintenance-reagent">试剂</label>
+                            <select id="catalog-maintenance-reagent" class="form-select">
+                                <option value="">全部试剂</option>
+                                ${this.maintenanceReagents.map((item) => `
+                                    <option value="${item.id}" ${String(item.id) === String(this.maintenanceFilters.reagentId) ? 'selected' : ''}>${this.escapeHtml(item.name)}</option>
+                                `).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="catalog-maintenance-start-date">开始日期</label>
+                            <input type="date" id="catalog-maintenance-start-date" class="form-input" value="${this.escapeHtml(this.maintenanceFilters.startDate)}">
+                        </div>
+                        <div class="form-group">
+                            <label for="catalog-maintenance-end-date">结束日期</label>
+                            <input type="date" id="catalog-maintenance-end-date" class="form-input" value="${this.escapeHtml(this.maintenanceFilters.endDate)}">
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-danger" onclick="catalogPage.clearTransactions()">按当前条件清空流水</button>
+                        <button class="btn btn-secondary" onclick="catalogPage.resetMaintenanceFilters()">重置流水筛选</button>
+                    </div>
+                </div>
+                <div class="settings-panel danger-section">
+                    <div class="settings-editor-header">
+                        <h4>重置试剂与库存数据</h4>
+                        <p class="hint">会清空试剂档案、批次库存、出入库流水和条码解析日志，但保留工作组、仪器、操作人和常用单位选项。</p>
+                    </div>
+                    <button class="btn btn-danger" onclick="catalogPage.resetReagentData()">执行重置</button>
+                </div>
+            </div>
+        `;
+    },
+
+    getReagentFilterInstruments() {
+        if (!this.reagentFilters.workGroupId) {
+            return this.catalog.flatMap((group) => group.instruments || []);
+        }
+        return this.getWorkGroupById(this.reagentFilters.workGroupId)?.instruments || [];
+    },
+
+    selectWorkGroup(id) {
+        if (!id) {
+            this.startCreateWorkGroup();
+            return;
+        }
+        this.structureEditor = { type: 'workGroup', id: Number(id), mode: 'edit' };
+        this.render();
+    },
+
+    selectInstrument(id) {
+        this.structureEditor = { type: 'instrument', id: Number(id), mode: 'edit' };
+        this.render();
+    },
+
+    startCreateWorkGroup() {
+        this.structureEditor = { type: 'workGroup', id: null, mode: 'create' };
+        this.render();
+    },
+
+    startCreateInstrument(workGroupId = null) {
+        this.structureEditor = {
+            type: 'instrument',
+            id: null,
+            mode: 'create',
+            parentWorkGroupId: workGroupId ? Number(workGroupId) : null
+        };
+        this.render();
+    },
+
+    async submitWorkGroup() {
+        const name = this.normalizeText(document.getElementById('catalog-structure-work-group-name')?.value);
+        if (!name) {
+            return Utils.showToast('请输入工作组名称', 'warning');
+        }
+        if (this.structureEditor.id) {
+            const updated = await API.inventory.updateWorkGroup(this.structureEditor.id, { name });
+            this.structureEditor = { type: 'workGroup', id: updated.id, mode: 'edit' };
+            Utils.showToast('工作组已更新', 'success');
+        } else {
+            const created = await API.inventory.createWorkGroup({ name });
+            this.structureEditor = { type: 'workGroup', id: created.id, mode: 'edit' };
+            Utils.showToast('工作组已新增', 'success');
+        }
+        await this.loadCatalog();
+        this.ensureSelections();
+        this.render();
+    },
+
+    async submitInstrument() {
+        const selectedBundle = this.structureEditor.id ? this.getInstrumentById(this.structureEditor.id) : null;
+        const payload = {
+            work_group_id: parseInt(document.getElementById('catalog-structure-instrument-work-group')?.value, 10),
+            name: this.normalizeText(document.getElementById('catalog-structure-instrument-name')?.value),
+            model: this.normalizeText(document.getElementById('catalog-structure-instrument-model')?.value) || null,
+            default_warning_days: selectedBundle?.instrument?.default_warning_days ?? 30,
+            default_warning_stock: selectedBundle?.instrument?.default_warning_stock ?? 5
+        };
+        if (!payload.work_group_id || !payload.name) {
+            return Utils.showToast('请完整填写所属工作组和仪器名称', 'warning');
+        }
+        if (this.structureEditor.id) {
+            const updated = await API.inventory.updateInstrument(this.structureEditor.id, payload);
+            this.structureEditor = { type: 'instrument', id: updated.id, mode: 'edit' };
+            Utils.showToast('仪器已更新', 'success');
+        } else {
+            const created = await API.inventory.createInstrument(payload);
+            this.structureEditor = { type: 'instrument', id: created.id, mode: 'edit' };
+            Utils.showToast('仪器已新增', 'success');
+        }
+        await this.loadCatalog();
+        this.ensureSelections();
+        this.render();
+    },
+
+    async applyReagentFilters() {
+        this.reagentFilters.workGroupId = document.getElementById('catalog-reagent-filter-work-group')?.value || '';
+        this.reagentFilters.instrumentId = document.getElementById('catalog-reagent-filter-instrument')?.value || '';
+        this.reagentFilters.keyword = this.normalizeText(document.getElementById('catalog-reagent-filter-keyword')?.value);
+        this.reagentFilters.status = document.getElementById('catalog-reagent-filter-status')?.value || 'active';
+        await this.loadReagents();
+        this.ensureSelections();
+        this.render();
+    },
+
+    handleReagentFilterGroupChange() {
+        this.reagentFilters.workGroupId = document.getElementById('catalog-reagent-filter-work-group')?.value || '';
+        this.reagentFilters.instrumentId = '';
+        this.render();
+    },
+
+    async resetReagentFilters() {
+        this.reagentFilters = {
+            workGroupId: '',
+            instrumentId: '',
+            keyword: '',
+            status: 'active'
+        };
+        await this.loadReagents();
+        this.ensureSelections();
+        this.render();
+    },
+
+    selectReagent(id) {
+        this.selectedReagentId = Number(id);
+        this.render();
+    },
+
+    handleReagentWorkGroupChange() {
+        const workGroupId = document.getElementById('catalog-reagent-work-group')?.value || '';
+        const instrumentSelect = document.getElementById('catalog-reagent-instrument');
+        if (instrumentSelect) {
+            instrumentSelect.innerHTML = this.getInstrumentOptions(workGroupId, '');
+        }
     },
 
     refreshReagentRelationPreview() {
         const preview = document.getElementById('catalog-reagent-package-relation-preview');
         if (!preview) return;
         preview.textContent = this.formatRelation(
-            document.getElementById('catalog-reagent-package-unit').value,
-            document.getElementById('catalog-reagent-package-to-min-qty').value,
-            document.getElementById('catalog-reagent-min-unit').value
+            document.getElementById('catalog-reagent-package-unit')?.value,
+            document.getElementById('catalog-reagent-package-to-min-qty')?.value,
+            document.getElementById('catalog-reagent-min-unit')?.value
         );
     },
 
-    async loadCatalog() {
-        this.catalog = await API.inventory.getWorkGroupCatalog();
-        this.renderCatalog();
-    },
-
-    renderCatalog() {
-        this.renderWorkGroupList();
-        this.renderInstrumentGroupSelect();
-        this.renderInstrumentList();
-        this.renderReagentSelectors();
-    },
-
-    renderWorkGroupList() {
-        const list = document.getElementById('catalog-work-group-list');
-        list.innerHTML = this.catalog.length
-            ? this.catalog.map((group) => `
-                <div class="catalog-item">
-                    <div>
-                        <div class="catalog-item-title">${this.escapeHtml(group.name)}</div>
-                        <div class="catalog-item-meta">仪器 ${group.instruments.length} 台</div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="catalogPage.editWorkGroup(${group.id})">编辑</button>
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">暂无工作组</p>';
-    },
-
-    renderInstrumentGroupSelect() {
-        const baseOptions = ['<option value="">请选择工作组</option>'].concat(
-            this.catalog.map((group) => `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`)
-        ).join('');
-
-        ['catalog-instrument-work-group', 'catalog-reagent-filter-work-group', 'catalog-reagent-work-group'].forEach((id) => {
-            const select = document.getElementById(id);
-            const currentValue = select.value;
-            select.innerHTML = id === 'catalog-reagent-filter-work-group'
-                ? baseOptions.replace('请选择工作组', '全部工作组')
-                : baseOptions;
-            if ([...select.options].some((option) => option.value === currentValue)) {
-                select.value = currentValue;
-            }
-        });
-    },
-
-    renderInstrumentList() {
-        const list = document.getElementById('catalog-instrument-list');
-        list.innerHTML = this.catalog.length
-            ? this.catalog.map((group) => `
-                <div class="catalog-group">
-                    <div class="catalog-group-title">${this.escapeHtml(group.name)}</div>
-                    ${(group.instruments || []).length
-                        ? group.instruments.map((instrument) => `
-                            <div class="catalog-item">
-                                <div>
-                                    <div class="catalog-item-title">${this.escapeHtml(instrument.name)}</div>
-                                    <div class="catalog-item-meta">${this.escapeHtml(instrument.model || '未填写型号')}</div>
-                                    <div class="catalog-item-meta">默认预警：${instrument.default_warning_days} 天 / ${instrument.default_warning_stock} 最小单位</div>
-                                </div>
-                                <button class="btn btn-secondary" onclick="catalogPage.editInstrument(${instrument.id})">编辑</button>
-                            </div>
-                        `).join('')
-                        : '<p class="catalog-empty">该工作组暂无仪器</p>'}
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">暂无仪器</p>';
-    },
-
-    renderReagentSelectors() {
-        this.loadReagentFilterInstruments();
-        this.loadReagentFormInstruments();
-    },
-
-    async loadReagentFilterInstruments() {
-        const workGroupId = document.getElementById('catalog-reagent-filter-work-group').value;
-        const select = document.getElementById('catalog-reagent-filter-instrument');
-        select.innerHTML = '<option value="">全部仪器</option>';
-        const instruments = await API.inventory.getInstruments(workGroupId || null).catch(() => []);
-        select.innerHTML += instruments.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`).join('');
-    },
-
-    async loadReagentFormInstruments(selectedValue = '') {
-        const workGroupId = document.getElementById('catalog-reagent-work-group').value;
-        const select = document.getElementById('catalog-reagent-instrument');
-        select.innerHTML = '<option value="">请选择仪器</option>';
-        if (!workGroupId) return;
-        const instruments = await API.inventory.getInstruments(workGroupId).catch(() => []);
-        select.innerHTML += instruments.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`).join('');
-        if (selectedValue) {
-            select.value = String(selectedValue);
+    async submitReagent() {
+        const selected = this.getSelectedReagent();
+        if (!selected) {
+            return Utils.showToast('请先选择一个试剂档案', 'warning');
         }
-    },
 
-    async loadOperators() {
-        this.operators = await API.operators.list();
-        const list = document.getElementById('catalog-operator-list');
-        list.innerHTML = this.operators.length
-            ? this.operators.map((item) => `
-                <div class="catalog-item">
-                    <div>
-                        <div class="catalog-item-title">${this.escapeHtml(item.name)}</div>
-                        <div class="catalog-item-meta">${item.is_active ? '启用中' : '已停用'}</div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="catalogPage.editOperator(${item.id})">编辑</button>
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">暂无操作人</p>';
-    },
-
-    async loadReagents() {
-        const params = {
-            work_group_id: document.getElementById('catalog-reagent-filter-work-group').value || null,
-            instrument_id: document.getElementById('catalog-reagent-filter-instrument').value || null,
-            keyword: document.getElementById('catalog-reagent-filter-keyword').value.trim() || null
+        const payload = {
+            instrument_id: parseInt(document.getElementById('catalog-reagent-instrument')?.value, 10),
+            name: this.normalizeText(document.getElementById('catalog-reagent-name')?.value),
+            manufacturer: this.normalizeText(document.getElementById('catalog-reagent-manufacturer')?.value) || null,
+            package_unit: this.normalizeText(document.getElementById('catalog-reagent-package-unit')?.value),
+            unit: this.normalizeText(document.getElementById('catalog-reagent-min-unit')?.value),
+            package_to_min_qty: Math.max(parseInt(document.getElementById('catalog-reagent-package-to-min-qty')?.value, 10) || 1, 1),
+            warning_days: this.parseNonNegative(document.getElementById('catalog-reagent-warning-days')?.value, 30),
+            warning_stock: this.parseNonNegative(document.getElementById('catalog-reagent-warning-stock')?.value, 5),
+            follow_instrument: false
         };
-        this.reagents = await API.reagents.list(params);
 
-        const list = document.getElementById('catalog-reagent-list');
-        list.innerHTML = this.reagents.length
-            ? this.reagents.map((item) => `
-                <div class="catalog-item">
-                    <div>
-                        <div class="catalog-item-title">${this.escapeHtml(item.name)}</div>
-                        <div class="catalog-item-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
-                        <div class="catalog-item-meta">${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</div>
-                        <div class="catalog-item-meta">预警来源：${item.warning_source === 'instrument' ? '跟随仪器默认' : '试剂单独设置'}</div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="catalogPage.editReagent(${item.id})">编辑</button>
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">没有找到试剂档案</p>';
-    },
-
-    resetWorkGroupForm() {
-        this.editingWorkGroupId = null;
-        document.getElementById('catalog-work-group-name').value = '';
-    },
-
-    editWorkGroup(id) {
-        const item = this.catalog.find((group) => group.id === id);
-        if (!item) return;
-        this.editingWorkGroupId = id;
-        document.getElementById('catalog-work-group-name').value = item.name;
-    },
-
-    async submitWorkGroup() {
-        const name = document.getElementById('catalog-work-group-name').value.trim();
-        if (!name) {
-            return Utils.showToast('请输入工作组名称', 'warning');
+        if (!payload.instrument_id || !payload.name || !payload.package_unit || !payload.unit) {
+            return Utils.showToast('请完整填写试剂档案信息', 'warning');
         }
-        if (this.editingWorkGroupId) {
-            await API.inventory.updateWorkGroup(this.editingWorkGroupId, { name });
-        } else {
-            await API.inventory.createWorkGroup({ name });
-        }
-        Utils.showToast(this.editingWorkGroupId ? '工作组已更新' : '工作组已新增', 'success');
-        this.resetWorkGroupForm();
-        await this.loadCatalog();
+
+        await API.reagents.update(selected.id, payload);
+        Utils.showToast('试剂档案已更新', 'success');
+        await Promise.all([this.loadCatalog(), this.loadReagents()]);
+        this.ensureSelections();
+        this.render();
     },
 
-    resetInstrumentForm() {
-        this.editingInstrumentId = null;
-        document.getElementById('catalog-instrument-work-group').value = '';
-        document.getElementById('catalog-instrument-name').value = '';
-        document.getElementById('catalog-instrument-model').value = '';
-        document.getElementById('catalog-instrument-warning-days').value = '30';
-        document.getElementById('catalog-instrument-warning-stock').value = '5';
-    },
-
-    editInstrument(id) {
-        for (const group of this.catalog) {
-            const instrument = (group.instruments || []).find((item) => item.id === id);
-            if (!instrument) continue;
-            this.editingInstrumentId = id;
-            document.getElementById('catalog-instrument-work-group').value = String(instrument.work_group_id);
-            document.getElementById('catalog-instrument-name').value = instrument.name;
-            document.getElementById('catalog-instrument-model').value = instrument.model || '';
-            document.getElementById('catalog-instrument-warning-days').value = String(instrument.default_warning_days ?? 30);
-            document.getElementById('catalog-instrument-warning-stock').value = String(instrument.default_warning_stock ?? 5);
+    async restoreSelectedReagent() {
+        const selected = this.getSelectedReagent();
+        if (!selected || !selected.is_archived) {
             return;
         }
+        await API.inventory.restoreReagent(selected.id);
+        Utils.showToast('试剂已恢复归档', 'success');
+        await this.loadReagents();
+        this.ensureSelections();
+        this.render();
     },
 
-    async submitInstrument() {
-        const payload = {
-            work_group_id: parseInt(document.getElementById('catalog-instrument-work-group').value, 10),
-            name: document.getElementById('catalog-instrument-name').value.trim(),
-            model: document.getElementById('catalog-instrument-model').value.trim() || null,
-            default_warning_days: parseInt(document.getElementById('catalog-instrument-warning-days').value, 10) || 0,
-            default_warning_stock: parseInt(document.getElementById('catalog-instrument-warning-stock').value, 10) || 0
-        };
-        if (!payload.work_group_id || !payload.name) {
-            return Utils.showToast('请填写所属工作组和仪器名称', 'warning');
-        }
-        if (this.editingInstrumentId) {
-            await API.inventory.updateInstrument(this.editingInstrumentId, payload);
-        } else {
-            await API.inventory.createInstrument(payload);
-        }
-        Utils.showToast(this.editingInstrumentId ? '仪器已更新' : '仪器已新增', 'success');
-        this.resetInstrumentForm();
-        await this.loadCatalog();
+    startCreateOperator() {
+        this.selectedOperatorId = null;
+        this.render();
     },
 
-    resetOperatorForm() {
-        this.editingOperatorId = null;
-        document.getElementById('catalog-operator-name').value = '';
-        document.getElementById('catalog-operator-active').checked = true;
-    },
-
-    editOperator(id) {
-        const item = this.operators.find((operator) => operator.id === id);
-        if (!item) return;
-        this.editingOperatorId = id;
-        document.getElementById('catalog-operator-name').value = item.name;
-        document.getElementById('catalog-operator-active').checked = item.is_active;
+    selectOperator(id) {
+        this.selectedOperatorId = Number(id);
+        this.render();
     },
 
     async submitOperator() {
-        const name = document.getElementById('catalog-operator-name').value.trim();
-        const isActive = document.getElementById('catalog-operator-active').checked;
+        const name = this.normalizeText(document.getElementById('catalog-operator-name')?.value);
+        const isActive = Boolean(document.getElementById('catalog-operator-active')?.checked);
         if (!name) {
             return Utils.showToast('请输入操作人姓名', 'warning');
         }
-        if (this.editingOperatorId) {
-            await API.operators.update(this.editingOperatorId, { name, is_active: isActive });
+        if (this.selectedOperatorId) {
+            const updated = await API.operators.update(this.selectedOperatorId, { name, is_active: isActive });
+            this.selectedOperatorId = updated.id;
+            Utils.showToast('操作人已更新', 'success');
         } else {
-            await API.operators.create({ name });
+            const created = await API.operators.create({ name, is_active: isActive });
+            this.selectedOperatorId = created.id;
+            Utils.showToast('操作人已新增', 'success');
         }
         Utils.operatorsLoaded = false;
-        await Utils.loadOperators(true);
-        await this.loadOperators();
-        this.resetOperatorForm();
-        Utils.showToast(this.editingOperatorId ? '操作人已更新' : '操作人已新增', 'success');
+        await Promise.all([this.loadOperators(), Utils.loadOperators(true)]);
+        this.ensureSelections();
+        this.render();
     },
 
-    clearReagentFilters() {
-        document.getElementById('catalog-reagent-filter-work-group').value = '';
-        document.getElementById('catalog-reagent-filter-instrument').innerHTML = '<option value="">全部仪器</option>';
-        document.getElementById('catalog-reagent-filter-keyword').value = '';
-        this.loadReagents();
+    changeUnitFilterScope(value) {
+        this.unitFilterScope = value || 'all';
+        this.ensureUnitSelection();
+        this.render();
     },
 
-    resetReagentForm() {
-        this.editingReagentId = null;
-        document.getElementById('catalog-reagent-work-group').value = '';
-        document.getElementById('catalog-reagent-instrument').innerHTML = '<option value="">请选择仪器</option>';
-        document.getElementById('catalog-reagent-name').value = '';
-        document.getElementById('catalog-reagent-manufacturer').value = '';
-        document.getElementById('catalog-reagent-package-unit').value = '盒';
-        document.getElementById('catalog-reagent-min-unit').value = '瓶';
-        document.getElementById('catalog-reagent-package-to-min-qty').value = '1';
-        document.getElementById('catalog-reagent-warning-days').value = '30';
-        document.getElementById('catalog-reagent-warning-stock').value = '5';
-        this.refreshReagentRelationPreview();
+    startCreateUnitOption() {
+        this.selectedUnitOptionId = null;
+        this.render();
     },
 
-    async editReagent(id) {
-        const item = this.reagents.find((reagent) => reagent.id === id);
-        if (!item) return;
-        this.editingReagentId = id;
-        document.getElementById('catalog-reagent-work-group').value = String(item.work_group_id);
-        await this.loadReagentFormInstruments(item.instrument_id);
-        document.getElementById('catalog-reagent-name').value = item.name;
-        document.getElementById('catalog-reagent-manufacturer').value = item.manufacturer || '';
-        document.getElementById('catalog-reagent-package-unit').value = item.package_unit;
-        document.getElementById('catalog-reagent-min-unit').value = item.unit;
-        document.getElementById('catalog-reagent-package-to-min-qty').value = String(item.package_to_min_qty);
-        document.getElementById('catalog-reagent-warning-days').value = String(item.warning_days);
-        document.getElementById('catalog-reagent-warning-stock').value = String(item.warning_stock);
-        this.refreshReagentRelationPreview();
+    selectUnitOption(id) {
+        this.selectedUnitOptionId = Number(id);
+        this.render();
     },
 
-    async submitReagent() {
-        if (!this.editingReagentId) {
-            return Utils.showToast('请先从左侧选择一个试剂档案进行编辑', 'warning');
-        }
+    async submitUnitOption() {
         const payload = {
-            instrument_id: parseInt(document.getElementById('catalog-reagent-instrument').value, 10),
-            name: document.getElementById('catalog-reagent-name').value.trim(),
-            manufacturer: document.getElementById('catalog-reagent-manufacturer').value.trim() || null,
-            package_unit: document.getElementById('catalog-reagent-package-unit').value.trim(),
-            unit: document.getElementById('catalog-reagent-min-unit').value.trim(),
-            package_to_min_qty: parseInt(document.getElementById('catalog-reagent-package-to-min-qty').value, 10),
-            warning_days: parseInt(document.getElementById('catalog-reagent-warning-days').value, 10),
-            warning_stock: parseInt(document.getElementById('catalog-reagent-warning-stock').value, 10),
-            follow_instrument: false
+            name: this.normalizeText(document.getElementById('catalog-unit-name')?.value),
+            scope: document.getElementById('catalog-unit-scope')?.value || 'both',
+            is_active: Boolean(document.getElementById('catalog-unit-active')?.checked),
+            sort_order: this.parseNonNegative(document.getElementById('catalog-unit-sort-order')?.value, 100)
         };
-        if (!payload.instrument_id || !payload.name || !payload.package_unit || !payload.unit || !payload.package_to_min_qty) {
-            return Utils.showToast('请完整填写试剂档案信息', 'warning');
+        if (!payload.name) {
+            return Utils.showToast('请输入单位名称', 'warning');
         }
-        await API.reagents.update(this.editingReagentId, payload);
-        Utils.showToast('试剂档案已更新', 'success');
-        await this.loadReagents();
+        if (this.selectedUnitOptionId) {
+            const updated = await API.unitOptions.update(this.selectedUnitOptionId, payload);
+            this.selectedUnitOptionId = updated.id;
+            Utils.showToast('单位选项已更新', 'success');
+        } else {
+            const created = await API.unitOptions.create(payload);
+            this.selectedUnitOptionId = created.id;
+            Utils.showToast('单位选项已新增', 'success');
+        }
+        await this.loadUnitOptions();
+        this.ensureSelections();
+        this.render();
     },
 
     async resetReagentData() {
-        if (!confirm('此操作会清空所有试剂、库存和流水记录，确定继续吗？')) return;
+        if (!confirm('此操作会清空所有试剂、库存和流水记录，确定继续吗？')) {
+            return;
+        }
         await API.inventory.resetReagentData();
         Utils.showToast('试剂与库存数据已重置', 'success');
-        this.resetReagentForm();
-        await this.loadReagents();
+        this.selectedReagentId = null;
+        await Promise.all([
+            this.loadCatalog(),
+            this.loadReagents()
+        ]);
+        this.ensureSelections();
+        this.render();
+    },
+
+    async handleMaintenanceGroupChange() {
+        this.maintenanceFilters.workGroupId = document.getElementById('catalog-maintenance-work-group')?.value || '';
+        this.maintenanceFilters.instrumentId = '';
+        this.maintenanceFilters.reagentId = '';
+        await this.loadMaintenanceReagents();
+        this.render();
+    },
+
+    async handleMaintenanceInstrumentChange() {
+        this.maintenanceFilters.instrumentId = document.getElementById('catalog-maintenance-instrument')?.value || '';
+        this.maintenanceFilters.reagentId = '';
+        await this.loadMaintenanceReagents();
+        this.render();
+    },
+
+    async resetMaintenanceFilters() {
+        this.maintenanceFilters = {
+            workGroupId: '',
+            instrumentId: '',
+            reagentId: '',
+            startDate: '',
+            endDate: ''
+        };
+        await this.loadMaintenanceReagents();
+        this.render();
+    },
+
+    async clearStock() {
+        if (!confirm('确定清空所有试剂库存吗？这不会删除试剂档案，也不会影响条码识别信息。')) {
+            return;
+        }
+        const result = await API.inventory.clearStock();
+        Utils.showToast(`已清空 ${result.cleared_batch_count} 条库存批次`, 'success');
+    },
+
+    async clearTransactions() {
+        const payload = {
+            work_group_id: document.getElementById('catalog-maintenance-work-group')?.value || null,
+            instrument_id: document.getElementById('catalog-maintenance-instrument')?.value || null,
+            reagent_id: document.getElementById('catalog-maintenance-reagent')?.value || null,
+            start_date: document.getElementById('catalog-maintenance-start-date')?.value || null,
+            end_date: document.getElementById('catalog-maintenance-end-date')?.value || null
+        };
+        const hasFilters = Object.values(payload).some((value) => value);
+        const confirmMessage = hasFilters
+            ? '确定按当前筛选条件清空流水吗？此操作只删除流水记录，不会回滚库存。'
+            : '确定清空全部流水吗？此操作只删除流水记录，不会回滚库存。';
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        const result = await API.inventory.clearTransactions(payload);
+        Utils.showToast(result.deleted_count ? `已清空 ${result.deleted_count} 条流水` : '当前条件下没有可清空的流水', result.deleted_count ? 'success' : 'warning');
     }
 };

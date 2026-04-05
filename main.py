@@ -7,13 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import SessionLocal, ensure_schema
 from api import barcode, inbound, outbound, inventory, reports
-from services import ensure_default_catalog, ensure_default_operators
+from services import ensure_default_catalog, ensure_default_operators, ensure_default_unit_options
 
 ensure_schema()
 catalog_db = SessionLocal()
 try:
     ensure_default_catalog(catalog_db)
     ensure_default_operators(catalog_db)
+    ensure_default_unit_options(catalog_db)
 finally:
     catalog_db.close()
 

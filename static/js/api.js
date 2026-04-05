@@ -229,9 +229,25 @@ const API = {
                 method: 'POST'
             });
         },
+        restoreReagent(id) {
+            return API.request(`/reagents/${id}/restore`, {
+                method: 'POST'
+            });
+        },
         archiveZeroStockReagents() {
             return API.request('/reagents/archive-zero-stock', {
                 method: 'POST'
+            });
+        },
+        clearStock() {
+            return API.request('/admin/clear-stock', {
+                method: 'POST'
+            });
+        },
+        clearTransactions(data) {
+            return API.request('/admin/clear-transactions', {
+                method: 'POST',
+                body: JSON.stringify(data)
             });
         },
         resetReagentData() {
@@ -292,6 +308,31 @@ const API = {
         },
         update(id, data) {
             return API.request(`/operators/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        }
+    },
+
+    unitOptions: {
+        list(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/unit-options${suffix}`);
+        },
+        create(data) {
+            return API.request('/unit-options', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
+        update(id, data) {
+            return API.request(`/unit-options/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data)
             });

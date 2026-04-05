@@ -5,6 +5,7 @@ from .batch_stock import BatchStock
 from .transaction import Transaction
 from .parse_log import ParseLog
 from .operator import Operator
+from .unit_option import UnitOption
 
 __all__ = [
     "WorkGroup",
@@ -14,4 +15,5 @@ __all__ = [
     "Transaction",
     "ParseLog",
     "Operator",
+    "UnitOption",
 ]

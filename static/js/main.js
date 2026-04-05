@@ -5,6 +5,7 @@ const app = {
 
     init() {
         this.bindNavigation();
+        Utils.loadUnitOptions();
         this.loadPage('dashboard');
     },
 

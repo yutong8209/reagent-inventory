@@ -96,6 +96,20 @@ def ensure_schema():
                 "ALTER TABLE operators ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
             ),
         ],
+        "unit_options": [
+            (
+                "scope",
+                "ALTER TABLE unit_options ADD COLUMN scope VARCHAR(20) NOT NULL DEFAULT 'both'",
+            ),
+            (
+                "is_active",
+                "ALTER TABLE unit_options ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
+            ),
+            (
+                "sort_order",
+                "ALTER TABLE unit_options ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100",
+            ),
+        ],
     }
 
     with engine.begin() as connection:
@@ -183,6 +197,18 @@ def ensure_schema():
                         ),
                         '瓶'
                     )
+                    """
+                )
+            )
+
+        if "unit_options" in table_columns:
+            connection.execute(
+                text(
+                    """
+                    UPDATE unit_options
+                    SET scope = COALESCE(NULLIF(scope, ''), 'both'),
+                        is_active = COALESCE(is_active, 1),
+                        sort_order = COALESCE(sort_order, 100)
                     """
                 )
             )

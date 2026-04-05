@@ -1,0 +1,54 @@
+INFO:     127.0.0.1:55914 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59221 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59220 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65173 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:65173 - "GET /css/main.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:65357 - "GET /js/api.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53082 - "GET /js/utils.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64177 - "GET /js/pages/catalog.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54153 - "GET /js/main.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64177 - "GET /api/unit-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54153 - "GET /api/unit-options?include_inactive=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65357 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64177 - "GET /api/catalog/work-groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54153 - "GET /api/unit-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54153 - "GET /api/reagents?status=all HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54109 - "GET /api/reagents?status=all&work_group_id=3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54109 - "GET /api/reagents?status=all&work_group_id=3&instrument_id=10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "GET /api/work-groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "GET /api/transactions?start_date=2026-03-08&end_date=2026-04-06&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64792 - "GET /api/unit-options?include_inactive=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60416 - "GET /api/catalog/work-groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/unit-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "POST /api/admin/clear-transactions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/work-groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50854 - "GET /api/transactions?start_date=2026-03-08&end_date=2026-04-06&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54782 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53728 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53728 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/work-groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/transactions?start_date=2026-03-08&end_date=2026-04-06&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/work-groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/instruments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/reporting/reagents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63730 - "GET /api/transactions?start_date=2026-03-08&end_date=2026-04-06&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53597 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50028 - "GET /api/unit-options?include_inactive=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51998 - "GET /api/catalog/work-groups HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51998 - "GET /api/unit-options HTTP/1.1" 200 OK

@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from io import BytesIO
 from typing import List, Optional
 from urllib.parse import quote
@@ -11,7 +11,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
+from models import BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, UnitOption, WorkGroup
 from schemas import (
     BatchInfo,
     InstrumentCatalogItem,
@@ -19,6 +19,7 @@ from schemas import (
     InstrumentInfo,
     InstrumentUpdate,
     InstrumentWarningDefaultsUpdate,
+    ClearTransactionsRequest,
     OperatorCreate,
     OperatorResponse,
     OperatorUpdate,
@@ -26,6 +27,9 @@ from schemas import (
     ReagentInfo,
     ReagentUpdate,
     ReagentWarningSettingsUpdate,
+    UnitOptionCreate,
+    UnitOptionResponse,
+    UnitOptionUpdate,
     WorkGroupCatalogItem,
     WorkGroupCreate,
     WorkGroupInfo,
@@ -88,6 +92,26 @@ def _safe_int(value: int | None, fallback: int) -> int:
     return max(value, 0)
 
 
+def _unit_option_sort_key(option: UnitOption):
+    scope_priority = {"both": 0, "package": 1, "min": 2}
+    return (
+        option.sort_order if option.sort_order is not None else 100,
+        scope_priority.get(option.scope, 9),
+        option.name.lower(),
+        option.id,
+    )
+
+
+def _unit_option_matches_scope(option_scope: str, scope: str | None) -> bool:
+    if not scope:
+        return True
+    if scope == "package":
+        return option_scope in {"package", "both"}
+    if scope == "min":
+        return option_scope in {"min", "both"}
+    return True
+
+
 def _days_until(target: date) -> int:
     return (target - date.today()).days
 
@@ -135,6 +159,29 @@ def _build_status_level(
     if total_min_quantity <= effective_warning_stock:
         return "low"
     return "normal"
+
+
+def _apply_transaction_filters(query, filters: ClearTransactionsRequest):
+    if filters.work_group_id is not None:
+        query = query.join(Reagent, Transaction.reagent_id == Reagent.id)
+        query = query.join(Instrument, Reagent.instrument_id == Instrument.id)
+        query = query.filter(Instrument.work_group_id == filters.work_group_id)
+        if filters.instrument_id is not None:
+            query = query.filter(Instrument.id == filters.instrument_id)
+    elif filters.instrument_id is not None:
+        query = query.join(Reagent, Transaction.reagent_id == Reagent.id)
+        query = query.filter(Reagent.instrument_id == filters.instrument_id)
+
+    if filters.reagent_id is not None:
+        query = query.filter(Transaction.reagent_id == filters.reagent_id)
+
+    if filters.start_date is not None:
+        query = query.filter(Transaction.created_at >= datetime.combine(filters.start_date, time.min))
+
+    if filters.end_date is not None:
+        query = query.filter(Transaction.created_at < datetime.combine(filters.end_date + timedelta(days=1), time.min))
+
+    return query
 
 
 def _serialize_batch(batch: BatchStock) -> BatchInfo:
@@ -238,6 +285,7 @@ def _build_reagent_info(
 
     return ReagentInfo(
         id=reagent.id,
+        instrument_id=reagent.instrument_id,
         name=reagent.name,
         unit=reagent.unit,
         package_unit=reagent.package_unit,
@@ -840,15 +888,22 @@ def get_reagents(
     work_group_id: Optional[int] = None,
     instrument_id: Optional[int] = None,
     keyword: Optional[str] = None,
+    status: str = Query(default="active"),
     db: Session = Depends(get_db),
 ):
     query = (
         db.query(Reagent)
         .join(Instrument, Reagent.instrument_id == Instrument.id)
         .join(WorkGroup, Instrument.work_group_id == WorkGroup.id)
-        .filter(Reagent.is_archived.is_(False))
         .order_by(WorkGroup.id.asc(), Instrument.id.asc(), Reagent.name.asc(), Reagent.id.asc())
     )
+
+    if status == "active":
+        query = query.filter(Reagent.is_archived.is_(False))
+    elif status == "archived":
+        query = query.filter(Reagent.is_archived.is_(True))
+    elif status != "all":
+        raise HTTPException(status_code=400, detail="状态筛选仅支持 active、archived 或 all")
 
     if work_group_id:
         query = query.filter(Instrument.work_group_id == work_group_id)
@@ -929,6 +984,21 @@ def archive_reagent(reagent_id: int, db: Session = Depends(get_db)):
     return {"success": True, "reagent_id": reagent_id}
 
 
+@router.post("/reagents/{reagent_id}/restore")
+def restore_reagent(reagent_id: int, db: Session = Depends(get_db)):
+    reagent = (
+        db.query(Reagent)
+        .filter(Reagent.id == reagent_id, Reagent.is_archived.is_(True))
+        .first()
+    )
+    if not reagent:
+        raise HTTPException(status_code=404, detail="试剂不存在或未归档")
+
+    reagent.is_archived = False
+    db.commit()
+    return {"success": True, "reagent_id": reagent_id}
+
+
 @router.post("/reagents/archive-zero-stock")
 def archive_zero_stock_reagents(db: Session = Depends(get_db)):
     reagents = db.query(Reagent).filter(Reagent.is_archived.is_(False)).all()
@@ -941,6 +1011,77 @@ def archive_zero_stock_reagents(db: Session = Depends(get_db)):
 
     db.commit()
     return {"success": True, "archived_count": len(archived_ids), "reagent_ids": archived_ids}
+
+
+@router.get("/unit-options", response_model=List[UnitOptionResponse])
+def get_unit_options(
+    scope: Optional[str] = None,
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+):
+    cleaned_scope = _clean_text(scope).lower() or None
+    if cleaned_scope not in {None, "package", "min", "all"}:
+        raise HTTPException(status_code=400, detail="单位类型仅支持 package、min 或 all")
+
+    query = db.query(UnitOption)
+    if not include_inactive:
+        query = query.filter(UnitOption.is_active.is_(True))
+
+    options = query.all()
+    if cleaned_scope and cleaned_scope != "all":
+        options = [item for item in options if _unit_option_matches_scope(item.scope, cleaned_scope)]
+
+    options.sort(key=_unit_option_sort_key)
+    return options
+
+
+@router.post("/unit-options", response_model=UnitOptionResponse, status_code=201)
+def create_unit_option(data: UnitOptionCreate, db: Session = Depends(get_db)):
+    name = _clean_text(data.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="单位名称不能为空")
+
+    existing = db.query(UnitOption).filter(func.lower(UnitOption.name) == name.lower()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"单位“{name}”已存在")
+
+    option = UnitOption(
+        name=name,
+        scope=data.scope,
+        is_active=data.is_active,
+        sort_order=_safe_int(data.sort_order, 100),
+    )
+    db.add(option)
+    db.commit()
+    db.refresh(option)
+    return option
+
+
+@router.put("/unit-options/{option_id}", response_model=UnitOptionResponse)
+def update_unit_option(option_id: int, data: UnitOptionUpdate, db: Session = Depends(get_db)):
+    option = db.query(UnitOption).filter(UnitOption.id == option_id).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="单位选项不存在")
+
+    name = _clean_text(data.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="单位名称不能为空")
+
+    existing = (
+        db.query(UnitOption)
+        .filter(func.lower(UnitOption.name) == name.lower(), UnitOption.id != option_id)
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail=f"单位“{name}”已存在")
+
+    option.name = name
+    option.scope = data.scope
+    option.is_active = bool(data.is_active)
+    option.sort_order = _safe_int(data.sort_order, 100)
+    db.commit()
+    db.refresh(option)
+    return option
 
 
 @router.get("/operators", response_model=List[OperatorResponse])
@@ -958,7 +1099,7 @@ def create_operator(data: OperatorCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail=f"操作人“{name}”已存在")
 
-    operator = Operator(name=name, is_active=True)
+    operator = Operator(name=name, is_active=bool(data.is_active))
     db.add(operator)
     db.commit()
     db.refresh(operator)
@@ -1009,3 +1150,48 @@ def reset_reagent_data(db: Session = Depends(get_db)):
         db.rollback()
 
     return {"success": True}
+
+
+@router.post("/admin/clear-stock")
+def clear_stock(db: Session = Depends(get_db)):
+    transaction_batch_links_cleared = (
+        db.query(Transaction)
+        .filter(Transaction.batch_stock_id.is_not(None))
+        .update({Transaction.batch_stock_id: None}, synchronize_session=False)
+    )
+    cleared_count = db.query(BatchStock).delete(synchronize_session=False)
+    db.commit()
+
+    try:
+        db.execute(text("DELETE FROM sqlite_sequence WHERE name = 'batch_stocks'"))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return {
+        "success": True,
+        "cleared_batch_count": cleared_count,
+        "cleared_transaction_batch_links": transaction_batch_links_cleared,
+    }
+
+
+@router.post("/admin/clear-transactions")
+def clear_transactions(data: ClearTransactionsRequest, db: Session = Depends(get_db)):
+    if data.start_date and data.end_date and data.start_date > data.end_date:
+        raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
+
+    query = db.query(Transaction)
+    query = _apply_transaction_filters(query, data)
+
+    transaction_ids = [item.id for item in query.with_entities(Transaction.id).all()]
+    if not transaction_ids:
+        return {"success": True, "deleted_count": 0}
+
+    deleted_count = (
+        db.query(Transaction)
+        .filter(Transaction.id.in_(transaction_ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    return {"success": True, "deleted_count": deleted_count}

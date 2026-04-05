@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -21,6 +21,7 @@ class BatchInfo(BaseModel):
 
 class ReagentInfo(BaseModel):
     id: int
+    instrument_id: int
     name: str
     unit: str
     package_unit: Optional[str]
@@ -131,3 +132,11 @@ class ReagentWarningSettingsUpdate(BaseModel):
     follow_instrument: bool = True
     warning_days: int = Field(default=30, ge=0)
     warning_stock: int = Field(default=5, ge=0)
+
+
+class ClearTransactionsRequest(BaseModel):
+    work_group_id: Optional[int] = None
+    instrument_id: Optional[int] = None
+    reagent_id: Optional[int] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None

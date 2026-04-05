@@ -1,6 +1,8 @@
 const Utils = {
     operators: [],
     operatorsLoaded: false,
+    unitOptions: [],
+    unitOptionsLoaded: false,
     OPERATOR_KEY: 'reagent_system_last_operator',
 
     async loadOperators(force = false) {
@@ -14,6 +16,51 @@ const Utils = {
         }
         this.operatorsLoaded = true;
         return this.operators;
+    },
+
+    async loadUnitOptions(force = false) {
+        if (this.unitOptionsLoaded && !force) return this.unitOptions;
+        try {
+            this.unitOptions = await API.unitOptions.list();
+        } catch (error) {
+            console.error('Failed to load unit options:', error);
+            this.unitOptions = [];
+        }
+        this.unitOptionsLoaded = true;
+        this.syncUnitDataLists();
+        return this.unitOptions;
+    },
+
+    getUnitOptions(scope = 'all', { includeInactive = false } = {}) {
+        const scopeValue = String(scope || 'all');
+        return this.unitOptions.filter((item) => {
+            if (!includeInactive && !item.is_active) {
+                return false;
+            }
+            if (scopeValue === 'package') {
+                return item.scope === 'package' || item.scope === 'both';
+            }
+            if (scopeValue === 'min') {
+                return item.scope === 'min' || item.scope === 'both';
+            }
+            return true;
+        });
+    },
+
+    getDefaultUnit(scope, fallback) {
+        const items = this.getUnitOptions(scope);
+        return items[0]?.name || fallback;
+    },
+
+    syncUnitDataLists() {
+        const packageList = document.getElementById('package-unit-options');
+        const minList = document.getElementById('min-unit-options');
+        if (packageList) {
+            packageList.innerHTML = this.getUnitOptions('package').map((item) => `<option value="${item.name}"></option>`).join('');
+        }
+        if (minList) {
+            minList.innerHTML = this.getUnitOptions('min').map((item) => `<option value="${item.name}"></option>`).join('');
+        }
     },
 
     isValidOperator(operator) {

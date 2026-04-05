@@ -1,5 +1,5 @@
 from io import BytesIO
-from datetime import date
+from datetime import date, datetime
 
 import models  # noqa: F401
 from fastapi import FastAPI
@@ -12,7 +12,7 @@ from api import barcode, inbound, inventory
 from db import get_db
 from db.base import Base
 from models import BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
-from services import ensure_default_catalog, ensure_default_operators
+from services import ensure_default_catalog, ensure_default_operators, ensure_default_unit_options
 
 
 def build_client(tmp_path):
@@ -24,6 +24,7 @@ def build_client(tmp_path):
     with TestingSessionLocal() as db:
         ensure_default_catalog(db)
         ensure_default_operators(db)
+        ensure_default_unit_options(db)
 
     app = FastAPI()
     app.include_router(barcode.router, prefix="/api")
@@ -435,6 +436,239 @@ def test_batch_update_instrument_warnings_updates_existing_reagents_and_defaults
         assert reagent.warning_days == 18
         assert reagent.warning_stock == 9
         assert reagent.follow_instrument is False
+
+
+def test_reagent_status_filter_and_restore(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    create_response = client.post("/api/reagents", json={
+        "instrument_id": instrument_id,
+        "name": "可恢复归档试剂",
+        "match_mode": "exact",
+        "match_pattern": "RESTORE-REAGENT-001",
+        "manufacturer": "测试厂家",
+        "unit": "瓶",
+        "package_unit": "盒",
+        "package_to_min_qty": 1,
+        "warning_days": 20,
+        "warning_stock": 3,
+    })
+    reagent_id = create_response.json()["id"]
+
+    archive_response = client.post(f"/api/reagents/{reagent_id}/archive")
+    assert archive_response.status_code == 200
+
+    active_response = client.get("/api/reagents?status=active")
+    assert all(item["id"] != reagent_id for item in active_response.json())
+
+    archived_response = client.get("/api/reagents?status=archived")
+    assert any(item["id"] == reagent_id for item in archived_response.json())
+
+    restore_response = client.post(f"/api/reagents/{reagent_id}/restore")
+    assert restore_response.status_code == 200
+
+    active_response = client.get("/api/reagents?status=active")
+    assert any(item["id"] == reagent_id for item in active_response.json())
+
+
+def test_unit_option_crud_and_scope_filter(tmp_path):
+    client, _ = build_client(tmp_path)
+
+    list_response = client.get("/api/unit-options")
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert any(item["name"] == "盒" for item in payload)
+    assert all(item["is_active"] is True for item in payload)
+
+    create_response = client.post("/api/unit-options", json={
+        "name": "板",
+        "scope": "package",
+        "is_active": True,
+        "sort_order": 5,
+    })
+    assert create_response.status_code == 201
+    option_id = create_response.json()["id"]
+
+    package_response = client.get("/api/unit-options?scope=package")
+    assert any(item["name"] == "板" for item in package_response.json())
+
+    update_response = client.put(f"/api/unit-options/{option_id}", json={
+        "name": "板",
+        "scope": "both",
+        "is_active": False,
+        "sort_order": 6,
+    })
+    assert update_response.status_code == 200
+    assert update_response.json()["is_active"] is False
+
+    active_response = client.get("/api/unit-options")
+    assert all(item["id"] != option_id for item in active_response.json())
+
+    all_response = client.get("/api/unit-options?include_inactive=true")
+    assert any(item["id"] == option_id and item["is_active"] is False for item in all_response.json())
+
+
+def test_clear_stock_keeps_reagents_and_parse_logs(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="清库存保留档案试剂",
+            match_mode="exact",
+            match_pattern="CLEAR-STOCK-001",
+            raw_barcode_sample="CLEAR-STOCK-001",
+            manufacturer="测试厂家",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+        )
+        db.add(reagent)
+        db.flush()
+
+        batch = BatchStock(
+            reagent_id=reagent.id,
+            batch_no="CLEAR-STOCK-BATCH",
+            expiry_date=date(2031, 1, 1),
+            quantity=3,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        db.add(batch)
+        db.flush()
+
+        db.add(ParseLog(raw_barcode="CLEAR-STOCK-001", match_result="exact", matched_reagent_id=reagent.id))
+        db.add(Transaction(
+            reagent_id=reagent.id,
+            batch_stock_id=batch.id,
+            type="IN",
+            quantity=3,
+            operator="陈芽",
+            source="manual",
+            raw_barcode="CLEAR-STOCK-001",
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+            remark=None,
+        ))
+        db.commit()
+        reagent_id = reagent.id
+
+    response = client.post("/api/admin/clear-stock")
+    assert response.status_code == 200
+    assert response.json()["cleared_batch_count"] == 1
+
+    with SessionLocal() as db:
+        assert db.query(Reagent).filter(Reagent.id == reagent_id).count() == 1
+        assert db.query(ParseLog).filter(ParseLog.matched_reagent_id == reagent_id).count() == 1
+        assert db.query(BatchStock).count() == 0
+        tx = db.query(Transaction).filter(Transaction.reagent_id == reagent_id).first()
+        assert tx is not None
+        assert tx.batch_stock_id is None
+
+
+def test_clear_transactions_with_filters_only_removes_matching_rows(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    work_group_id, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="筛选清流水试剂",
+            match_mode="exact",
+            match_pattern="CLEAR-TX-001",
+            raw_barcode_sample="CLEAR-TX-001",
+            manufacturer="测试厂家",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+        )
+        db.add(reagent)
+        db.flush()
+
+        batch = BatchStock(
+            reagent_id=reagent.id,
+            batch_no="CLEAR-TX-BATCH",
+            expiry_date=date(2031, 1, 1),
+            quantity=1,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        db.add(batch)
+        db.flush()
+
+        keep_reagent = Reagent(
+            instrument_id=instrument_id,
+            name="保留流水试剂",
+            match_mode="exact",
+            match_pattern="KEEP-TX-001",
+            raw_barcode_sample="KEEP-TX-001",
+            manufacturer="测试厂家",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+        )
+        db.add(keep_reagent)
+        db.flush()
+
+        db.add_all([
+            Transaction(
+                reagent_id=reagent.id,
+                batch_stock_id=batch.id,
+                type="IN",
+                quantity=1,
+                operator="陈芽",
+                source="manual",
+                raw_barcode="CLEAR-TX-001",
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=1,
+                remark=None,
+                created_at=datetime(2026, 4, 1, 9, 0, 0),
+            ),
+            Transaction(
+                reagent_id=keep_reagent.id,
+                batch_stock_id=None,
+                type="OUT",
+                quantity=1,
+                operator="陈芽",
+                source="manual",
+                raw_barcode="KEEP-TX-001",
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=1,
+                remark=None,
+                created_at=datetime(2026, 4, 5, 9, 0, 0),
+            ),
+        ])
+        db.commit()
+        reagent_id = reagent.id
+        keep_reagent_id = keep_reagent.id
+
+    response = client.post("/api/admin/clear-transactions", json={
+        "work_group_id": work_group_id,
+        "instrument_id": instrument_id,
+        "reagent_id": reagent_id,
+        "start_date": "2026-04-01",
+        "end_date": "2026-04-02",
+    })
+    assert response.status_code == 200
+    assert response.json()["deleted_count"] == 1
+
+    with SessionLocal() as db:
+        assert db.query(Transaction).filter(Transaction.reagent_id == reagent_id).count() == 0
+        assert db.query(Transaction).filter(Transaction.reagent_id == keep_reagent_id).count() == 1
+        assert db.query(BatchStock).count() == 1
 
 
 def test_inventory_keeps_zero_stock_reagent_and_marks_empty(tmp_path):

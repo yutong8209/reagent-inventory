@@ -8,7 +8,7 @@ class OperatorBase(BaseModel):
 
 
 class OperatorCreate(OperatorBase):
-    pass
+    is_active: bool = True
 
 
 class OperatorUpdate(OperatorBase):
