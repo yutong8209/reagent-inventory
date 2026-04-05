@@ -1,3 +1,4 @@
+from datetime import date
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -160,15 +161,22 @@ def get_inventory(
                 )
 
                 for batch in batches:
+                    available_min_quantity = (
+                        (batch.quantity * (batch.package_to_min_qty or 1))
+                        + (batch.loose_min_quantity or 0)
+                    )
                     reagent_data.batches.append(
                         BatchInfo(
                             id=batch.id,
                             batch_no=batch.batch_no,
                             expiry_date=batch.expiry_date.isoformat(),
                             quantity=batch.quantity,
+                            loose_min_quantity=batch.loose_min_quantity or 0,
+                            available_min_quantity=available_min_quantity,
                             package_unit=batch.package_unit,
                             min_unit=batch.min_unit,
                             package_to_min_qty=batch.package_to_min_qty,
+                            is_expired=batch.expiry_date < date.today(),
                         )
                     )
 

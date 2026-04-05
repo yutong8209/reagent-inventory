@@ -81,6 +81,28 @@ const API = {
         getStock(reagentId) {
             return API.request(`/stock/${reagentId}`);
         },
+        searchReagents(params = {}) {
+            const searchParams = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && value !== '') {
+                    searchParams.set(key, value);
+                }
+            });
+            const query = searchParams.toString();
+            return API.request(`/outbound/reagents${query ? `?${query}` : ''}`);
+        },
+        preview(data) {
+            return API.request('/outbound/preview', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
+        stockOutBatch(data) {
+            return API.request('/outbound/batch', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
         stockOut(data) {
             return API.request('/outbound', {
                 method: 'POST',

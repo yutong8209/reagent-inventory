@@ -50,6 +50,10 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:14px;line-
 .item-status.warning{background:#fff4dd;color:#9a6500}
 .item-status.success{background:#e8f7ee;color:#18794e}
 .item-status.danger{background:#fdeceb;color:#b42318}
+.outbound-preview-card{padding:16px;background:#fff;border:1px solid #dfe7ef;border-radius:14px}
+.outbound-preview-title{font-weight:700;color:#172c45;margin-bottom:6px}
+.outbound-preview-batches{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.outbound-preview-batch{display:flex;flex-wrap:wrap;gap:12px;padding:10px 12px;background:#f6f8fb;border-radius:10px;color:#4e627a;font-size:13px}
 .candidate-list,.search-result-list,.catalog-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
 .candidate-item,.catalog-item,.search-result-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 14px;background:#fff;border:1px solid #dfe7ef;border-radius:12px}
 .candidate-item,.search-result-item{cursor:pointer}
@@ -68,6 +72,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:14px;line-
 .catalog-summary-meta{margin-top:4px;font-size:13px;color:#45617f}
 .checkbox-row{display:flex;align-items:center;gap:8px;margin-bottom:16px;color:#33445a}
 .confirm-summary{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.confirm-operator-group{position:sticky;top:0;z-index:2;background:#fff;padding-bottom:12px}
 .summary-pill{padding:6px 12px;background:#e8f1ff;color:#2359c4;border-radius:999px;font-size:12px;font-weight:700}
 .confirm-item{padding:12px;background:#fff;border:1px solid #e2e8f0;border-radius:10px}
 .confirm-item-name{font-weight:700;color:#172c45;margin-bottom:4px}

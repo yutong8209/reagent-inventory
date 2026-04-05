@@ -26,10 +26,32 @@ const inventoryPage = {
     },
 
     formatRelation(packageUnit, qty, minUnit) {
-        const p = String(packageUnit || '盒').trim() || '盒';
-        const m = String(minUnit || '瓶').trim() || '瓶';
-        const q = Math.max(parseInt(qty, 10) || 1, 1);
-        return `1${p} = ${q}${m}`;
+        const packageLabel = String(packageUnit || '盒').trim() || '盒';
+        const minLabel = String(minUnit || '瓶').trim() || '瓶';
+        const ratio = Math.max(parseInt(qty, 10) || 1, 1);
+        return `1${packageLabel} = ${ratio}${minLabel}`;
+    },
+
+    formatBatchQuantity(batch, packageUnit, minUnit) {
+        const whole = `${batch.quantity} ${packageUnit}`;
+        if (!batch.loose_min_quantity) {
+            return whole;
+        }
+        return `${whole} + ${batch.loose_min_quantity} ${minUnit}`;
+    },
+
+    formatTotalQuantity(reagent) {
+        const totalPackages = reagent.batches.reduce((sum, batch) => sum + batch.quantity, 0);
+        const totalMin = reagent.batches.reduce((sum, batch) => sum + (batch.available_min_quantity || 0), 0);
+        const ratio = reagent.package_to_min_qty > 0 ? reagent.package_to_min_qty : 1;
+        const loose = totalMin % ratio;
+        const packageUnit = reagent.package_unit || '盒';
+        const minUnit = reagent.unit || '瓶';
+
+        if (!loose) {
+            return `${totalPackages} ${packageUnit}`;
+        }
+        return `${totalPackages} ${packageUnit} + ${loose} ${minUnit}`;
     },
 
     refreshReagentRelationPreview() {
@@ -59,7 +81,10 @@ const inventoryPage = {
         list.innerHTML = this.catalog.length
             ? this.catalog.map((group) => `
                 <div class="catalog-item">
-                    <div><div class="catalog-item-title">${this.escapeHtml(group.name)}</div><div class="catalog-item-meta">仪器 ${group.instruments.length} 台</div></div>
+                    <div>
+                        <div class="catalog-item-title">${this.escapeHtml(group.name)}</div>
+                        <div class="catalog-item-meta">仪器 ${group.instruments.length} 台</div>
+                    </div>
                     <button class="btn btn-secondary" onclick="inventoryPage.editWorkGroup(${group.id})">编辑</button>
                 </div>
             `).join('')
@@ -67,17 +92,18 @@ const inventoryPage = {
     },
 
     renderInstrumentGroupSelect() {
-        const html = ['<option value="">请选择工作组</option>'].concat(
+        const baseOptions = ['<option value="">请选择工作组</option>'].concat(
             this.catalog.map((group) => `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`)
         ).join('');
+
         ['catalog-instrument-work-group', 'catalog-reagent-filter-work-group', 'catalog-reagent-work-group'].forEach((id) => {
             const select = document.getElementById(id);
-            const current = select.value;
+            const currentValue = select.value;
             select.innerHTML = id === 'catalog-reagent-filter-work-group'
-                ? html.replace('请选择工作组', '全部工作组')
-                : html;
-            if ([...select.options].some((option) => option.value === current)) {
-                select.value = current;
+                ? baseOptions.replace('请选择工作组', '全部工作组')
+                : baseOptions;
+            if ([...select.options].some((option) => option.value === currentValue)) {
+                select.value = currentValue;
             }
         });
     },
@@ -91,7 +117,10 @@ const inventoryPage = {
                     ${(group.instruments || []).length
                         ? group.instruments.map((instrument) => `
                             <div class="catalog-item">
-                                <div><div class="catalog-item-title">${this.escapeHtml(instrument.name)}</div><div class="catalog-item-meta">${this.escapeHtml(instrument.model || '未填写型号')}</div></div>
+                                <div>
+                                    <div class="catalog-item-title">${this.escapeHtml(instrument.name)}</div>
+                                    <div class="catalog-item-meta">${this.escapeHtml(instrument.model || '未填写型号')}</div>
+                                </div>
                                 <button class="btn btn-secondary" onclick="inventoryPage.editInstrument(${instrument.id})">编辑</button>
                             </div>
                         `).join('')
@@ -121,27 +150,34 @@ const inventoryPage = {
         if (!workGroupId) return;
         const instruments = await API.inventory.getInstruments(workGroupId).catch(() => []);
         select.innerHTML += instruments.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`).join('');
-        if (selectedValue) select.value = String(selectedValue);
+        if (selectedValue) {
+            select.value = String(selectedValue);
+        }
     },
 
     async loadOperators() {
         this.operators = await API.operators.list();
         const list = document.getElementById('catalog-operator-list');
-        list.innerHTML = this.operators.map((item) => `
-            <div class="catalog-item">
-                <div><div class="catalog-item-title">${this.escapeHtml(item.name)}</div><div class="catalog-item-meta">${item.is_active ? '启用中' : '已停用'}</div></div>
-                <button class="btn btn-secondary" onclick="inventoryPage.editOperator(${item.id})">编辑</button>
-            </div>
-        `).join('') || '<p class="catalog-empty">暂无操作人</p>';
+        list.innerHTML = this.operators.length
+            ? this.operators.map((item) => `
+                <div class="catalog-item">
+                    <div>
+                        <div class="catalog-item-title">${this.escapeHtml(item.name)}</div>
+                        <div class="catalog-item-meta">${item.is_active ? '启用中' : '已停用'}</div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="inventoryPage.editOperator(${item.id})">编辑</button>
+                </div>
+            `).join('')
+            : '<p class="catalog-empty">暂无操作人</p>';
     },
 
     async loadInstruments() {
         const instruments = await API.inventory.getInstruments();
         const select = document.getElementById('inventory-instrument');
-        const current = select.value;
+        const currentValue = select.value;
         select.innerHTML = '<option value="">全部仪器</option>' + instruments.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`).join('');
-        if ([...select.options].some((option) => option.value === current)) {
-            select.value = current;
+        if ([...select.options].some((option) => option.value === currentValue)) {
+            select.value = currentValue;
         }
     },
 
@@ -152,6 +188,7 @@ const inventoryPage = {
             keyword: document.getElementById('catalog-reagent-filter-keyword').value.trim() || null
         };
         this.reagents = await API.reagents.list(params);
+
         const list = document.getElementById('catalog-reagent-list');
         list.innerHTML = this.reagents.length
             ? this.reagents.map((item) => `
@@ -176,6 +213,7 @@ const inventoryPage = {
             resultDiv.innerHTML = '<p class="catalog-empty">暂无库存数据</p>';
             return;
         }
+
         resultDiv.innerHTML = data.map((group) => `
             <div class="tree-group">
                 <div class="tree-group-header">${this.escapeHtml(group.name)}</div>
@@ -185,14 +223,25 @@ const inventoryPage = {
                         ${instrument.reagents.map((reagent) => `
                             <div class="tree-reagent">
                                 <div class="tree-reagent-header">
-                                    <span>${this.escapeHtml(reagent.name)}</span>
-                                    <span>${reagent.batches.reduce((sum, batch) => sum + batch.quantity, 0)} ${this.escapeHtml(reagent.package_unit || '盒')}</span>
+                                    <span>${this.escapeHtml(reagent.name)}${reagent.unit ? `（最小单位：${this.escapeHtml(reagent.unit)}）` : ''}</span>
+                                    <span>
+                                        总库存 ${this.escapeHtml(this.formatTotalQuantity(reagent))}
+                                        ，折合 ${reagent.batches.reduce((sum, batch) => sum + (batch.available_min_quantity || 0), 0)} ${this.escapeHtml(reagent.unit || '瓶')}
+                                    </span>
                                 </div>
                                 <div class="tree-batches">
                                     ${reagent.batches.map((batch) => `
                                         <div class="tree-batch ${Utils.isExpired(batch.expiry_date) ? 'expired' : ''}">
-                                            <span>批号：${this.escapeHtml(batch.batch_no)}</span>
-                                            <span>效期：${this.escapeHtml(batch.expiry_date)} | 数量：${batch.quantity} ${this.escapeHtml(batch.package_unit || reagent.package_unit || '盒')}</span>
+                                            <span>批号：${this.escapeHtml(batch.batch_no)}${batch.is_expired ? ' [已过期]' : ''}</span>
+                                            <span>
+                                                效期：${this.escapeHtml(batch.expiry_date)}
+                                                | 库存：${this.escapeHtml(this.formatBatchQuantity(
+                                                    batch,
+                                                    batch.package_unit || reagent.package_unit || '盒',
+                                                    batch.min_unit || reagent.unit || '瓶'
+                                                ))}
+                                                | 折合 ${batch.available_min_quantity || 0} ${this.escapeHtml(batch.min_unit || reagent.unit || '瓶')}
+                                            </span>
                                         </div>
                                     `).join('')}
                                 </div>
@@ -218,10 +267,14 @@ const inventoryPage = {
 
     async submitWorkGroup() {
         const name = document.getElementById('catalog-work-group-name').value.trim();
-        if (!name) return Utils.showToast('请输入工作组名称', 'warning');
-        this.editingWorkGroupId
-            ? await API.inventory.updateWorkGroup(this.editingWorkGroupId, { name })
-            : await API.inventory.createWorkGroup({ name });
+        if (!name) {
+            return Utils.showToast('请输入工作组名称', 'warning');
+        }
+        if (this.editingWorkGroupId) {
+            await API.inventory.updateWorkGroup(this.editingWorkGroupId, { name });
+        } else {
+            await API.inventory.createWorkGroup({ name });
+        }
         Utils.showToast(this.editingWorkGroupId ? '工作组已更新' : '工作组已新增', 'success');
         this.resetWorkGroupForm();
         await this.loadCatalog();
@@ -256,9 +309,11 @@ const inventoryPage = {
         if (!payload.work_group_id || !payload.name) {
             return Utils.showToast('请填写所属工作组和仪器名称', 'warning');
         }
-        this.editingInstrumentId
-            ? await API.inventory.updateInstrument(this.editingInstrumentId, payload)
-            : await API.inventory.createInstrument(payload);
+        if (this.editingInstrumentId) {
+            await API.inventory.updateInstrument(this.editingInstrumentId, payload);
+        } else {
+            await API.inventory.createInstrument(payload);
+        }
         Utils.showToast(this.editingInstrumentId ? '仪器已更新' : '仪器已新增', 'success');
         this.resetInstrumentForm();
         await this.loadCatalog();
@@ -282,7 +337,9 @@ const inventoryPage = {
     async submitOperator() {
         const name = document.getElementById('catalog-operator-name').value.trim();
         const isActive = document.getElementById('catalog-operator-active').checked;
-        if (!name) return Utils.showToast('请输入操作人姓名', 'warning');
+        if (!name) {
+            return Utils.showToast('请输入操作人姓名', 'warning');
+        }
         if (this.editingOperatorId) {
             await API.operators.update(this.editingOperatorId, { name, is_active: isActive });
         } else {
@@ -356,7 +413,7 @@ const inventoryPage = {
     },
 
     async resetReagentData() {
-        if (!confirm('该操作会清空所有试剂、库存和流水记录，确定继续吗？')) return;
+        if (!confirm('此操作会清空所有试剂、库存和流水记录，确定继续吗？')) return;
         await API.inventory.resetReagentData();
         Utils.showToast('试剂与库存数据已重置', 'success');
         this.resetReagentForm();
