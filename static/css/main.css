@@ -542,6 +542,15 @@ body {
     margin: 16px 0;
 }
 
+.confirm-operator-group {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background-color: #fff;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+}
+
 .summary-pill {
     padding: 6px 12px;
     border-radius: 999px;

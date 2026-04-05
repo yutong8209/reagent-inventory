@@ -929,9 +929,14 @@
         const modal = document.getElementById('inbound-confirm-modal');
         const listEl = document.getElementById('confirm-items-list');
         const summaryEl = document.getElementById('confirm-summary');
+        const operatorSelect = document.getElementById('confirm-operator');
+        const operatorGroup = operatorSelect.closest('.form-group');
         const defaultOperator = source === 'scan'
             ? document.getElementById('scan-operator').value
             : document.getElementById('manual-operator').value;
+
+        operatorGroup.classList.add('confirm-operator-group');
+        summaryEl.parentNode.insertBefore(operatorGroup, summaryEl);
 
         Utils.populateOperatorSelect('confirm-operator', {
             defaultValue: Utils.getValidOperator(defaultOperator) || Utils.getValidOperator(Utils.getLastOperator())
