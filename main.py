@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import SessionLocal, ensure_schema
-from api import barcode, inbound, outbound, inventory
+from api import barcode, inbound, outbound, inventory, reports
 from services import ensure_default_catalog, ensure_default_operators
 
 ensure_schema()
@@ -42,6 +42,7 @@ app.include_router(barcode.router, prefix="/api", tags=["barcode"])
 app.include_router(inbound.router, prefix="/api", tags=["inbound"])
 app.include_router(outbound.router, prefix="/api", tags=["outbound"])
 app.include_router(inventory.router, prefix="/api", tags=["inventory"])
+app.include_router(reports.router, prefix="/api", tags=["reports"])
 
 # Static files - must be last to not override API routes
 app.mount("/", StaticFiles(directory="static", html=True), name="static")

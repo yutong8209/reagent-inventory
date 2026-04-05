@@ -157,6 +157,27 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:14px;line-
 .inventory-batch-code{font-weight:800;color:#17304f}
 .inventory-batch-expiry,.inventory-batch-days{color:#4f647d}
 .inventory-empty{padding:28px;border:1px dashed #ced9e5;border-radius:16px;background:#fbfdff;color:#64788f;text-align:center}
+.reports-shell{display:flex;flex-direction:column;gap:18px}
+.reports-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.reports-panel{display:flex;flex-direction:column;gap:14px}
+.reports-filters{margin-bottom:0}
+.reports-result-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.reports-quick-range-group{min-width:260px}
+.reports-quick-ranges{display:flex;gap:8px;flex-wrap:wrap}
+.reports-quick-btn{padding:10px 14px;border:1px solid #d4deea;border-radius:999px;background:#fff;color:#496078;font-size:13px;font-weight:700;cursor:pointer}
+.reports-quick-btn.active{background:#163a63;border-color:#163a63;color:#fff}
+.reports-combobox{position:relative}
+.reports-combobox-options{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto;padding:8px;background:#fff;border:1px solid #d9e3ef;border-radius:14px;box-shadow:0 18px 36px rgba(18,39,67,.12)}
+.reports-combobox-option{width:100%;padding:10px 12px;border:none;border-radius:10px;background:#fff;color:#20324a;text-align:left;cursor:pointer}
+.reports-combobox-option:hover,.reports-combobox-option.active{background:#eef5ff;color:#174b8f}
+.reports-combobox-empty{padding:12px;color:#6d8096;font-size:13px}
+.reports-table-wrap{overflow:auto;background:#fff;border:1px solid #dfe7ef;border-radius:16px}
+.reports-table{width:100%;border-collapse:collapse;min-width:980px}
+.reports-table th,.reports-table td{padding:12px 14px;border-bottom:1px solid #e8eef5;text-align:left;vertical-align:top}
+.reports-table th{background:#f7fafc;color:#4a617b;font-size:12px;font-weight:800;white-space:nowrap}
+.reports-table td{color:#20324a}
+.reports-table tbody tr:hover{background:#fbfdff}
+.reports-empty-cell{padding:24px!important;text-align:center!important;color:#6d8096!important}
 .danger-section{border-color:#f2c7c2;background:#fff8f7}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:12px 20px;border-radius:12px;color:#fff;background:#243040;z-index:1200}
 .toast.hidden{display:none}
@@ -170,5 +191,6 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:14px;line-
   .header{flex-direction:column;gap:14px}
   .form-group-inline{grid-template-columns:1fr}
   .button-group,.quick-actions{flex-direction:column}
-  .item-card-header,.tree-batch,.inventory-card-header,.inventory-batch-primary,.inventory-batch-secondary,.inventory-overview-head,.inventory-toolbar-actions{flex-direction:column}
+  .item-card-header,.tree-batch,.inventory-card-header,.inventory-batch-primary,.inventory-batch-secondary,.inventory-overview-head,.inventory-toolbar-actions,.reports-header,.reports-result-header{flex-direction:column}
+  .reports-combobox-options{position:static;margin-top:8px}
 }

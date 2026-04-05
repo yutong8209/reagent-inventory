@@ -22,6 +22,7 @@ from .stock import (
     InventoryQuery,
 )
 from .transaction import TransactionResponse
+from .reporting import TransactionListItem, UsageSummaryItem, ReportReagentOption
 from .inventory import (
     WorkGroupInfo,
     InstrumentInfo,
@@ -67,6 +68,9 @@ __all__ = [
     "BatchStockInfo",
     "InventoryQuery",
     "TransactionResponse",
+    "TransactionListItem",
+    "UsageSummaryItem",
+    "ReportReagentOption",
     "WorkGroupInfo",
     "InstrumentInfo",
     "ReagentInfo",

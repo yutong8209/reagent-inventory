@@ -21,6 +21,35 @@ const API = {
         return response.json();
     },
 
+    async download(url, params = {}, filenameFallback = 'export.xlsx') {
+        const query = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== null && value !== undefined && String(value).trim() !== '') {
+                query.set(key, value);
+            }
+        });
+
+        const suffix = query.toString() ? `?${query.toString()}` : '';
+        const response = await fetch(`${API_BASE}${url}${suffix}`);
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const matched = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+        const filename = matched ? decodeURIComponent(matched[1]) : filenameFallback;
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+    },
+
     // Barcode
     barcode: {
         parse(barcode) {
@@ -209,6 +238,45 @@ const API = {
             return API.request('/admin/reset-reagent-data', {
                 method: 'POST'
             });
+        }
+    },
+
+    reports: {
+        listTransactions(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/transactions${suffix}`);
+        },
+        listUsage(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/usage${suffix}`);
+        },
+        listReagents(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/reporting/reagents${suffix}`);
+        },
+        exportTransactions(params = {}) {
+            return API.download('/transactions/export', params, '流水.xlsx');
+        },
+        exportUsage(params = {}) {
+            return API.download('/usage/export', params, '用量.xlsx');
         }
     },
 

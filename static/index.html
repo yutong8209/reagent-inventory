@@ -15,6 +15,7 @@
                 <a href="#" class="nav-link" data-page="inbound">入库</a>
                 <a href="#" class="nav-link" data-page="outbound">出库</a>
                 <a href="#" class="nav-link" data-page="inventory">库存</a>
+                <a href="#" class="nav-link" data-page="reports">流水及用量</a>
                 <a href="#" class="nav-link" data-page="catalog">资料维护</a>
             </nav>
         </header>
@@ -28,6 +29,7 @@
                         <button class="btn btn-primary" onclick="app.navigate('inbound')">试剂入库</button>
                         <button class="btn btn-primary" onclick="app.navigate('outbound')">试剂出库</button>
                         <button class="btn btn-secondary" onclick="app.navigate('inventory')">查看库存</button>
+                        <button class="btn btn-secondary" onclick="app.navigate('reports')">流水及用量</button>
                         <button class="btn btn-secondary" onclick="app.navigate('catalog')">基础资料维护</button>
                     </div>
                 </div>
@@ -330,6 +332,193 @@
                 </div>
             </div>
 
+            <div id="page-reports" class="page">
+                <div class="reports-shell">
+                    <div class="reports-header">
+                        <div>
+                            <h2>流水及用量</h2>
+                            <p class="dashboard-copy">查看最近出入库流水，或按条件统计试剂用量并导出 Excel。</p>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="mode-tabs">
+                            <button class="mode-tab active" data-report-mode="transactions" onclick="reportsPage.switchMode('transactions')">流水</button>
+                            <button class="mode-tab" data-report-mode="usage" onclick="reportsPage.switchMode('usage')">用量</button>
+                        </div>
+                    </div>
+
+                    <div id="reports-transactions-panel" class="reports-panel">
+                        <div class="form-section reports-filters">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="reports-transactions-work-group">工作组</label>
+                                    <select id="reports-transactions-work-group" class="form-select">
+                                        <option value="">全部工作组</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-transactions-instrument">仪器</label>
+                                    <select id="reports-transactions-instrument" class="form-select">
+                                        <option value="">全部仪器</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-transactions-reagent-input">试剂</label>
+                                    <div class="reports-combobox" id="reports-transactions-reagent-combobox">
+                                        <input
+                                            type="text"
+                                            id="reports-transactions-reagent-input"
+                                            class="form-input"
+                                            placeholder="全部试剂 / 输入关键词快速筛选"
+                                            autocomplete="off"
+                                        >
+                                        <div id="reports-transactions-reagent-options" class="reports-combobox-options hidden"></div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-transactions-type">流水类型</label>
+                                    <select id="reports-transactions-type" class="form-select">
+                                        <option value="">全部</option>
+                                        <option value="IN">入库</option>
+                                        <option value="OUT">出库</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group reports-quick-range-group">
+                                    <label>快捷日期</label>
+                                    <div class="reports-quick-ranges">
+                                        <button type="button" class="reports-quick-btn" data-report-scope="transactions" data-range="month">近一月</button>
+                                        <button type="button" class="reports-quick-btn" data-report-scope="transactions" data-range="year">近一年</button>
+                                        <button type="button" class="reports-quick-btn" data-report-scope="transactions" data-range="ytd">本年度</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-transactions-start-date">开始日期</label>
+                                    <input type="date" id="reports-transactions-start-date" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-transactions-end-date">结束日期</label>
+                                    <input type="date" id="reports-transactions-end-date" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-transactions-limit">显示条数</label>
+                                    <select id="reports-transactions-limit" class="form-select">
+                                        <option value="20">20 条</option>
+                                        <option value="30">30 条</option>
+                                        <option value="50">50 条</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="button-group">
+                                <button id="reports-transactions-search-btn" class="btn btn-primary">查询流水</button>
+                                <button id="reports-transactions-export-btn" class="btn btn-secondary">导出流水 Excel</button>
+                            </div>
+                        </div>
+
+                        <div class="reports-result-header">
+                            <h3>最近流水</h3>
+                            <div id="reports-transactions-meta" class="catalog-item-meta"></div>
+                        </div>
+                        <div class="reports-table-wrap">
+                            <table class="reports-table">
+                                <thead>
+                                    <tr>
+                                        <th>流水时间</th>
+                                        <th>类型</th>
+                                        <th>工作组</th>
+                                        <th>仪器</th>
+                                        <th>试剂名称</th>
+                                        <th>批号</th>
+                                        <th>数量(最小单位)</th>
+                                        <th>操作人</th>
+                                        <th>来源</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reports-transactions-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div id="reports-usage-panel" class="reports-panel hidden">
+                        <div class="form-section reports-filters">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="reports-usage-work-group">工作组</label>
+                                    <select id="reports-usage-work-group" class="form-select">
+                                        <option value="">全部工作组</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-usage-instrument">仪器</label>
+                                    <select id="reports-usage-instrument" class="form-select">
+                                        <option value="">全部仪器</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-usage-reagent-input">试剂</label>
+                                    <div class="reports-combobox" id="reports-usage-reagent-combobox">
+                                        <input
+                                            type="text"
+                                            id="reports-usage-reagent-input"
+                                            class="form-input"
+                                            placeholder="全部试剂 / 输入关键词快速筛选"
+                                            autocomplete="off"
+                                        >
+                                        <div id="reports-usage-reagent-options" class="reports-combobox-options hidden"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group reports-quick-range-group">
+                                    <label>快捷日期</label>
+                                    <div class="reports-quick-ranges">
+                                        <button type="button" class="reports-quick-btn" data-report-scope="usage" data-range="month">近一月</button>
+                                        <button type="button" class="reports-quick-btn" data-report-scope="usage" data-range="year">近一年</button>
+                                        <button type="button" class="reports-quick-btn" data-report-scope="usage" data-range="ytd">本年度</button>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-usage-start-date">开始日期</label>
+                                    <input type="date" id="reports-usage-start-date" class="form-input">
+                                </div>
+                                <div class="form-group">
+                                    <label for="reports-usage-end-date">结束日期</label>
+                                    <input type="date" id="reports-usage-end-date" class="form-input">
+                                </div>
+                            </div>
+                            <div class="button-group">
+                                <button id="reports-usage-search-btn" class="btn btn-primary">查询用量</button>
+                                <button id="reports-usage-export-btn" class="btn btn-secondary">导出用量 Excel</button>
+                            </div>
+                        </div>
+
+                        <div class="reports-result-header">
+                            <h3>试剂用量汇总</h3>
+                            <div id="reports-usage-meta" class="catalog-item-meta"></div>
+                        </div>
+                        <div class="reports-table-wrap">
+                            <table class="reports-table">
+                                <thead>
+                                    <tr>
+                                        <th>工作组</th>
+                                        <th>仪器</th>
+                                        <th>试剂名称</th>
+                                        <th>厂家</th>
+                                        <th>开始日期</th>
+                                        <th>结束日期</th>
+                                        <th>用量合计(最小单位)</th>
+                                        <th>最小单位</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reports-usage-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="page-catalog" class="page">
                 <h2>基础资料维护</h2>
                 <div class="form-section"><h3>基础资料维护</h3><div class="catalog-layout catalog-layout-wide"><div class="catalog-panel"><h4>工作组维护</h4><div class="form-group"><label for="catalog-work-group-name">工作组名称</label><input type="text" id="catalog-work-group-name" class="form-input" placeholder="例如：临检组"></div><div class="button-group"><button class="btn btn-primary" onclick="catalogPage.submitWorkGroup()">保存工作组</button><button class="btn btn-secondary" onclick="catalogPage.resetWorkGroupForm()">清空</button></div><div id="catalog-work-group-list" class="catalog-list"></div></div><div class="catalog-panel"><h4>仪器维护</h4><div class="form-group"><label for="catalog-instrument-work-group">所属工作组</label><select id="catalog-instrument-work-group" class="form-select"><option value="">请选择工作组</option></select></div><div class="form-group"><label for="catalog-instrument-name">仪器名称</label><input type="text" id="catalog-instrument-name" class="form-input" placeholder="例如：DXI800"></div><div class="form-group"><label for="catalog-instrument-model">型号</label><input type="text" id="catalog-instrument-model" class="form-input" placeholder="可选"></div><div class="form-row"><div class="form-group"><label for="catalog-instrument-warning-days">默认失效预警天数</label><input type="number" id="catalog-instrument-warning-days" class="form-input" min="0" value="30"></div><div class="form-group"><label for="catalog-instrument-warning-stock">默认库存报警最小单位数</label><input type="number" id="catalog-instrument-warning-stock" class="form-input" min="0" value="5"></div></div><div class="button-group"><button class="btn btn-primary" onclick="catalogPage.submitInstrument()">保存仪器</button><button class="btn btn-secondary" onclick="catalogPage.resetInstrumentForm()">清空</button></div><div id="catalog-instrument-list" class="catalog-list"></div></div><div class="catalog-panel"><h4>操作人维护</h4><div class="form-group"><label for="catalog-operator-name">姓名</label><input type="text" id="catalog-operator-name" class="form-input" placeholder="输入操作人姓名"></div><label class="checkbox-row"><input type="checkbox" id="catalog-operator-active" checked><span>启用状态</span></label><div class="button-group"><button class="btn btn-primary" onclick="catalogPage.submitOperator()">保存操作人</button><button class="btn btn-secondary" onclick="catalogPage.resetOperatorForm()">清空</button></div><div id="catalog-operator-list" class="catalog-list"></div></div></div></div>
@@ -350,6 +539,7 @@
     <script src="/js/pages/inbound.js"></script>
     <script src="/js/pages/outbound.js"></script>
     <script src="/js/pages/inventory.js"></script>
+    <script src="/js/pages/reports.js"></script>
     <script src="/js/pages/catalog.js"></script>
 </body>
 </html>
