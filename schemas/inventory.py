@@ -1,0 +1,72 @@
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class BatchInfo(BaseModel):
+    id: int
+    batch_no: str
+    expiry_date: str
+    quantity: int
+    package_unit: str
+    min_unit: str
+    package_to_min_qty: int
+
+
+class ReagentInfo(BaseModel):
+    id: int
+    name: str
+    unit: str
+    package_unit: Optional[str]
+    package_to_min_qty: int
+    manufacturer: Optional[str]
+    batches: List[BatchInfo]
+
+
+class InstrumentInfo(BaseModel):
+    id: int
+    name: str
+    model: Optional[str]
+    reagents: List[ReagentInfo]
+
+
+class WorkGroupInfo(BaseModel):
+    id: int
+    name: str
+    instruments: List[InstrumentInfo]
+
+
+class InstrumentCatalogItem(BaseModel):
+    id: int
+    work_group_id: int
+    name: str
+    model: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class WorkGroupCatalogItem(BaseModel):
+    id: int
+    name: str
+    instruments: List[InstrumentCatalogItem] = Field(default_factory=list)
+
+
+class WorkGroupCreate(BaseModel):
+    name: str
+
+
+class WorkGroupUpdate(BaseModel):
+    name: str
+
+
+class InstrumentCreate(BaseModel):
+    work_group_id: int
+    name: str
+    model: Optional[str] = None
+
+
+class InstrumentUpdate(BaseModel):
+    work_group_id: int
+    name: str
+    model: Optional[str] = None

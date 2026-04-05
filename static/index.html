@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检验科试剂出入库管理系统</title>
+    <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+    <div id="app">
+        <header class="header">
+            <h1>检验科试剂出入库管理系统</h1>
+            <nav class="nav">
+                <a href="#" class="nav-link active" data-page="dashboard">首页</a>
+                <a href="#" class="nav-link" data-page="inbound">入库</a>
+                <a href="#" class="nav-link" data-page="outbound">出库</a>
+                <a href="#" class="nav-link" data-page="inventory">库存查询</a>
+            </nav>
+        </header>
+
+        <main class="main-content">
+            <div id="page-dashboard" class="page active">
+                <div class="dashboard">
+                    <h2>欢迎使用</h2>
+                    <div class="quick-actions">
+                        <button class="btn btn-primary" onclick="app.navigate('inbound')">试剂入库</button>
+                        <button class="btn btn-primary" onclick="app.navigate('outbound')">试剂出库</button>
+                        <button class="btn btn-secondary" onclick="app.navigate('inventory')">库存查询</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-inbound" class="page">
+                <h2>试剂入库</h2>
+
+                <div class="form-section">
+                    <div class="mode-tabs">
+                        <button class="mode-tab active" data-mode="scan" onclick="inboundPage.switchMode('scan')">扫码入库</button>
+                        <button class="mode-tab" data-mode="manual" onclick="inboundPage.switchMode('manual')">手工入库</button>
+                    </div>
+                </div>
+
+                <div id="inbound-scan-mode">
+                    <div class="form-section">
+                        <div class="form-group">
+                            <label>扫码输入</label>
+                            <input type="text" id="scan-barcode" class="form-input" placeholder="扫描试剂条码后按回车" autocomplete="off">
+                            <button class="btn btn-primary" onclick="inboundPage.addScanItem()">添加</button>
+                        </div>
+                        <p class="hint">系统会自动识别试剂名称、批号、生产日期和有效期。确认包装单位、最小单位、包装关系和数量后，再统一正式入库。</p>
+                    </div>
+
+                    <div id="scan-items-section" class="form-section hidden">
+                        <h3>待入库列表（<span id="scan-item-count">0</span>）</h3>
+                        <div id="scan-items-list" class="scan-items-list"></div>
+
+                        <div class="form-group">
+                            <label>默认操作人（可选）</label>
+                            <select id="scan-operator" class="form-select"></select>
+                        </div>
+
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="inboundPage.clearScanItems()">清空列表</button>
+                            <button class="btn btn-primary" onclick="inboundPage.showScanConfirm()">确认入库</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="inbound-manual-mode" class="hidden">
+                    <div class="form-section">
+                        <h3>手工录入试剂信息</h3>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>工作组 <span class="required">*</span></label>
+                                <select id="manual-work-group" class="form-select" onchange="inboundPage.loadManualInstruments()">
+                                    <option value="">请选择工作组</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>仪器 <span class="required">*</span></label>
+                                <select id="manual-instrument" class="form-select">
+                                    <option value="">请选择仪器</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>试剂名称 <span class="required">*</span></label>
+                            <input type="text" id="manual-reagent-name" class="form-input" placeholder="输入试剂名称">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>批号 <span class="required">*</span></label>
+                                <input type="text" id="manual-batch-no" class="form-input" placeholder="输入批号">
+                            </div>
+                            <div class="form-group">
+                                <label>有效期 <span class="required">*</span></label>
+                                <input type="date" id="manual-expiry-date" class="form-input">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>包装单位 <span class="required">*</span></label>
+                                <input type="text" id="manual-package-unit" class="form-input" list="package-unit-options" value="盒" placeholder="可选择或手动输入" oninput="inboundPage.refreshManualRelationPreview()">
+                            </div>
+                            <div class="form-group">
+                                <label>最小单位 <span class="required">*</span></label>
+                                <input type="text" id="manual-min-unit" class="form-input" list="min-unit-options" value="瓶" placeholder="可选择或手动输入" oninput="inboundPage.refreshManualRelationPreview()">
+                            </div>
+                            <div class="form-group">
+                                <label>包装关系 <span class="required">*</span></label>
+                                <input type="number" id="manual-package-to-min-qty" class="form-input" min="1" value="1" placeholder="1包装 = ? 最小单位" oninput="inboundPage.refreshManualRelationPreview()">
+                                <div id="manual-package-relation-preview" class="field-hint"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>入库数量 <span class="required">*</span></label>
+                                <input type="number" id="manual-quantity" class="form-input" min="1" value="1" placeholder="包装数量">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>默认操作人（可选）</label>
+                            <select id="manual-operator" class="form-select"></select>
+                        </div>
+
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="inboundPage.clearManualForm(true, true)">清空</button>
+                            <button class="btn btn-primary" onclick="inboundPage.addManualItem()">添加到列表</button>
+                        </div>
+                    </div>
+
+                    <div id="manual-items-section" class="form-section hidden">
+                        <h3>待入库列表（<span id="manual-item-count">0</span>）</h3>
+                        <div id="manual-items-list" class="scan-items-list"></div>
+
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="inboundPage.clearManualItems()">清空列表</button>
+                            <button class="btn btn-primary" onclick="inboundPage.showManualConfirm()">确认入库</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="inbound-confirm-modal" class="modal hidden">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>入库确认</h3>
+                            <button class="modal-close" onclick="inboundPage.closeConfirmModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p>请确认以下试剂信息，入库后将生成库存批次和流水记录。</p>
+                            <div id="confirm-summary" class="confirm-summary"></div>
+                            <div id="confirm-items-list" class="confirm-list"></div>
+
+                            <div class="form-group">
+                                <label>操作人 <span class="required">*</span></label>
+                                <select id="confirm-operator" class="form-select"></select>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="inboundPage.closeConfirmModal()">取消</button>
+                            <button id="confirm-submit-btn" class="btn btn-primary" onclick="inboundPage.submitInbound()">正式入库</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="new-reagent-modal" class="modal hidden">
+                    <div class="modal-content modal-wide">
+                        <div class="modal-header">
+                            <h3>扫码建档</h3>
+                            <button class="modal-close" onclick="inboundPage.closeNewReagentModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p>当前条码未识别。请补全该条码对应的试剂资料，保存后会自动加入待入库列表。</p>
+
+                            <div class="form-group">
+                                <label>扫描条码</label>
+                                <input type="text" id="new-reagent-barcode" class="form-input" readonly>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>试剂编码</label>
+                                    <input type="text" id="new-reagent-product-code" class="form-input" placeholder="优先自动识别，可手动修正">
+                                </div>
+                                <div class="form-group">
+                                    <label>生产日期</label>
+                                    <input type="date" id="new-reagent-production-date" class="form-input">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>工作组 <span class="required">*</span></label>
+                                    <select id="new-reagent-work-group" class="form-select" onchange="inboundPage.loadNewReagentInstruments()">
+                                        <option value="">请选择工作组</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>仪器 <span class="required">*</span></label>
+                                    <select id="new-reagent-instrument" class="form-select">
+                                        <option value="">请选择仪器</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>试剂名称 <span class="required">*</span></label>
+                                    <input type="text" id="new-reagent-name" class="form-input" placeholder="输入试剂名称">
+                                </div>
+                                <div class="form-group">
+                                    <label>生产厂家</label>
+                                    <input type="text" id="new-reagent-manufacturer" class="form-input" placeholder="可选">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>批号 <span class="required">*</span></label>
+                                    <input type="text" id="new-reagent-batch-no" class="form-input" placeholder="输入批号">
+                                </div>
+                                <div class="form-group">
+                                    <label>有效期 <span class="required">*</span></label>
+                                    <input type="date" id="new-reagent-expiry-date" class="form-input">
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>包装单位 <span class="required">*</span></label>
+                                    <input type="text" id="new-reagent-package-unit" class="form-input" list="package-unit-options" value="盒" placeholder="可选择或手动输入" oninput="inboundPage.refreshNewReagentRelationPreview()">
+                                </div>
+                                <div class="form-group">
+                                    <label>最小单位 <span class="required">*</span></label>
+                                    <input type="text" id="new-reagent-min-unit" class="form-input" list="min-unit-options" value="瓶" placeholder="可选择或手动输入" oninput="inboundPage.refreshNewReagentRelationPreview()">
+                                </div>
+                                <div class="form-group">
+                                    <label>包装关系 <span class="required">*</span></label>
+                                    <input type="number" id="new-reagent-package-to-min-qty" class="form-input" min="1" value="1" placeholder="1包装 = ? 最小单位" oninput="inboundPage.refreshNewReagentRelationPreview()">
+                                    <div id="new-reagent-package-relation-preview" class="field-hint"></div>
+                                </div>
+                                <div class="form-group">
+                                    <label>入库数量 <span class="required">*</span></label>
+                                    <input type="number" id="new-reagent-quantity" class="form-input" min="1" value="1">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="inboundPage.closeNewReagentModal()">取消</button>
+                            <button id="new-reagent-submit-btn" class="btn btn-primary" onclick="inboundPage.submitNewReagentFromScan()">保存并加入列表</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-outbound" class="page">
+                <h2>试剂出库</h2>
+                <div class="form-section">
+                    <div class="form-group">
+                        <label>扫码输入</label>
+                        <input type="text" id="outbound-barcode" class="form-input" placeholder="扫描试剂条码" autocomplete="off">
+                        <button class="btn btn-primary" onclick="outboundPage.parseBarcode()">识别</button>
+                    </div>
+                </div>
+
+                <div id="outbound-result" class="result-section hidden">
+                    <div class="form-section">
+                        <h3>选择批次</h3>
+                        <div id="outbound-batch-list"></div>
+                    </div>
+
+                    <div id="outbound-form" class="form-section hidden">
+                        <h3>出库信息</h3>
+                        <div class="form-group">
+                            <label>选中批次</label>
+                            <div id="outbound-selected-batch" class="display-field"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>出库数量 <span class="required">*</span></label>
+                            <input type="number" id="outbound-quantity" class="form-input" min="1" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label>操作人 <span class="required">*</span></label>
+                            <input type="text" id="outbound-operator" class="form-input" placeholder="输入操作人姓名">
+                        </div>
+                        <button class="btn btn-primary" onclick="outboundPage.submitOutbound()">确认出库</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="page-inventory" class="page">
+                <h2>库存查询</h2>
+                <div class="form-section">
+                    <h3>基础资料维护</h3>
+                    <div class="catalog-layout">
+                        <div class="catalog-panel">
+                            <h4>工作组维护</h4>
+                            <div class="form-group">
+                                <label>工作组名称 <span class="required">*</span></label>
+                                <input type="text" id="catalog-work-group-name" class="form-input" placeholder="例如：临检组">
+                            </div>
+                            <div class="button-group">
+                                <button class="btn btn-primary" onclick="inventoryPage.submitWorkGroup()">保存工作组</button>
+                                <button class="btn btn-secondary" onclick="inventoryPage.resetWorkGroupForm()">清空</button>
+                            </div>
+                            <div id="catalog-work-group-list" class="catalog-list"></div>
+                        </div>
+
+                        <div class="catalog-panel">
+                            <h4>仪器维护</h4>
+                            <div class="form-group">
+                                <label>所属工作组 <span class="required">*</span></label>
+                                <select id="catalog-instrument-work-group" class="form-select">
+                                    <option value="">请选择工作组</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>仪器名称 <span class="required">*</span></label>
+                                <input type="text" id="catalog-instrument-name" class="form-input" placeholder="例如：血球仪">
+                            </div>
+                            <div class="form-group">
+                                <label>型号</label>
+                                <input type="text" id="catalog-instrument-model" class="form-input" placeholder="可选，例如：DXI800">
+                            </div>
+                            <div class="button-group">
+                                <button class="btn btn-primary" onclick="inventoryPage.submitInstrument()">保存仪器</button>
+                                <button class="btn btn-secondary" onclick="inventoryPage.resetInstrumentForm()">清空</button>
+                            </div>
+                            <div id="catalog-instrument-list" class="catalog-list"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <div class="form-group">
+                        <label>筛选仪器</label>
+                        <select id="inventory-instrument" class="form-select" onchange="inventoryPage.loadInventory()">
+                            <option value="">全部仪器</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-secondary" onclick="inventoryPage.loadInventory()">刷新</button>
+                </div>
+
+                <div id="inventory-result" class="inventory-tree"></div>
+            </div>
+        </main>
+
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <datalist id="package-unit-options">
+        <option value="盒"></option>
+        <option value="瓶"></option>
+        <option value="支"></option>
+        <option value="袋"></option>
+        <option value="个"></option>
+        <option value="套"></option>
+    </datalist>
+    <datalist id="min-unit-options">
+        <option value="瓶"></option>
+        <option value="支"></option>
+        <option value="人份"></option>
+        <option value="测试"></option>
+        <option value="ml"></option>
+        <option value="片"></option>
+    </datalist>
+
+    <script src="/js/utils.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/main.js"></script>
+    <script src="/js/pages/inbound.js"></script>
+    <script src="/js/pages/outbound.js"></script>
+    <script src="/js/pages/inventory.js"></script>
+</body>
+</html>
