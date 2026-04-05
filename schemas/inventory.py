@@ -36,6 +36,21 @@ class WorkGroupInfo(BaseModel):
     instruments: List[InstrumentInfo]
 
 
+class ReagentCatalogItem(BaseModel):
+    id: int
+    instrument_id: int
+    instrument_name: str
+    work_group_id: int
+    work_group_name: str
+    name: str
+    manufacturer: Optional[str] = None
+    unit: str
+    package_unit: str
+    package_to_min_qty: int
+    warning_days: int
+    warning_stock: int
+
+
 class InstrumentCatalogItem(BaseModel):
     id: int
     work_group_id: int

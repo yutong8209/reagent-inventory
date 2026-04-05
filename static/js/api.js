@@ -41,6 +41,22 @@ const API = {
         },
         get(id) {
             return API.request(`/reagents/${id}`);
+        },
+        list(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/reagents${suffix}`);
+        },
+        update(id, data) {
+            return API.request(`/reagents/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
         }
     },
 
@@ -109,6 +125,29 @@ const API = {
         },
         updateInstrument(id, data) {
             return API.request(`/instruments/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        },
+        resetReagentData() {
+            return API.request('/admin/reset-reagent-data', {
+                method: 'POST'
+            });
+        }
+    },
+
+    operators: {
+        list() {
+            return API.request('/operators');
+        },
+        create(data) {
+            return API.request('/operators', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
+        update(id, data) {
+            return API.request(`/operators/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data)
             });

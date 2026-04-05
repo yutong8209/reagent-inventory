@@ -1,88 +1,66 @@
-﻿const inboundPage = {
+const inboundPage = {
     currentMode: 'scan',
+    manualMode: 'browse',
     scanItems: [],
     manualItems: [],
     pendingItems: [],
     pendingSource: null,
-    initialized: false,
-    isSubmitting: false,
+    selectedManualReagent: null,
+    manualSearchResults: [],
     candidateContext: null,
     newReagentContext: null,
+    initialized: false,
+    isSubmitting: false,
     defaultPackageUnit: '盒',
     defaultMinUnit: '瓶',
 
-    init() {
-        Utils.populateOperatorSelect('scan-operator', {
-            allowEmpty: true,
-            emptyLabel: '可先选择默认操作人'
-        });
-        Utils.populateOperatorSelect('manual-operator', {
-            allowEmpty: true,
-            emptyLabel: '可先选择默认操作人'
-        });
-        Utils.populateOperatorSelect('confirm-operator');
-
-        const lastOperator = Utils.getValidOperator(Utils.getLastOperator());
-        if (lastOperator) {
-            this.syncOperator(lastOperator);
-        }
-
+    async init() {
         if (!this.initialized) {
             this.initialized = true;
             this.setupEventListeners();
         }
 
-        this.refreshManualRelationPreview();
-        this.refreshNewReagentRelationPreview();
+        await Utils.loadOperators();
+        await Promise.all([
+            Utils.populateOperatorSelect('scan-operator', { allowEmpty: true, emptyLabel: '可先选择默认操作人', defaultValue: Utils.getLastOperator() }),
+            Utils.populateOperatorSelect('manual-operator', { allowEmpty: true, emptyLabel: '可先选择默认操作人', defaultValue: Utils.getLastOperator() }),
+            Utils.populateOperatorSelect('confirm-operator', { allowEmpty: false, defaultValue: Utils.getLastOperator() })
+        ]);
+
         this.switchMode(this.currentMode);
+        this.refreshManualCreateRelationPreview();
+        this.refreshNewReagentRelationPreview();
         this.renderScanItems();
         this.renderManualItems();
     },
 
     setupEventListeners() {
-        const scanInput = document.getElementById('scan-barcode');
-        scanInput.addEventListener('keydown', (event) => {
+        this.el('scan-barcode').addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
                 this.addScanItem();
             }
         });
 
-        const confirmModal = document.getElementById('inbound-confirm-modal');
-        confirmModal.addEventListener('click', (event) => {
-            if (event.target === confirmModal) {
-                this.closeConfirmModal();
-            }
-        });
+        this.el('manual-search-keyword').addEventListener('input', Utils.debounce(() => {
+            this.searchManualReagents();
+        }, 250));
 
-        const newReagentModal = document.getElementById('new-reagent-modal');
-        newReagentModal.addEventListener('click', (event) => {
-            if (event.target === newReagentModal) {
-                this.closeNewReagentModal();
-            }
+        ['inbound-confirm-modal', 'new-reagent-modal'].forEach((id) => {
+            this.el(id).addEventListener('click', (event) => {
+                if (event.target.id === id) {
+                    if (id === 'inbound-confirm-modal') {
+                        this.closeConfirmModal();
+                    } else {
+                        this.closeNewReagentModal();
+                    }
+                }
+            });
         });
     },
 
-    switchMode(mode) {
-        this.currentMode = mode;
-
-        document.querySelectorAll('.mode-tab').forEach((tab) => {
-            tab.classList.toggle('active', tab.dataset.mode === mode);
-        });
-
-        document.getElementById('inbound-scan-mode').classList.toggle('hidden', mode !== 'scan');
-        document.getElementById('inbound-manual-mode').classList.toggle('hidden', mode !== 'manual');
-
-        if (mode === 'scan') {
-            document.getElementById('scan-barcode').focus();
-            return;
-        }
-
-        this.loadManualWorkGroups();
-    },
-
-    createItemId() {
-        return Date.now() + Math.floor(Math.random() * 1000);
+    el(id) {
+        return document.getElementById(id);
     },
 
     escapeHtml(value) {
@@ -94,38 +72,6 @@
             .replace(/'/g, '&#39;');
     },
 
-    normalizeDate(value) {
-        return value ? Utils.formatDate(value) : '';
-    },
-
-    normalizeProductCode(value) {
-        const cleaned = String(value || '').trim().replace(/\s+/g, '');
-        if (!cleaned) {
-            return '';
-        }
-
-        if (cleaned.startsWith('01') && cleaned.length > 14) {
-            return cleaned.slice(2);
-        }
-
-        return cleaned;
-    },
-
-    buildMatchPattern(barcode, productCode) {
-        const normalizedCode = this.normalizeProductCode(productCode);
-        if (!normalizedCode) {
-            return {
-                matchMode: 'exact',
-                matchPattern: barcode
-            };
-        }
-
-        return {
-            matchMode: 'prefix',
-            matchPattern: normalizedCode.startsWith('01') ? normalizedCode : `01${normalizedCode}`
-        };
-    },
-
     normalizeText(value, fallback = '') {
         const cleaned = String(value ?? '').trim();
         return cleaned || fallback;
@@ -133,70 +79,264 @@
 
     normalizePositiveInteger(value, fallback = 1) {
         const parsed = parseInt(value, 10);
-        if (Number.isNaN(parsed) || parsed <= 0) {
-            return fallback;
-        }
-        return parsed;
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
     },
 
-    formatPackageRelation(packageUnit, packageToMinQty, minUnit) {
-        const finalPackageUnit = this.normalizeText(packageUnit, this.defaultPackageUnit);
-        const finalMinUnit = this.normalizeText(minUnit, this.defaultMinUnit);
-        const finalQty = this.normalizePositiveInteger(packageToMinQty, 1);
-        return `1${finalPackageUnit} = ${finalQty}${finalMinUnit}`;
+    normalizeOptionalInteger(value, fallback = 0) {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
     },
 
-    refreshRelationPreview(previewId, packageUnitId, minUnitId, packageQtyId) {
-        const preview = document.getElementById(previewId);
-        if (!preview) {
-            return;
-        }
-
-        const packageUnit = document.getElementById(packageUnitId)?.value;
-        const minUnit = document.getElementById(minUnitId)?.value;
-        const packageToMinQty = document.getElementById(packageQtyId)?.value;
-        preview.textContent = this.formatPackageRelation(packageUnit, packageToMinQty, minUnit);
+    normalizeDate(value) {
+        return value ? Utils.formatDate(value) : '';
     },
 
-    refreshManualRelationPreview() {
-        this.refreshRelationPreview(
-            'manual-package-relation-preview',
-            'manual-package-unit',
-            'manual-min-unit',
-            'manual-package-to-min-qty'
-        );
+    createItemId() {
+        return Date.now() + Math.floor(Math.random() * 1000);
+    },
+
+    formatRelation(packageUnit, qty, minUnit) {
+        return `1${this.normalizeText(packageUnit, this.defaultPackageUnit)} = ${this.normalizePositiveInteger(qty, 1)}${this.normalizeText(minUnit, this.defaultMinUnit)}`;
+    },
+
+    refreshRelationPreview(previewId, packageUnitId, minUnitId, qtyId) {
+        const preview = this.el(previewId);
+        if (!preview) return;
+        preview.textContent = this.formatRelation(this.el(packageUnitId).value, this.el(qtyId).value, this.el(minUnitId).value);
+    },
+
+    refreshManualCreateRelationPreview() {
+        this.refreshRelationPreview('manual-create-package-relation-preview', 'manual-create-package-unit', 'manual-create-min-unit', 'manual-create-package-to-min-qty');
     },
 
     refreshNewReagentRelationPreview() {
-        this.refreshRelationPreview(
-            'new-reagent-package-relation-preview',
-            'new-reagent-package-unit',
-            'new-reagent-min-unit',
-            'new-reagent-package-to-min-qty'
-        );
+        this.refreshRelationPreview('new-reagent-package-relation-preview', 'new-reagent-package-unit', 'new-reagent-min-unit', 'new-reagent-package-to-min-qty');
     },
+
+    syncOperator(operator) {
+        const normalized = Utils.getValidOperator(operator);
+        ['scan-operator', 'manual-operator', 'confirm-operator'].forEach((id) => {
+            const select = this.el(id);
+            if (select && normalized) {
+                select.value = normalized;
+            }
+        });
+    },
+
+    switchMode(mode) {
+        this.currentMode = mode;
+        document.querySelectorAll('.mode-tab[data-mode]').forEach((tab) => {
+            tab.classList.toggle('active', tab.dataset.mode === mode);
+        });
+        this.el('inbound-scan-mode').classList.toggle('hidden', mode !== 'scan');
+        this.el('inbound-manual-mode').classList.toggle('hidden', mode !== 'manual');
+        if (mode === 'manual') {
+            this.loadManualBaseOptions();
+        } else {
+            this.el('scan-barcode').focus();
+        }
+    },
+
+    switchManualMode(mode) {
+        this.manualMode = mode;
+        document.querySelectorAll('.mode-tab[data-manual-mode]').forEach((tab) => {
+            tab.classList.toggle('active', tab.dataset.manualMode === mode);
+        });
+        this.el('manual-browse-panel').classList.toggle('hidden', mode !== 'browse');
+        this.el('manual-search-panel').classList.toggle('hidden', mode !== 'search');
+        this.el('manual-existing-mode').classList.toggle('hidden', mode === 'create');
+        this.el('manual-create-mode').classList.toggle('hidden', mode !== 'create');
+        if (mode === 'create') {
+            this.clearManualSelection();
+        } else {
+            this.loadManualBaseOptions();
+        }
+    },
+
+    async loadManualBaseOptions() {
+        const groups = await API.inventory.getWorkGroups().catch(() => []);
+        this.fillSimpleSelect('manual-browse-work-group', groups, '请选择工作组');
+        this.fillSimpleSelect('manual-create-work-group', groups, '请选择工作组');
+    },
+
+    fillSimpleSelect(id, items, placeholder, selectedValue = '') {
+        const select = this.el(id);
+        if (!select) return;
+        const current = selectedValue || select.value;
+        const options = [`<option value="">${placeholder}</option>`].concat(
+            items.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`)
+        );
+        select.innerHTML = options.join('');
+        if (current && items.some((item) => String(item.id) === String(current))) {
+            select.value = String(current);
+        }
+    },
+
+    async loadInstrumentsForSelect(selectId, workGroupId, placeholder, selectedValue = '') {
+        const select = this.el(selectId);
+        select.innerHTML = `<option value="">${placeholder}</option>`;
+        if (!workGroupId) return;
+        const items = await API.inventory.getInstruments(workGroupId).catch(() => []);
+        this.fillSimpleSelect(selectId, items, placeholder, selectedValue);
+    },
+
+    async loadManualBrowseInstruments() {
+        await this.loadInstrumentsForSelect('manual-browse-instrument', this.el('manual-browse-work-group').value, '请选择仪器');
+        this.el('manual-browse-reagent').innerHTML = '<option value="">请选择试剂</option>';
+        this.clearManualSelection();
+    },
+
+    async loadManualBrowseReagents(selectedValue = '') {
+        const instrumentId = this.el('manual-browse-instrument').value;
+        const select = this.el('manual-browse-reagent');
+        select.innerHTML = '<option value="">请选择试剂</option>';
+        this.clearManualSelection();
+        if (!instrumentId) return;
+        const reagents = await API.reagents.list({ instrument_id: instrumentId }).catch(() => []);
+        select.innerHTML = ['<option value="">请选择试剂</option>'].concat(
+            reagents.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`)
+        ).join('');
+        if (selectedValue) {
+            select.value = String(selectedValue);
+            this.selectManualBrowseReagent();
+        }
+    },
+
+    async loadManualCreateInstruments() {
+        await this.loadInstrumentsForSelect('manual-create-instrument', this.el('manual-create-work-group').value, '请选择仪器');
+    },
+
+    async searchManualReagents() {
+        const keyword = this.normalizeText(this.el('manual-search-keyword').value);
+        const resultEl = this.el('manual-search-results');
+        if (!keyword) {
+            this.manualSearchResults = [];
+            resultEl.innerHTML = '';
+            return;
+        }
+
+        try {
+            this.manualSearchResults = await API.reagents.list({ keyword });
+            if (this.manualSearchResults.length === 0) {
+                resultEl.innerHTML = '<p class="catalog-empty">没有找到匹配的试剂档案</p>';
+                return;
+            }
+            resultEl.innerHTML = this.manualSearchResults.map((item) => `
+                <button type="button" class="search-result-item" onclick="inboundPage.selectManualSearchReagent(${item.id})">
+                    <strong>${this.escapeHtml(item.name)}</strong>
+                    <span>${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</span>
+                    <span>${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</span>
+                </button>
+            `).join('');
+        } catch (error) {
+            resultEl.innerHTML = `<p class="catalog-empty">查询失败：${this.escapeHtml(error.message)}</p>`;
+        }
+    },
+
+    selectManualBrowseReagent() {
+        const reagentId = parseInt(this.el('manual-browse-reagent').value, 10);
+        if (!reagentId) {
+            this.clearManualSelection();
+            return;
+        }
+        API.reagents.get(reagentId).then((reagent) => {
+            this.selectedManualReagent = {
+                id: reagent.id,
+                name: reagent.name,
+                manufacturer: reagent.manufacturer,
+                unit: reagent.unit,
+                package_unit: reagent.package_unit,
+                package_to_min_qty: reagent.package_to_min_qty,
+                instrument_id: reagent.instrument_id,
+                instrument_name: this.el('manual-browse-instrument').selectedOptions[0]?.textContent || '',
+                work_group_id: parseInt(this.el('manual-browse-work-group').value, 10) || null,
+                work_group_name: this.el('manual-browse-work-group').selectedOptions[0]?.textContent || ''
+            };
+            this.renderManualSelection();
+        }).catch((error) => Utils.showToast(`加载试剂档案失败：${error.message}`, 'error'));
+    },
+
+    selectManualSearchReagent(reagentId) {
+        const item = this.manualSearchResults.find((current) => current.id === reagentId);
+        if (!item) return;
+        this.selectedManualReagent = {
+            id: item.id,
+            name: item.name,
+            manufacturer: item.manufacturer,
+            unit: item.unit,
+            package_unit: item.package_unit,
+            package_to_min_qty: item.package_to_min_qty,
+            instrument_id: item.instrument_id,
+            instrument_name: item.instrument_name,
+            work_group_id: item.work_group_id,
+            work_group_name: item.work_group_name
+        };
+        this.renderManualSelection();
+    },
+
+    clearManualSelection() {
+        this.selectedManualReagent = null;
+        const summary = this.el('manual-selected-reagent');
+        summary.classList.add('hidden');
+        summary.innerHTML = '';
+    },
+
+    renderManualSelection() {
+        const summary = this.el('manual-selected-reagent');
+        if (!this.selectedManualReagent) {
+            summary.classList.add('hidden');
+            summary.innerHTML = '';
+            return;
+        }
+        const item = this.selectedManualReagent;
+        summary.classList.remove('hidden');
+        summary.innerHTML = `
+            <div class="catalog-summary-title">${this.escapeHtml(item.name)}</div>
+            <div class="catalog-summary-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
+            <div class="catalog-summary-meta">${this.escapeHtml(item.manufacturer || '未填写厂家')}</div>
+            <div class="catalog-summary-meta">规格：${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</div>
+        `;
+    },
+
+    buildMatchPattern(barcode, productCode) {
+        const code = this.normalizeText(productCode).replace(/\s+/g, '');
+        if (!code) return { match_mode: 'exact', match_pattern: barcode };
+        return { match_mode: 'prefix', match_pattern: code.startsWith('01') ? code : `01${code}` };
+    },
+
+    buildScanItem(result, barcode, candidate = null) {
+        const picked = candidate || {};
+        return {
+            id: this.createItemId(),
+            source: 'scan',
+            manualEntryMode: null,
+            barcode,
+            reagentId: picked.id ?? result.reagent_id,
+            reagentName: picked.name ?? result.reagent_name ?? '未识别试剂',
+            workGroupId: picked.work_group_id ?? result.work_group_id ?? null,
+            workGroupName: picked.work_group_name ?? result.work_group_name ?? '',
+            instrumentId: picked.instrument_id ?? result.instrument_id ?? null,
+            instrumentName: picked.instrument_name ?? result.instrument_name ?? '',
+            manufacturer: picked.manufacturer ?? null,
+            productCode: result.extracted_product_code || '',
+            productionDate: this.normalizeDate(result.extracted_production_date),
+            batchNo: this.normalizeText(result.extracted_batch_no),
+            expiryDate: this.normalizeDate(result.extracted_expiry_date),
+            packageUnit: this.normalizeText(picked.package_unit ?? result.package_unit, this.defaultPackageUnit),
+            minUnit: this.normalizeText(picked.min_unit ?? result.min_unit, this.defaultMinUnit),
+            packageToMinQty: this.normalizePositiveInteger(picked.package_to_min_qty ?? result.package_to_min_qty, 1),
+            quantity: 1,
+            matchType: result.match_type,
+            confidence: result.confidence || 'high'
+        };
+    },
+
     buildScanMergeKey(item) {
-        return [
-            item.reagentId || '',
-            item.barcode || '',
-            item.batchNo || '',
-            item.expiryDate || '',
-            item.packageUnit || '',
-            item.minUnit || '',
-            item.packageToMinQty || 1
-        ].join('|');
+        return [item.reagentId || '', item.batchNo, item.expiryDate, item.packageUnit, item.minUnit, item.packageToMinQty].join('|');
     },
 
     buildManualMergeKey(item) {
-        return [
-            item.instrumentId || '',
-            item.reagentName || '',
-            item.batchNo || '',
-            item.expiryDate || '',
-            item.packageUnit || '',
-            item.minUnit || '',
-            item.packageToMinQty || 1
-        ].join('|');
+        return [item.reagentId || `${item.instrumentId}:${item.reagentName}`, item.batchNo, item.expiryDate, item.packageUnit, item.minUnit, item.packageToMinQty].join('|');
     },
 
     appendOrMerge(list, item, keyBuilder) {
@@ -206,141 +346,54 @@
             existing.quantity += item.quantity;
             return true;
         }
-
         list.push(item);
         return false;
     },
 
-    getItemStatus(item) {
-        if (!item.batchNo || !item.expiryDate || !item.packageUnit || !item.minUnit || !item.quantity || !item.packageToMinQty) {
-            return { text: '待补全', className: 'warning' };
-        }
-
-        if (Utils.isExpired(item.expiryDate)) {
-            return { text: '已过期', className: 'danger' };
-        }
-
-        if (item.matchType === 'created') {
-            return { text: '已建档', className: 'info' };
-        }
-
-        if (item.matchType === 'prefix') {
-            return { text: '前缀匹配', className: 'info' };
-        }
-
-        if (item.source === 'manual') {
-            return { text: '手工录入', className: 'info' };
-        }
-
-        return { text: '可入库', className: 'success' };
-    },
-
-    calculateTotalMinUnits(items) {
-        return items.reduce((sum, item) => {
-            return sum + (this.normalizePositiveInteger(item.quantity, 0) * this.normalizePositiveInteger(item.packageToMinQty, 1));
-        }, 0);
-    },
-
-    buildScanItem(result, barcode, candidate = null) {
-        const chosen = candidate || {};
-        return {
-            id: this.createItemId(),
-            source: 'scan',
-            barcode,
-            reagentId: chosen.id ?? result.reagent_id,
-            reagentName: chosen.name ?? result.reagent_name ?? '未识别试剂',
-            workGroupId: chosen.work_group_id ?? result.work_group_id ?? null,
-            workGroupName: chosen.work_group_name ?? result.work_group_name ?? '未配置工作组',
-            instrumentId: chosen.instrument_id ?? result.instrument_id ?? null,
-            instrumentName: chosen.instrument_name ?? result.instrument_name ?? '未配置仪器',
-            productCode: result.extracted_product_code || '',
-            productionDate: this.normalizeDate(result.extracted_production_date),
-            batchNo: this.normalizeText(result.extracted_batch_no),
-            expiryDate: this.normalizeDate(result.extracted_expiry_date),
-            packageUnit: this.normalizeText(chosen.package_unit ?? result.package_unit, this.defaultPackageUnit),
-            minUnit: this.normalizeText(chosen.min_unit ?? result.min_unit, this.defaultMinUnit),
-            packageToMinQty: this.normalizePositiveInteger(chosen.package_to_min_qty ?? result.package_to_min_qty, 1),
-            quantity: 1,
-            matchType: result.match_type,
-            confidence: result.confidence || 'high'
-        };
-    },
-
-    getManualFormSelection(selectId) {
-        const select = document.getElementById(selectId);
-        const option = select.options[select.selectedIndex];
-        return option ? option.text : '';
-    },
-
-    getSelectValueAndText(selectId) {
-        const select = document.getElementById(selectId);
-        const option = select.options[select.selectedIndex];
-        return {
-            value: select.value,
-            text: option ? option.text : ''
-        };
-    },
-
     async addScanItem() {
-        const barcodeInput = document.getElementById('scan-barcode');
-        const barcode = barcodeInput.value.trim();
-
+        const barcode = this.normalizeText(this.el('scan-barcode').value);
         if (!barcode) {
             Utils.showToast('请输入条码', 'warning');
             return;
         }
-
         try {
             const result = await API.barcode.parse(barcode);
-
-            if (result.match_type === 'prefix' && result.reagent_id === null && result.candidates.length > 0) {
+            if (result.match_type === 'prefix' && !result.reagent_id && result.candidates.length > 0) {
                 this.showCandidateSelection(result, barcode);
                 return;
             }
-
             if (!result.reagent_id) {
-                barcodeInput.value = '';
+                this.el('scan-barcode').value = '';
                 await this.showNewReagentModal(barcode, result);
                 return;
             }
-
-            const item = this.buildScanItem(result, barcode);
-            const merged = this.appendOrMerge(this.scanItems, item, this.buildScanMergeKey);
+            const merged = this.appendOrMerge(this.scanItems, this.buildScanItem(result, barcode), this.buildScanMergeKey);
             this.renderScanItems();
-
-            barcodeInput.value = '';
-            barcodeInput.focus();
-            Utils.showToast(merged ? '重复扫码已合并到原有记录' : '已添加到待入库列表', 'success');
+            this.el('scan-barcode').value = '';
+            this.el('scan-barcode').focus();
+            Utils.showToast(merged ? '重复扫码已合并数量' : '已加入待入库列表', 'success');
         } catch (error) {
-            Utils.showToast(`识别失败: ${error.message}`, 'error');
+            Utils.showToast(`扫码识别失败：${error.message}`, 'error');
         }
     },
+
     showCandidateSelection(result, barcode) {
         this.closeCandidateModal();
-        this.candidateContext = {
-            barcode,
-            parseResult: result,
-            candidates: result.candidates || []
-        };
-
+        this.candidateContext = { result, barcode };
         const modal = document.createElement('div');
-        modal.className = 'modal';
         modal.id = 'candidate-modal';
+        modal.className = 'modal';
         modal.innerHTML = `
             <div class="modal-content">
-                <div class="modal-header">
-                    <h3>选择试剂</h3>
-                    <button class="modal-close" onclick="inboundPage.closeCandidateModal()">&times;</button>
-                </div>
+                <div class="modal-header"><h3>选择试剂档案</h3><button class="modal-close" onclick="inboundPage.closeCandidateModal()">&times;</button></div>
                 <div class="modal-body">
-                    <p>当前条码匹配到多个试剂，请先确认正确的试剂档案。</p>
                     <div class="candidate-list">
-                        ${this.candidateContext.candidates.map((candidate) => `
-                            <div class="candidate-item" onclick="inboundPage.selectCandidate(${candidate.id})">
+                        ${result.candidates.map((item) => `
+                            <div class="candidate-item" onclick="inboundPage.selectCandidate(${item.id})">
                                 <div>
-                                    <div class="candidate-name">${this.escapeHtml(candidate.name)}</div>
-                                    <div class="candidate-meta">${this.escapeHtml(candidate.work_group_name || '未配置工作组')} / ${this.escapeHtml(candidate.instrument_name || '未配置仪器')}</div>
-                                    <div class="candidate-meta">${this.escapeHtml(this.formatPackageRelation(candidate.package_unit, candidate.package_to_min_qty, candidate.min_unit))}</div>
+                                    <div class="candidate-name">${this.escapeHtml(item.name)}</div>
+                                    <div class="candidate-meta">${this.escapeHtml(item.work_group_name || '')} / ${this.escapeHtml(item.instrument_name || '')}</div>
+                                    <div class="candidate-meta">${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.min_unit))}</div>
                                 </div>
                                 <button class="btn btn-secondary">选择</button>
                             </div>
@@ -353,303 +406,188 @@
     },
 
     closeCandidateModal() {
-        const modal = document.getElementById('candidate-modal');
-        if (modal) {
-            modal.remove();
-        }
+        document.getElementById('candidate-modal')?.remove();
         this.candidateContext = null;
     },
 
     selectCandidate(reagentId) {
-        if (!this.candidateContext) {
-            return;
-        }
-
-        const candidate = this.candidateContext.candidates.find((item) => item.id === reagentId);
-        if (!candidate) {
-            return;
-        }
-
-        const item = this.buildScanItem(this.candidateContext.parseResult, this.candidateContext.barcode, candidate);
-        const merged = this.appendOrMerge(this.scanItems, item, this.buildScanMergeKey);
-
+        if (!this.candidateContext) return;
+        const candidate = this.candidateContext.result.candidates.find((item) => item.id === reagentId);
+        if (!candidate) return;
+        const merged = this.appendOrMerge(
+            this.scanItems,
+            this.buildScanItem(this.candidateContext.result, this.candidateContext.barcode, candidate),
+            this.buildScanMergeKey
+        );
         this.closeCandidateModal();
         this.renderScanItems();
-        document.getElementById('scan-barcode').value = '';
-        document.getElementById('scan-barcode').focus();
-        Utils.showToast(merged ? '重复扫码已合并到原有记录' : '已添加到待入库列表', 'success');
+        this.el('scan-barcode').value = '';
+        this.el('scan-barcode').focus();
+        Utils.showToast(merged ? '重复扫码已合并数量' : '已加入待入库列表', 'success');
     },
 
     async showNewReagentModal(barcode, result) {
-        this.newReagentContext = { barcode, parseResult: result };
-
-        document.getElementById('new-reagent-barcode').value = barcode;
-        document.getElementById('new-reagent-product-code').value = result.extracted_product_code || '';
-        document.getElementById('new-reagent-production-date').value = this.normalizeDate(result.extracted_production_date);
-        document.getElementById('new-reagent-name').value = '';
-        document.getElementById('new-reagent-manufacturer').value = '';
-        document.getElementById('new-reagent-batch-no').value = this.normalizeText(result.extracted_batch_no);
-        document.getElementById('new-reagent-expiry-date').value = this.normalizeDate(result.extracted_expiry_date);
-        document.getElementById('new-reagent-package-unit').value = this.defaultPackageUnit;
-        document.getElementById('new-reagent-min-unit').value = this.defaultMinUnit;
-        document.getElementById('new-reagent-package-to-min-qty').value = '1';
-        document.getElementById('new-reagent-quantity').value = '1';
-        document.getElementById('new-reagent-work-group').value = '';
-        document.getElementById('new-reagent-instrument').innerHTML = '<option value="">请选择仪器</option>';
-        document.getElementById('new-reagent-instrument').value = '';
-
-        await this.loadNewReagentWorkGroups();
+        this.newReagentContext = { barcode, result };
+        this.el('new-reagent-barcode').value = barcode;
+        this.el('new-reagent-product-code').value = result.extracted_product_code || '';
+        this.el('new-reagent-production-date').value = this.normalizeDate(result.extracted_production_date);
+        this.el('new-reagent-name').value = '';
+        this.el('new-reagent-manufacturer').value = '';
+        this.el('new-reagent-batch-no').value = this.normalizeText(result.extracted_batch_no);
+        this.el('new-reagent-expiry-date').value = this.normalizeDate(result.extracted_expiry_date);
+        this.el('new-reagent-package-unit').value = this.defaultPackageUnit;
+        this.el('new-reagent-min-unit').value = this.defaultMinUnit;
+        this.el('new-reagent-package-to-min-qty').value = '1';
+        this.el('new-reagent-quantity').value = '1';
+        const groups = await API.inventory.getWorkGroups().catch(() => []);
+        this.fillSimpleSelect('new-reagent-work-group', groups, '请选择工作组');
+        this.el('new-reagent-instrument').innerHTML = '<option value="">请选择仪器</option>';
         this.refreshNewReagentRelationPreview();
-        document.getElementById('new-reagent-modal').classList.remove('hidden');
-        document.getElementById('new-reagent-name').focus();
+        this.el('new-reagent-modal').classList.remove('hidden');
     },
 
     closeNewReagentModal() {
-        document.getElementById('new-reagent-modal').classList.add('hidden');
-        document.getElementById('new-reagent-submit-btn').disabled = false;
-        document.getElementById('new-reagent-submit-btn').textContent = '保存并加入列表';
+        this.el('new-reagent-modal').classList.add('hidden');
         this.newReagentContext = null;
-        document.getElementById('scan-barcode').focus();
-    },
-
-    async loadNewReagentWorkGroups() {
-        try {
-            const groups = await API.inventory.getWorkGroups();
-            const select = document.getElementById('new-reagent-work-group');
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">请选择工作组</option>';
-            groups.forEach((group) => {
-                select.innerHTML += `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`;
-            });
-            select.value = currentValue;
-        } catch (error) {
-            console.error('Failed to load work groups:', error);
-            Utils.showToast('工作组加载失败', 'error');
-        }
+        this.el('new-reagent-submit-btn').disabled = false;
+        this.el('new-reagent-submit-btn').textContent = '保存并加入列表';
+        this.el('scan-barcode').focus();
     },
 
     async loadNewReagentInstruments() {
-        const workGroupId = document.getElementById('new-reagent-work-group').value;
-        const select = document.getElementById('new-reagent-instrument');
-        select.innerHTML = '<option value="">请选择仪器</option>';
-
-        if (!workGroupId) {
-            return;
-        }
-
-        try {
-            const instruments = await API.inventory.getInstruments(workGroupId);
-            instruments.forEach((instrument) => {
-                select.innerHTML += `<option value="${instrument.id}">${this.escapeHtml(instrument.name)}</option>`;
-            });
-        } catch (error) {
-            console.error('Failed to load instruments:', error);
-            Utils.showToast('仪器加载失败', 'error');
-        }
+        await this.loadInstrumentsForSelect('new-reagent-instrument', this.el('new-reagent-work-group').value, '请选择仪器');
     },
 
-    buildCreatedScanItem(reagent, payload) {
-        return {
-            id: this.createItemId(),
-            source: 'scan',
-            barcode: payload.barcode,
-            reagentId: reagent.id,
-            reagentName: reagent.name,
-            workGroupId: payload.workGroupId,
-            workGroupName: payload.workGroupName,
-            instrumentId: payload.instrumentId,
-            instrumentName: payload.instrumentName,
-            productCode: payload.productCode,
-            productionDate: payload.productionDate,
-            batchNo: payload.batchNo,
-            expiryDate: payload.expiryDate,
-            packageUnit: payload.packageUnit,
-            minUnit: payload.minUnit,
-            packageToMinQty: payload.packageToMinQty,
-            quantity: payload.quantity,
-            matchType: 'created',
-            confidence: 'manual'
-        };
-    },
     async submitNewReagentFromScan() {
-        if (!this.newReagentContext) {
-            return;
-        }
-
-        const workGroup = this.getSelectValueAndText('new-reagent-work-group');
-        const instrument = this.getSelectValueAndText('new-reagent-instrument');
-        const reagentName = this.normalizeText(document.getElementById('new-reagent-name').value);
-        const manufacturer = this.normalizeText(document.getElementById('new-reagent-manufacturer').value);
-        const productCode = this.normalizeText(document.getElementById('new-reagent-product-code').value);
-        const productionDate = document.getElementById('new-reagent-production-date').value;
-        const batchNo = this.normalizeText(document.getElementById('new-reagent-batch-no').value);
-        const expiryDate = document.getElementById('new-reagent-expiry-date').value;
-        const packageUnit = this.normalizeText(document.getElementById('new-reagent-package-unit').value);
-        const minUnit = this.normalizeText(document.getElementById('new-reagent-min-unit').value);
-        const packageToMinQty = this.normalizePositiveInteger(document.getElementById('new-reagent-package-to-min-qty').value, 0);
-        const quantity = this.normalizePositiveInteger(document.getElementById('new-reagent-quantity').value, 0);
-        const barcode = this.newReagentContext.barcode;
-
+        if (!this.newReagentContext) return;
+        const workGroupId = parseInt(this.el('new-reagent-work-group').value, 10);
+        const instrumentId = parseInt(this.el('new-reagent-instrument').value, 10);
+        const name = this.normalizeText(this.el('new-reagent-name').value);
+        const manufacturer = this.normalizeText(this.el('new-reagent-manufacturer').value);
+        const batchNo = this.normalizeText(this.el('new-reagent-batch-no').value);
+        const expiryDate = this.el('new-reagent-expiry-date').value;
+        const packageUnit = this.normalizeText(this.el('new-reagent-package-unit').value, this.defaultPackageUnit);
+        const minUnit = this.normalizeText(this.el('new-reagent-min-unit').value, this.defaultMinUnit);
+        const packageToMinQty = this.normalizePositiveInteger(this.el('new-reagent-package-to-min-qty').value, 0);
+        const quantity = this.normalizePositiveInteger(this.el('new-reagent-quantity').value, 0);
         const errors = [];
-        if (!workGroup.value) errors.push('工作组');
-        if (!instrument.value) errors.push('仪器');
-        if (!reagentName) errors.push('试剂名称');
+        if (!workGroupId) errors.push('工作组');
+        if (!instrumentId) errors.push('仪器');
+        if (!name) errors.push('试剂名称');
         if (!batchNo) errors.push('批号');
         if (!expiryDate) errors.push('有效期');
         if (!packageUnit) errors.push('包装单位');
         if (!minUnit) errors.push('最小单位');
         if (!packageToMinQty) errors.push('包装关系');
-        if (!quantity) errors.push('入库数量');
-
-        if (errors.length > 0) {
-            Utils.showToast(`请填写: ${errors.join(', ')}`, 'warning');
+        if (!quantity) errors.push('入库量');
+        if (errors.length) {
+            Utils.showToast(`请填写：${errors.join('、')}`, 'warning');
             return;
         }
 
-        const submitButton = document.getElementById('new-reagent-submit-btn');
+        const submitButton = this.el('new-reagent-submit-btn');
         submitButton.disabled = true;
         submitButton.textContent = '保存中...';
-
-        const payload = {
-            barcode,
-            workGroupId: parseInt(workGroup.value, 10),
-            workGroupName: workGroup.text,
-            instrumentId: parseInt(instrument.value, 10),
-            instrumentName: instrument.text,
-            productCode: this.normalizeProductCode(productCode),
-            productionDate,
-            batchNo,
-            expiryDate,
-            packageUnit,
-            minUnit,
-            packageToMinQty,
-            quantity
-        };
-
-        const matchConfig = this.buildMatchPattern(barcode, payload.productCode);
-
         try {
+            const match = this.buildMatchPattern(this.newReagentContext.barcode, this.el('new-reagent-product-code').value);
             const reagent = await API.reagents.create({
-                instrument_id: payload.instrumentId,
-                name: reagentName,
-                match_mode: matchConfig.matchMode,
-                match_pattern: matchConfig.matchPattern,
-                raw_barcode_sample: barcode,
+                instrument_id: instrumentId,
+                name,
                 manufacturer: manufacturer || null,
                 unit: minUnit,
                 package_unit: packageUnit,
-                package_to_min_qty: packageToMinQty
+                package_to_min_qty: packageToMinQty,
+                raw_barcode_sample: this.newReagentContext.barcode,
+                ...match
             });
-
-            const item = this.buildCreatedScanItem(reagent, payload);
-            const merged = this.appendOrMerge(this.scanItems, item, this.buildScanMergeKey);
+            const merged = this.appendOrMerge(this.scanItems, {
+                id: this.createItemId(),
+                source: 'scan',
+                barcode: this.newReagentContext.barcode,
+                reagentId: reagent.id,
+                reagentName: reagent.name,
+                workGroupId,
+                workGroupName: this.el('new-reagent-work-group').selectedOptions[0]?.textContent || '',
+                instrumentId,
+                instrumentName: this.el('new-reagent-instrument').selectedOptions[0]?.textContent || '',
+                manufacturer: reagent.manufacturer,
+                productCode: this.el('new-reagent-product-code').value.trim(),
+                productionDate: this.el('new-reagent-production-date').value,
+                batchNo,
+                expiryDate,
+                packageUnit: reagent.package_unit,
+                minUnit: reagent.unit,
+                packageToMinQty: reagent.package_to_min_qty,
+                quantity,
+                matchType: 'created',
+                confidence: 'manual'
+            }, this.buildScanMergeKey);
             this.renderScanItems();
             this.closeNewReagentModal();
-            Utils.showToast(merged ? '建档完成，已合并到待入库列表' : '建档完成，已加入待入库列表', 'success');
+            Utils.showToast(merged ? '已合并到现有扫码条目' : '扫码建档成功，已加入待入库列表', 'success');
         } catch (error) {
-            if (error.message.includes('已存在使用相同完整匹配模式的试剂')) {
-                try {
-                    const result = await API.barcode.parse(barcode);
-                    if (result.reagent_id) {
-                        const item = this.buildScanItem(result, barcode);
-                        const merged = this.appendOrMerge(this.scanItems, item, this.buildScanMergeKey);
-                        this.renderScanItems();
-                        this.closeNewReagentModal();
-                        Utils.showToast(merged ? '条码已存在，已合并到待入库列表' : '条码已存在，已加入待入库列表', 'success');
-                        return;
-                    }
-                } catch (parseError) {
-                    console.error('Re-parse failed:', parseError);
-                }
-            }
-
             submitButton.disabled = false;
             submitButton.textContent = '保存并加入列表';
-            Utils.showToast(`建档失败: ${error.message}`, 'error', 4000);
+            Utils.showToast(`保存试剂档案失败：${error.message}`, 'error');
         }
-    },
-
-    updateScanField(itemId, field, value) {
-        const item = this.scanItems.find((current) => current.id === itemId);
-        if (!item) {
-            return;
-        }
-
-        if (field === 'quantity' || field === 'packageToMinQty') {
-            item[field] = this.normalizePositiveInteger(value, 1);
-        } else {
-            item[field] = this.normalizeText(value);
-        }
-
-        this.renderScanItems();
     },
 
     renderScanItems() {
-        const listEl = document.getElementById('scan-items-list');
-        const countEl = document.getElementById('scan-item-count');
-        const sectionEl = document.getElementById('scan-items-section');
-
-        countEl.textContent = this.scanItems.length;
-
+        const section = this.el('scan-items-section');
+        const list = this.el('scan-items-list');
+        this.el('scan-item-count').textContent = String(this.scanItems.length);
         if (this.scanItems.length === 0) {
-            sectionEl.classList.add('hidden');
-            listEl.innerHTML = '';
+            section.classList.add('hidden');
+            list.innerHTML = '';
             return;
         }
-
-        sectionEl.classList.remove('hidden');
-
-        listEl.innerHTML = this.scanItems.map((item) => {
-            const status = this.getItemStatus(item);
-            const relationText = this.formatPackageRelation(item.packageUnit, item.packageToMinQty, item.minUnit);
+        section.classList.remove('hidden');
+        list.innerHTML = this.scanItems.map((item) => {
+            const locked = Boolean(item.reagentId);
+            const relationText = this.formatRelation(item.packageUnit, item.packageToMinQty, item.minUnit);
+            const packageControl = locked
+                ? `<div class="item-field"><span>包装单位</span><strong>${this.escapeHtml(item.packageUnit)}</strong></div>`
+                : `<label class="item-field"><span>包装单位</span><input type="text" class="form-input" list="package-unit-options" value="${this.escapeHtml(item.packageUnit)}" onchange="inboundPage.updateScanField(${item.id}, 'packageUnit', this.value)"></label>`;
+            const minControl = locked
+                ? `<div class="item-field"><span>最小单位</span><strong>${this.escapeHtml(item.minUnit)}</strong></div>`
+                : `<label class="item-field"><span>最小单位</span><input type="text" class="form-input" list="min-unit-options" value="${this.escapeHtml(item.minUnit)}" onchange="inboundPage.updateScanField(${item.id}, 'minUnit', this.value)"></label>`;
+            const relationControl = locked
+                ? `<div class="item-field"><span>包装关系</span><strong>${this.escapeHtml(relationText)}</strong></div>`
+                : `<label class="item-field"><span>包装关系</span><input type="number" min="1" class="form-input" value="${item.packageToMinQty}" onchange="inboundPage.updateScanField(${item.id}, 'packageToMinQty', this.value)"><small class="field-hint">${this.escapeHtml(relationText)}</small></label>`;
             return `
                 <div class="item-card">
                     <div class="item-card-header">
                         <div>
                             <div class="item-card-title">${this.escapeHtml(item.reagentName)}</div>
-                            <div class="item-card-meta">${this.escapeHtml(item.workGroupName)} / ${this.escapeHtml(item.instrumentName)}</div>
+                            <div class="item-card-meta">${this.escapeHtml(item.workGroupName || '')} / ${this.escapeHtml(item.instrumentName || '')}</div>
+                            <div class="item-card-submeta">条码：${this.escapeHtml(item.barcode)}${item.productCode ? ` | 编码：${this.escapeHtml(item.productCode)}` : ''}${item.productionDate ? ` | 生产日期：${this.escapeHtml(item.productionDate)}` : ''}</div>
                         </div>
-                        <span class="item-status ${status.className}">${status.text}</span>
-                    </div>
-                    <div class="item-card-submeta">
-                        条码: ${this.escapeHtml(item.barcode)}
-                        ${item.productCode ? ` | 编码: ${this.escapeHtml(item.productCode)}` : ''}
-                        ${item.productionDate ? ` | 生产日期: ${this.escapeHtml(item.productionDate)}` : ''}
-                        | 识别可信度: ${this.escapeHtml(item.confidence || 'high')}
+                        <span class="item-status ${locked ? 'info' : 'warning'}">${locked ? '沿用档案' : '待补全'}</span>
                     </div>
                     <div class="item-grid">
-                        <label class="item-field">
-                            <span>批号</span>
-                            <input type="text" class="form-input" value="${this.escapeHtml(item.batchNo)}" onchange="inboundPage.updateScanField(${item.id}, 'batchNo', this.value)">
-                        </label>
-                        <label class="item-field">
-                            <span>有效期</span>
-                            <input type="date" class="form-input" value="${this.escapeHtml(item.expiryDate)}" onchange="inboundPage.updateScanField(${item.id}, 'expiryDate', this.value)">
-                        </label>
-                        <label class="item-field">
-                            <span>包装单位</span>
-                            <input type="text" class="form-input" list="package-unit-options" value="${this.escapeHtml(item.packageUnit)}" onchange="inboundPage.updateScanField(${item.id}, 'packageUnit', this.value)">
-                        </label>
-                        <label class="item-field">
-                            <span>最小单位</span>
-                            <input type="text" class="form-input" list="min-unit-options" value="${this.escapeHtml(item.minUnit)}" onchange="inboundPage.updateScanField(${item.id}, 'minUnit', this.value)">
-                        </label>
-                        <label class="item-field">
-                            <span>包装关系</span>
-                            <input type="number" min="1" class="form-input" value="${item.packageToMinQty}" onchange="inboundPage.updateScanField(${item.id}, 'packageToMinQty', this.value)">
-                            <small class="field-hint">${this.escapeHtml(relationText)}</small>
-                        </label>
-                        <label class="item-field">
-                            <span>入库数量</span>
-                            <input type="number" min="1" class="form-input" value="${item.quantity}" onchange="inboundPage.updateScanField(${item.id}, 'quantity', this.value)">
-                        </label>
+                        <label class="item-field"><span>批号</span><input type="text" class="form-input" value="${this.escapeHtml(item.batchNo)}" onchange="inboundPage.updateScanField(${item.id}, 'batchNo', this.value)"></label>
+                        <label class="item-field"><span>有效期</span><input type="date" class="form-input" value="${this.escapeHtml(item.expiryDate)}" onchange="inboundPage.updateScanField(${item.id}, 'expiryDate', this.value)"></label>
+                        ${packageControl}
+                        ${minControl}
+                        ${relationControl}
+                        <label class="item-field"><span>入库量</span><input type="number" min="1" class="form-input" value="${item.quantity}" onchange="inboundPage.updateScanField(${item.id}, 'quantity', this.value)"></label>
                     </div>
-                    <div class="item-card-actions">
-                        <button class="btn btn-danger" onclick="inboundPage.removeScanItem(${item.id})">删除</button>
-                    </div>
+                    <div class="item-card-actions"><button class="btn btn-danger" onclick="inboundPage.removeScanItem(${item.id})">删除</button></div>
                 </div>
             `;
         }).join('');
+    },
+
+    updateScanField(itemId, field, value) {
+        const item = this.scanItems.find((current) => current.id === itemId);
+        if (!item) return;
+        if (item.reagentId && ['packageUnit', 'minUnit', 'packageToMinQty'].includes(field)) return;
+        if (field === 'quantity' || field === 'packageToMinQty') {
+            item[field] = this.normalizePositiveInteger(value, 1);
+        } else {
+            item[field] = this.normalizeText(value);
+        }
+        this.renderScanItems();
     },
 
     removeScanItem(itemId) {
@@ -658,218 +596,197 @@
     },
 
     clearScanItems() {
-        if (this.scanItems.length === 0) {
-            return;
-        }
-
-        if (confirm('确定要清空当前扫码列表吗？')) {
+        if (this.scanItems.length && confirm('确定要清空当前扫码列表吗？')) {
             this.scanItems = [];
             this.renderScanItems();
         }
     },
 
-    validateItemsBeforeConfirm(items) {
-        const invalidItem = items.find((item) => {
-            if (!item.reagentName || !item.batchNo || !item.expiryDate || !item.packageUnit || !item.minUnit) {
-                return true;
-            }
-
-            if (!item.quantity || item.quantity <= 0 || !item.packageToMinQty || item.packageToMinQty <= 0) {
-                return true;
-            }
-
-            if (item.source === 'manual' && (!item.instrumentId || !item.workGroupId)) {
-                return true;
-            }
-
-            return false;
-        });
-
-        return invalidItem ? (invalidItem.reagentName || '未命名试剂') : null;
-    },
-
-    showScanConfirm() {
-        if (this.scanItems.length === 0) {
-            Utils.showToast('请先扫描试剂条码', 'warning');
-            return;
-        }
-
-        const invalidName = this.validateItemsBeforeConfirm(this.scanItems);
-        if (invalidName) {
-            Utils.showToast(`试剂“${invalidName}”仍有信息未补全，请先确认批号、效期、单位和包装关系`, 'warning', 4000);
-            return;
-        }
-
-        this.pendingItems = this.scanItems.map((item) => ({ ...item }));
-        this.showConfirmModal('scan');
-    },
-    async loadManualWorkGroups() {
-        try {
-            const groups = await API.inventory.getWorkGroups();
-            const select = document.getElementById('manual-work-group');
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">请选择工作组</option>';
-            groups.forEach((group) => {
-                select.innerHTML += `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`;
-            });
-            select.value = currentValue;
-        } catch (error) {
-            console.error('Failed to load work groups:', error);
-            Utils.showToast('工作组加载失败', 'error');
-        }
-    },
-
-    async loadManualInstruments() {
-        const workGroupId = document.getElementById('manual-work-group').value;
-        const select = document.getElementById('manual-instrument');
-        select.innerHTML = '<option value="">请选择仪器</option>';
-
-        if (!workGroupId) {
-            return;
-        }
-
-        try {
-            const instruments = await API.inventory.getInstruments(workGroupId);
-            instruments.forEach((instrument) => {
-                select.innerHTML += `<option value="${instrument.id}">${this.escapeHtml(instrument.name)}</option>`;
-            });
-        } catch (error) {
-            console.error('Failed to load instruments:', error);
-            Utils.showToast('仪器加载失败', 'error');
-        }
-    },
-
     addManualItem() {
-        const workGroupId = document.getElementById('manual-work-group').value;
-        const instrumentId = document.getElementById('manual-instrument').value;
-        const reagentName = this.normalizeText(document.getElementById('manual-reagent-name').value);
-        const batchNo = this.normalizeText(document.getElementById('manual-batch-no').value);
-        const expiryDate = document.getElementById('manual-expiry-date').value;
-        const packageUnit = this.normalizeText(document.getElementById('manual-package-unit').value);
-        const minUnit = this.normalizeText(document.getElementById('manual-min-unit').value);
-        const packageToMinQty = this.normalizePositiveInteger(document.getElementById('manual-package-to-min-qty').value, 0);
-        const quantity = this.normalizePositiveInteger(document.getElementById('manual-quantity').value, 0);
-
-        const errors = [];
-        if (!workGroupId) errors.push('工作组');
-        if (!instrumentId) errors.push('仪器');
-        if (!reagentName) errors.push('试剂名称');
-        if (!batchNo) errors.push('批号');
-        if (!expiryDate) errors.push('有效期');
-        if (!packageUnit) errors.push('包装单位');
-        if (!minUnit) errors.push('最小单位');
-        if (!packageToMinQty) errors.push('包装关系');
-        if (!quantity) errors.push('入库数量');
-
-        if (errors.length > 0) {
-            Utils.showToast(`请填写: ${errors.join(', ')}`, 'warning');
+        const batchNo = this.normalizeText(this.el('manual-batch-no').value);
+        const expiryDate = this.el('manual-expiry-date').value;
+        const quantity = this.normalizePositiveInteger(this.el('manual-quantity').value, 0);
+        if (!batchNo || !expiryDate || !quantity) {
+            Utils.showToast('请填写批号、有效期和入库量', 'warning');
             return;
         }
 
-        const item = {
-            id: this.createItemId(),
-            source: 'manual',
-            workGroupId: parseInt(workGroupId, 10),
-            workGroupName: this.getManualFormSelection('manual-work-group'),
-            instrumentId: parseInt(instrumentId, 10),
-            instrumentName: this.getManualFormSelection('manual-instrument'),
-            reagentName,
-            batchNo,
-            expiryDate,
-            packageUnit,
-            minUnit,
-            packageToMinQty,
-            quantity
-        };
+        let item;
+        if (this.manualMode === 'create') {
+            const workGroupId = parseInt(this.el('manual-create-work-group').value, 10);
+            const instrumentId = parseInt(this.el('manual-create-instrument').value, 10);
+            const reagentName = this.normalizeText(this.el('manual-create-reagent-name').value);
+            const manufacturer = this.normalizeText(this.el('manual-create-manufacturer').value);
+            const packageUnit = this.normalizeText(this.el('manual-create-package-unit').value, this.defaultPackageUnit);
+            const minUnit = this.normalizeText(this.el('manual-create-min-unit').value, this.defaultMinUnit);
+            const packageToMinQty = this.normalizePositiveInteger(this.el('manual-create-package-to-min-qty').value, 0);
+            const errors = [];
+            if (!workGroupId) errors.push('工作组');
+            if (!instrumentId) errors.push('仪器');
+            if (!reagentName) errors.push('试剂名称');
+            if (!packageUnit) errors.push('包装单位');
+            if (!minUnit) errors.push('最小单位');
+            if (!packageToMinQty) errors.push('包装关系');
+            if (errors.length) {
+                Utils.showToast(`请填写：${errors.join('、')}`, 'warning');
+                return;
+            }
+            item = {
+                id: this.createItemId(),
+                source: 'manual',
+                manualEntryMode: 'create',
+                reagentId: null,
+                reagentName,
+                manufacturer: manufacturer || null,
+                workGroupId,
+                workGroupName: this.el('manual-create-work-group').selectedOptions[0]?.textContent || '',
+                instrumentId,
+                instrumentName: this.el('manual-create-instrument').selectedOptions[0]?.textContent || '',
+                batchNo,
+                expiryDate,
+                quantity,
+                packageUnit,
+                minUnit,
+                packageToMinQty
+            };
+        } else {
+            if (!this.selectedManualReagent) {
+                Utils.showToast('请先选择试剂档案', 'warning');
+                return;
+            }
+            item = {
+                id: this.createItemId(),
+                source: 'manual',
+                manualEntryMode: 'existing',
+                reagentId: this.selectedManualReagent.id,
+                reagentName: this.selectedManualReagent.name,
+                manufacturer: this.selectedManualReagent.manufacturer,
+                workGroupId: this.selectedManualReagent.work_group_id,
+                workGroupName: this.selectedManualReagent.work_group_name,
+                instrumentId: this.selectedManualReagent.instrument_id,
+                instrumentName: this.selectedManualReagent.instrument_name,
+                batchNo,
+                expiryDate,
+                quantity,
+                packageUnit: this.selectedManualReagent.package_unit,
+                minUnit: this.selectedManualReagent.unit,
+                packageToMinQty: this.selectedManualReagent.package_to_min_qty
+            };
+        }
 
         const merged = this.appendOrMerge(this.manualItems, item, this.buildManualMergeKey);
         this.renderManualItems();
-        this.clearManualForm(false, false);
-        Utils.showToast(merged ? '相同试剂批次已自动合并数量' : '已添加到待入库列表', 'success');
+        this.clearManualBatchFields();
+        if (this.manualMode === 'create') {
+            this.el('manual-create-reagent-name').value = '';
+            this.el('manual-create-manufacturer').value = '';
+        }
+        Utils.showToast(merged ? '相同批次已自动合并数量' : '已加入待入库列表', 'success');
+    },
+
+    clearManualBatchFields() {
+        this.el('manual-batch-no').value = '';
+        this.el('manual-expiry-date').value = '';
+        this.el('manual-quantity').value = '1';
+    },
+
+    clearManualForm(clearOperator = true, clearSelection = true) {
+        this.clearManualBatchFields();
+        if (clearSelection) {
+            ['manual-browse-work-group', 'manual-browse-instrument', 'manual-browse-reagent', 'manual-create-work-group', 'manual-create-instrument'].forEach((id) => {
+                if (this.el(id)) this.el(id).value = '';
+            });
+            this.el('manual-browse-instrument').innerHTML = '<option value="">请选择仪器</option>';
+            this.el('manual-browse-reagent').innerHTML = '<option value="">请选择试剂</option>';
+            this.el('manual-create-instrument').innerHTML = '<option value="">请选择仪器</option>';
+            this.el('manual-search-keyword').value = '';
+            this.el('manual-search-results').innerHTML = '';
+            this.clearManualSelection();
+        }
+        this.el('manual-create-reagent-name').value = '';
+        this.el('manual-create-manufacturer').value = '';
+        this.el('manual-create-package-unit').value = this.defaultPackageUnit;
+        this.el('manual-create-min-unit').value = this.defaultMinUnit;
+        this.el('manual-create-package-to-min-qty').value = '1';
+        this.refreshManualCreateRelationPreview();
+        if (clearOperator) {
+            this.el('manual-operator').value = '';
+        }
     },
 
     renderManualItems() {
-        const listEl = document.getElementById('manual-items-list');
-        const countEl = document.getElementById('manual-item-count');
-        const sectionEl = document.getElementById('manual-items-section');
-
-        countEl.textContent = this.manualItems.length;
-
+        const section = this.el('manual-items-section');
+        const list = this.el('manual-items-list');
+        this.el('manual-item-count').textContent = String(this.manualItems.length);
         if (this.manualItems.length === 0) {
-            sectionEl.classList.add('hidden');
-            listEl.innerHTML = '';
+            section.classList.add('hidden');
+            list.innerHTML = '';
             return;
         }
-
-        sectionEl.classList.remove('hidden');
-
-        listEl.innerHTML = this.manualItems.map((item) => {
-            const status = this.getItemStatus(item);
-            return `
-                <div class="item-card">
-                    <div class="item-card-header">
-                        <div>
-                            <div class="item-card-title">${this.escapeHtml(item.reagentName)}</div>
-                            <div class="item-card-meta">${this.escapeHtml(item.workGroupName)} / ${this.escapeHtml(item.instrumentName)}</div>
-                        </div>
-                        <span class="item-status ${status.className}">${status.text}</span>
+        section.classList.remove('hidden');
+        list.innerHTML = this.manualItems.map((item) => `
+            <div class="item-card">
+                <div class="item-card-header">
+                    <div>
+                        <div class="item-card-title">${this.escapeHtml(item.reagentName)}</div>
+                        <div class="item-card-meta">${this.escapeHtml(item.workGroupName)} / ${this.escapeHtml(item.instrumentName)}</div>
+                        <div class="item-card-submeta">${item.manualEntryMode === 'create' ? '首次建档入库' : '已有试剂快速入库'}</div>
                     </div>
-                    <div class="item-grid item-grid-readonly">
-                        <div class="item-field">
-                            <span>批号</span>
-                            <strong>${this.escapeHtml(item.batchNo)}</strong>
-                        </div>
-                        <div class="item-field">
-                            <span>有效期</span>
-                            <strong>${this.escapeHtml(item.expiryDate)}</strong>
-                        </div>
-                        <div class="item-field">
-                            <span>包装单位</span>
-                            <strong>${this.escapeHtml(item.packageUnit)}</strong>
-                        </div>
-                        <div class="item-field">
-                            <span>最小单位</span>
-                            <strong>${this.escapeHtml(item.minUnit)}</strong>
-                        </div>
-                        <div class="item-field">
-                            <span>包装关系</span>
-                            <strong>${this.escapeHtml(this.formatPackageRelation(item.packageUnit, item.packageToMinQty, item.minUnit))}</strong>
-                        </div>
-                        <div class="item-field">
-                            <span>入库数量</span>
-                            <strong>${this.escapeHtml(item.quantity)}</strong>
-                        </div>
-                    </div>
-                    <div class="item-card-actions">
-                        <button class="btn btn-secondary" onclick="inboundPage.editManualItem(${item.id})">回填编辑</button>
-                        <button class="btn btn-danger" onclick="inboundPage.removeManualItem(${item.id})">删除</button>
-                    </div>
+                    <span class="item-status info">${item.manualEntryMode === 'create' ? '建档中' : '沿用档案'}</span>
                 </div>
-            `;
-        }).join('');
+                <div class="item-grid item-grid-readonly">
+                    <div class="item-field"><span>批号</span><strong>${this.escapeHtml(item.batchNo)}</strong></div>
+                    <div class="item-field"><span>有效期</span><strong>${this.escapeHtml(item.expiryDate)}</strong></div>
+                    <div class="item-field"><span>入库量</span><strong>${item.quantity}</strong></div>
+                    <div class="item-field"><span>规格</span><strong>${this.escapeHtml(this.formatRelation(item.packageUnit, item.packageToMinQty, item.minUnit))}</strong></div>
+                    <div class="item-field"><span>厂家</span><strong>${this.escapeHtml(item.manufacturer || '未填写')}</strong></div>
+                </div>
+                <div class="item-card-actions">
+                    <button class="btn btn-secondary" onclick="inboundPage.editManualItem(${item.id})">回填编辑</button>
+                    <button class="btn btn-danger" onclick="inboundPage.removeManualItem(${item.id})">删除</button>
+                </div>
+            </div>
+        `).join('');
     },
 
-    editManualItem(itemId) {
+    async editManualItem(itemId) {
         const item = this.manualItems.find((current) => current.id === itemId);
-        if (!item) {
-            return;
-        }
-
-        document.getElementById('manual-work-group').value = String(item.workGroupId);
-        this.loadManualInstruments().then(() => {
-            document.getElementById('manual-instrument').value = String(item.instrumentId);
-        });
-        document.getElementById('manual-reagent-name').value = item.reagentName;
-        document.getElementById('manual-batch-no').value = item.batchNo;
-        document.getElementById('manual-expiry-date').value = item.expiryDate;
-        document.getElementById('manual-package-unit').value = item.packageUnit;
-        document.getElementById('manual-min-unit').value = item.minUnit;
-        document.getElementById('manual-package-to-min-qty').value = String(item.packageToMinQty);
-        document.getElementById('manual-quantity').value = String(item.quantity);
-        this.refreshManualRelationPreview();
-
+        if (!item) return;
         this.removeManualItem(itemId);
-        document.getElementById('manual-reagent-name').focus();
+        this.el('manual-batch-no').value = item.batchNo;
+        this.el('manual-expiry-date').value = item.expiryDate;
+        this.el('manual-quantity').value = String(item.quantity);
+        if (item.manualEntryMode === 'create') {
+            this.switchManualMode('create');
+            this.el('manual-create-work-group').value = String(item.workGroupId);
+            await this.loadManualCreateInstruments();
+            this.el('manual-create-instrument').value = String(item.instrumentId);
+            this.el('manual-create-reagent-name').value = item.reagentName;
+            this.el('manual-create-manufacturer').value = item.manufacturer || '';
+            this.el('manual-create-package-unit').value = item.packageUnit;
+            this.el('manual-create-min-unit').value = item.minUnit;
+            this.el('manual-create-package-to-min-qty').value = String(item.packageToMinQty);
+            this.refreshManualCreateRelationPreview();
+        } else {
+            this.switchManualMode('browse');
+            this.selectedManualReagent = {
+                id: item.reagentId,
+                name: item.reagentName,
+                manufacturer: item.manufacturer,
+                unit: item.minUnit,
+                package_unit: item.packageUnit,
+                package_to_min_qty: item.packageToMinQty,
+                instrument_id: item.instrumentId,
+                instrument_name: item.instrumentName,
+                work_group_id: item.workGroupId,
+                work_group_name: item.workGroupName
+            };
+            this.renderManualSelection();
+            this.el('manual-browse-work-group').value = String(item.workGroupId);
+            await this.loadManualBrowseInstruments();
+            this.el('manual-browse-instrument').value = String(item.instrumentId);
+            await this.loadManualBrowseReagents(item.reagentId);
+        }
     },
 
     removeManualItem(itemId) {
@@ -878,94 +795,72 @@
     },
 
     clearManualItems() {
-        if (this.manualItems.length === 0) {
-            return;
-        }
-
-        if (confirm('确定要清空当前手工入库列表吗？')) {
+        if (this.manualItems.length && confirm('确定要清空当前手工入库列表吗？')) {
             this.manualItems = [];
             this.renderManualItems();
         }
     },
 
-    clearManualForm(clearOperator = true, clearSelection = true) {
-        if (clearSelection) {
-            document.getElementById('manual-work-group').value = '';
-            document.getElementById('manual-instrument').innerHTML = '<option value="">请选择仪器</option>';
-            document.getElementById('manual-instrument').value = '';
-        }
-
-        document.getElementById('manual-reagent-name').value = '';
-        document.getElementById('manual-batch-no').value = '';
-        document.getElementById('manual-expiry-date').value = '';
-        document.getElementById('manual-package-unit').value = this.defaultPackageUnit;
-        document.getElementById('manual-min-unit').value = this.defaultMinUnit;
-        document.getElementById('manual-package-to-min-qty').value = '1';
-        document.getElementById('manual-quantity').value = '1';
-        this.refreshManualRelationPreview();
-
-        if (clearOperator) {
-            document.getElementById('manual-operator').value = '';
-        }
+    validateItemsBeforeConfirm(items) {
+        return items.find((item) => !item.reagentName || !item.batchNo || !item.expiryDate || !item.quantity || !item.packageUnit || !item.minUnit || !item.packageToMinQty);
     },
-    showManualConfirm() {
-        if (this.manualItems.length === 0) {
-            Utils.showToast('请先添加手工入库试剂', 'warning');
+
+    async showScanConfirm() {
+        if (!this.scanItems.length) {
+            Utils.showToast('请先扫描试剂条码', 'warning');
             return;
         }
-
-        const invalidName = this.validateItemsBeforeConfirm(this.manualItems);
-        if (invalidName) {
-            Utils.showToast(`试剂“${invalidName}”信息不完整，请先检查`, 'warning');
+        const invalidItem = this.validateItemsBeforeConfirm(this.scanItems);
+        if (invalidItem) {
+            Utils.showToast(`试剂“${invalidItem.reagentName}”仍有信息未补全`, 'warning');
             return;
         }
+        this.pendingItems = this.scanItems.map((item) => ({ ...item }));
+        await this.showConfirmModal('scan');
+    },
 
+    async showManualConfirm() {
+        if (!this.manualItems.length) {
+            Utils.showToast('请先添加手工入库条目', 'warning');
+            return;
+        }
+        const invalidItem = this.validateItemsBeforeConfirm(this.manualItems);
+        if (invalidItem) {
+            Utils.showToast(`试剂“${invalidItem.reagentName}”信息不完整`, 'warning');
+            return;
+        }
         this.pendingItems = this.manualItems.map((item) => ({ ...item }));
-        this.showConfirmModal('manual');
+        await this.showConfirmModal('manual');
     },
 
-    showConfirmModal(source) {
+    async showConfirmModal(source) {
         this.pendingSource = source;
-        const modal = document.getElementById('inbound-confirm-modal');
-        const listEl = document.getElementById('confirm-items-list');
-        const summaryEl = document.getElementById('confirm-summary');
-        const operatorSelect = document.getElementById('confirm-operator');
-        const operatorGroup = operatorSelect.closest('.form-group');
-        const defaultOperator = source === 'scan'
-            ? document.getElementById('scan-operator').value
-            : document.getElementById('manual-operator').value;
-
-        operatorGroup.classList.add('confirm-operator-group');
-        summaryEl.parentNode.insertBefore(operatorGroup, summaryEl);
-
-        Utils.populateOperatorSelect('confirm-operator', {
-            defaultValue: Utils.getValidOperator(defaultOperator) || Utils.getValidOperator(Utils.getLastOperator())
+        await Utils.populateOperatorSelect('confirm-operator', {
+            allowEmpty: false,
+            defaultValue: this.el(source === 'scan' ? 'scan-operator' : 'manual-operator').value || Utils.getLastOperator()
         });
-
-        const totalPackageQuantity = this.pendingItems.reduce((sum, item) => sum + item.quantity, 0);
-        summaryEl.innerHTML = `
-            <div class="summary-pill">入库条目 ${this.pendingItems.length}</div>
-            <div class="summary-pill">包装总数 ${totalPackageQuantity}</div>
-            <div class="summary-pill">${source === 'scan' ? '扫码确认' : '手工确认'}</div>
+        const totalQty = this.pendingItems.reduce((sum, item) => sum + item.quantity, 0);
+        const totalMinQty = this.pendingItems.reduce((sum, item) => sum + (item.quantity * item.packageToMinQty), 0);
+        this.el('confirm-summary').innerHTML = `
+            <div class="summary-pill">条目 ${this.pendingItems.length}</div>
+            <div class="summary-pill">包装总数 ${totalQty}</div>
+            <div class="summary-pill">最小单位总量 ${totalMinQty}</div>
         `;
-
-        listEl.innerHTML = this.pendingItems.map((item, index) => `
+        this.el('confirm-items-list').innerHTML = this.pendingItems.map((item, index) => `
             <div class="confirm-item">
                 <div class="confirm-item-name">${index + 1}. ${this.escapeHtml(item.reagentName)}</div>
-                <div class="confirm-item-detail">${this.escapeHtml(item.workGroupName || '未配置工作组')} / ${this.escapeHtml(item.instrumentName || '未配置仪器')}</div>
-                <div class="confirm-item-detail">批号: ${this.escapeHtml(item.batchNo)} | 效期: ${this.escapeHtml(item.expiryDate)}</div>
-                <div class="confirm-item-detail">数量: ${this.escapeHtml(item.quantity)} ${this.escapeHtml(item.packageUnit)}</div>
-                <div class="confirm-item-detail">规格: ${this.escapeHtml(this.formatPackageRelation(item.packageUnit, item.packageToMinQty, item.minUnit))}</div>
+                <div class="confirm-item-detail">${this.escapeHtml(item.workGroupName || '')} / ${this.escapeHtml(item.instrumentName || '')}</div>
+                <div class="confirm-item-detail">批号：${this.escapeHtml(item.batchNo)} | 效期：${this.escapeHtml(item.expiryDate)}</div>
+                <div class="confirm-item-detail">数量：${item.quantity} ${this.escapeHtml(item.packageUnit)} | 规格：${this.escapeHtml(this.formatRelation(item.packageUnit, item.packageToMinQty, item.minUnit))}</div>
             </div>
         `).join('');
-
-        modal.classList.remove('hidden');
+        this.el('inbound-confirm-modal').classList.remove('hidden');
     },
 
     closeConfirmModal() {
-        document.getElementById('inbound-confirm-modal').classList.add('hidden');
-        document.getElementById('confirm-submit-btn').disabled = false;
-        document.getElementById('confirm-submit-btn').textContent = '正式入库';
+        this.el('inbound-confirm-modal').classList.add('hidden');
+        this.el('confirm-submit-btn').disabled = false;
+        this.el('confirm-submit-btn').textContent = '正式入库';
         this.pendingItems = [];
         this.pendingSource = null;
         this.isSubmitting = false;
@@ -978,6 +873,7 @@
             work_group_id: item.workGroupId || null,
             instrument_id: item.instrumentId || null,
             reagent_name: item.reagentName,
+            manufacturer: item.manufacturer || null,
             batch_no: item.batchNo,
             expiry_date: item.expiryDate,
             quantity: item.quantity,
@@ -988,37 +884,20 @@
         }));
     },
 
-    syncOperator(operator) {
-        const normalized = Utils.getValidOperator(operator);
-        document.getElementById('scan-operator').value = normalized;
-        document.getElementById('manual-operator').value = normalized;
-    },
-
     async submitInbound() {
-        if (this.isSubmitting) {
-            return;
-        }
-
-        const operator = Utils.getValidOperator(document.getElementById('confirm-operator').value);
+        if (this.isSubmitting) return;
+        const operator = Utils.getValidOperator(this.el('confirm-operator').value);
         if (!operator) {
-            Utils.showToast('请选择入库操作人', 'warning');
+            Utils.showToast('请选择有效的操作人', 'warning');
             return;
         }
-
         this.isSubmitting = true;
-        const submitButton = document.getElementById('confirm-submit-btn');
-        submitButton.disabled = true;
-        submitButton.textContent = '提交中...';
-
+        this.el('confirm-submit-btn').disabled = true;
+        this.el('confirm-submit-btn').textContent = '提交中...';
         try {
-            const result = await API.inbound.stockInBatch({
-                operator,
-                items: this.buildSubmitItems()
-            });
-
+            const result = await API.inbound.stockInBatch({ operator, items: this.buildSubmitItems() });
             Utils.saveLastOperator(operator);
             this.syncOperator(operator);
-
             if (this.pendingSource === 'scan') {
                 this.scanItems = [];
                 this.renderScanItems();
@@ -1026,20 +905,18 @@
                 this.manualItems = [];
                 this.renderManualItems();
             }
-
-            const warningCount = result.warnings ? result.warnings.length : 0;
             this.closeConfirmModal();
-
-            if (warningCount > 0) {
-                Utils.showToast(`已入库 ${result.item_count} 条试剂，其中 ${warningCount} 条需要关注效期`, 'warning', 5000);
-            } else {
-                Utils.showToast(`成功入库 ${result.item_count} 条试剂`, 'success');
-            }
+            Utils.showToast(
+                result.warnings?.length
+                    ? `已入库 ${result.item_count} 条，其中 ${result.warnings.length} 条需要关注效期`
+                    : `成功入库 ${result.item_count} 条试剂`,
+                result.warnings?.length ? 'warning' : 'success'
+            );
         } catch (error) {
-            submitButton.disabled = false;
-            submitButton.textContent = '正式入库';
+            this.el('confirm-submit-btn').disabled = false;
+            this.el('confirm-submit-btn').textContent = '正式入库';
             this.isSubmitting = false;
-            Utils.showToast(`入库失败: ${error.message}`, 'error', 4000);
+            Utils.showToast(`入库失败：${error.message}`, 'error');
         }
     }
 };

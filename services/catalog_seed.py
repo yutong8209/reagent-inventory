@@ -9,7 +9,7 @@ DEFAULT_CATALOG = [
         "legacy_names": ["临检"],
         "instruments": [
             {"name": "血球仪", "aliases": ["血球分析仪"]},
-            {"name": "血凝", "aliases": ["凝血分析仪"]},
+            {"name": "血凝仪", "aliases": ["凝血分析仪"]},
             {"name": "血流变仪", "aliases": []},
             {"name": "尿干化学仪", "aliases": []},
             {"name": "尿沉渣仪", "aliases": []},
@@ -95,11 +95,7 @@ def _sync_group_instruments(group: WorkGroup, instrument_specs: list[dict], db: 
             used_ids.add(instrument.id)
             continue
 
-        new_instrument = Instrument(
-            work_group_id=group.id,
-            name=target_name,
-            model=target_model,
-        )
+        new_instrument = Instrument(work_group_id=group.id, name=target_name, model=target_model)
         db.add(new_instrument)
         db.flush()
         used_ids.add(new_instrument.id)
@@ -109,5 +105,4 @@ def ensure_default_catalog(db: Session):
     for group_spec in DEFAULT_CATALOG:
         group = _get_or_create_group(group_spec["name"], group_spec.get("legacy_names", []), db)
         _sync_group_instruments(group, group_spec["instruments"], db)
-
     db.commit()

@@ -4,10 +4,26 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import BatchStock, Transaction
+from models import BatchStock, Operator, Transaction
 from schemas import BatchStockInfo, StockOutRequest, StockOutResponse
 
 router = APIRouter()
+
+
+def _require_operator(operator_name: str, db: Session) -> str:
+    cleaned_operator = (operator_name or "").strip()
+    if not cleaned_operator:
+        raise HTTPException(status_code=400, detail="操作人不能为空")
+
+    operator = (
+        db.query(Operator)
+        .filter(Operator.name == cleaned_operator, Operator.is_active.is_(True))
+        .first()
+    )
+    if not operator:
+        raise HTTPException(status_code=400, detail=f"操作人“{cleaned_operator}”不存在或已停用")
+
+    return cleaned_operator
 
 
 @router.get("/stock/{reagent_id}", response_model=list[BatchStockInfo])
@@ -23,6 +39,7 @@ def get_stock_by_reagent(reagent_id: int, db: Session = Depends(get_db)):
 
 @router.post("/outbound", response_model=StockOutResponse)
 def stock_out(request: StockOutRequest, db: Session = Depends(get_db)):
+    operator = _require_operator(request.operator, db)
     deducted_batches = []
 
     if request.batch_stock_id:
@@ -49,7 +66,7 @@ def stock_out(request: StockOutRequest, db: Session = Depends(get_db)):
             batch_stock_id=batch_stock.id,
             type="OUT",
             quantity=request.quantity,
-            operator=request.operator,
+            operator=operator,
             source="outbound",
             raw_barcode=request.raw_barcode,
             package_unit=batch_stock.package_unit,
@@ -80,7 +97,7 @@ def stock_out(request: StockOutRequest, db: Session = Depends(get_db)):
             db,
             request.reagent_id,
             request.quantity,
-            request.operator,
+            operator,
             request.raw_barcode,
         )
 

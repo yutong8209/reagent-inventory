@@ -4,6 +4,7 @@ from .reagent import Reagent
 from .batch_stock import BatchStock
 from .transaction import Transaction
 from .parse_log import ParseLog
+from .operator import Operator
 
 __all__ = [
     "WorkGroup",
@@ -12,4 +13,5 @@ __all__ = [
     "BatchStock",
     "Transaction",
     "ParseLog",
+    "Operator",
 ]

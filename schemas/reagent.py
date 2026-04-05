@@ -35,3 +35,14 @@ class ReagentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ReagentUpdate(BaseModel):
+    instrument_id: int
+    name: str
+    manufacturer: Optional[str] = None
+    unit: str = "瓶"
+    package_unit: str = "盒"
+    package_to_min_qty: int = Field(default=1, gt=0)
+    warning_days: int = 30
+    warning_stock: int = 5

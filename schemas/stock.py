@@ -44,12 +44,15 @@ class StockInBatchItem(BaseModel):
     work_group_id: Optional[int] = None
     instrument_id: Optional[int] = None
     reagent_name: str
+    manufacturer: Optional[str] = None
     batch_no: str
     expiry_date: date
     quantity: int = Field(gt=0)
     package_unit: str = "盒"
     min_unit: Optional[str] = None
     package_to_min_qty: int = Field(default=1, gt=0)
+    warning_days: int = Field(default=30, ge=0)
+    warning_stock: int = Field(default=5, ge=0)
     raw_barcode: str = ""
 
 

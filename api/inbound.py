@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import BatchStock, Instrument, Reagent, Transaction
+from models import BatchStock, Instrument, Operator, Reagent, Transaction
 from schemas import (
     ReagentCreate,
     ReagentResponse,
@@ -28,12 +28,32 @@ def _normalize_manual_key(value: str) -> str:
     return re.sub(r"\s+", "", value).upper()
 
 
+def _normalize_name(value: str | None) -> str:
+    return "".join((value or "").strip().lower().split())
+
+
 def _build_manual_match_pattern(instrument_id: int, reagent_name: str) -> str:
     return f"{MANUAL_MATCH_PREFIX}{instrument_id}::{_normalize_manual_key(reagent_name)}"
 
 
 def _clean_text(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _require_operator(operator_name: str, db: Session) -> str:
+    cleaned_operator = _clean_text(operator_name)
+    if not cleaned_operator:
+        raise HTTPException(status_code=400, detail="操作人不能为空")
+
+    operator = (
+        db.query(Operator)
+        .filter(Operator.name == cleaned_operator, Operator.is_active.is_(True))
+        .first()
+    )
+    if not operator:
+        raise HTTPException(status_code=400, detail=f"操作人“{cleaned_operator}”不存在或已停用")
+
+    return cleaned_operator
 
 
 def _resolve_package_to_min_qty(item: StockInBatchItem, reagent: Reagent | None = None) -> int:
@@ -76,13 +96,14 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
         raise HTTPException(status_code=400, detail=f"试剂 {item.reagent_name} 的工作组与仪器不匹配")
 
     reagent_name = _clean_text(item.reagent_name)
-    reagent = db.query(Reagent).filter(
-        Reagent.instrument_id == instrument.id,
-        Reagent.name == reagent_name,
-    ).first()
+    if not reagent_name:
+        raise HTTPException(status_code=400, detail="试剂名称不能为空")
 
-    if reagent:
-        return reagent
+    existing = db.query(Reagent).filter(Reagent.instrument_id == instrument.id).all()
+    normalized_name = _normalize_name(reagent_name)
+    for reagent in existing:
+        if _normalize_name(reagent.name) == normalized_name:
+            return reagent
 
     reagent = Reagent(
         instrument_id=instrument.id,
@@ -90,9 +111,12 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
         match_mode="exact",
         match_pattern=_build_manual_match_pattern(instrument.id, reagent_name),
         raw_barcode_sample="MANUAL",
+        manufacturer=_clean_text(item.manufacturer) or None,
         unit=_clean_text(item.min_unit) or DEFAULT_MIN_UNIT,
         package_unit=_clean_text(item.package_unit) or DEFAULT_PACKAGE_UNIT,
         package_to_min_qty=_resolve_package_to_min_qty(item),
+        warning_days=item.warning_days,
+        warning_stock=item.warning_stock,
     )
     db.add(reagent)
     db.flush()
@@ -122,7 +146,7 @@ def _upsert_batch_stock(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"试剂 {reagent.name} 批号 {item.batch_no} 已存在，"
+                    f"试剂 {reagent.name} 的批号 {item.batch_no} 已存在，"
                     "包装单位、最小单位或包装关系与现有库存不一致，不能直接合并入库"
                 ),
             )
@@ -153,7 +177,7 @@ def _create_transaction(
     package_to_min_qty: int,
     db: Session,
 ):
-    raw_barcode = item.raw_barcode or _build_manual_match_pattern(reagent.instrument_id, item.reagent_name)
+    raw_barcode = item.raw_barcode or _build_manual_match_pattern(reagent.instrument_id, reagent.name)
     db.add(
         Transaction(
             reagent_id=reagent.id,
@@ -172,9 +196,7 @@ def _create_transaction(
 
 
 def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockInBatchResponse:
-    operator = _clean_text(request.operator)
-    if not operator:
-        raise HTTPException(status_code=400, detail="操作人不能为空")
+    operator = _require_operator(request.operator, db)
 
     if not request.items:
         raise HTTPException(status_code=400, detail="请至少提交一条入库记录")
@@ -185,14 +207,22 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
     try:
         for item in request.items:
             reagent = _resolve_reagent_for_item(item, db)
-            package_unit = _clean_text(item.package_unit) or _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
-            min_unit = _clean_text(item.min_unit) or _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
-            package_to_min_qty = _resolve_package_to_min_qty(item, reagent)
+            if item.reagent_id is not None:
+                package_unit = _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
+                min_unit = _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
+                package_to_min_qty = reagent.package_to_min_qty or 1
+            else:
+                package_unit = _clean_text(item.package_unit) or _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
+                min_unit = _clean_text(item.min_unit) or _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
+                package_to_min_qty = _resolve_package_to_min_qty(item, reagent)
 
-            if item.source == "manual":
+            if item.source == "manual" and item.reagent_id is None:
+                reagent.manufacturer = _clean_text(item.manufacturer) or reagent.manufacturer
                 reagent.package_unit = package_unit
                 reagent.unit = min_unit
                 reagent.package_to_min_qty = package_to_min_qty
+                reagent.warning_days = item.warning_days
+                reagent.warning_stock = item.warning_stock
 
             warning = _build_inbound_warning(reagent, item.expiry_date)
             batch_stock = _upsert_batch_stock(
@@ -265,6 +295,15 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
     if not match_pattern:
         raise HTTPException(status_code=400, detail="匹配值不能为空")
 
+    normalized_name = _normalize_name(name)
+    instrument_reagents = db.query(Reagent).filter(Reagent.instrument_id == data.instrument_id).all()
+    for reagent in instrument_reagents:
+        if _normalize_name(reagent.name) == normalized_name:
+            raise HTTPException(
+                status_code=400,
+                detail=f"仪器“{instrument.name}”下已存在同名试剂“{reagent.name}”",
+            )
+
     if data.match_mode == "exact":
         existing = db.query(Reagent).filter(
             Reagent.match_mode == "exact",
@@ -273,7 +312,7 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
         if existing:
             raise HTTPException(
                 status_code=400,
-                detail=f"已存在使用相同完整匹配模式的试剂：{existing.name}",
+                detail=f"已存在使用相同完整匹配规则的试剂：{existing.name}",
             )
     else:
         exact_match = db.query(Reagent).filter(

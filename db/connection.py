@@ -68,6 +68,12 @@ def ensure_schema():
                 "ALTER TABLE transactions ADD COLUMN package_to_min_qty INTEGER NOT NULL DEFAULT 1",
             ),
         ],
+        "operators": [
+            (
+                "is_active",
+                "ALTER TABLE operators ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
+            ),
+        ],
     }
 
     with engine.begin() as connection:

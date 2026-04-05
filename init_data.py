@@ -3,7 +3,7 @@ sys.path.insert(0, ".")
 
 from db import SessionLocal, ensure_schema
 from models import WorkGroup, Instrument
-from services import ensure_default_catalog
+from services import ensure_default_catalog, ensure_default_operators
 
 
 def init_database():
@@ -17,6 +17,7 @@ def init_base_data():
     try:
         print("Synchronizing default catalog...")
         ensure_default_catalog(db)
+        ensure_default_operators(db)
 
         work_groups = db.query(WorkGroup).all()
         instruments = db.query(Instrument).all()

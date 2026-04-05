@@ -1,5 +1,6 @@
 from .barcode import BarcodeParseRequest, BarcodeParseResult, CandidateInfo
-from .reagent import ReagentCreate, ReagentResponse
+from .reagent import ReagentCreate, ReagentResponse, ReagentUpdate
+from .operator import OperatorCreate, OperatorResponse, OperatorUpdate
 from .stock import (
     StockInRequest,
     StockInResponse,
@@ -20,6 +21,7 @@ from .inventory import (
     BatchInfo,
     WorkGroupCatalogItem,
     InstrumentCatalogItem,
+    ReagentCatalogItem,
     WorkGroupCreate,
     WorkGroupUpdate,
     InstrumentCreate,
@@ -32,6 +34,10 @@ __all__ = [
     "CandidateInfo",
     "ReagentCreate",
     "ReagentResponse",
+    "ReagentUpdate",
+    "OperatorCreate",
+    "OperatorResponse",
+    "OperatorUpdate",
     "StockInRequest",
     "StockInResponse",
     "StockInBatchItem",
@@ -49,6 +55,7 @@ __all__ = [
     "BatchInfo",
     "WorkGroupCatalogItem",
     "InstrumentCatalogItem",
+    "ReagentCatalogItem",
     "WorkGroupCreate",
     "WorkGroupUpdate",
     "InstrumentCreate",
