@@ -1,8 +1,10 @@
+from io import BytesIO
 from datetime import date
 
 import models  # noqa: F401
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -667,6 +669,298 @@ def test_archived_reagent_can_be_scanned_and_reactivated_by_inbound(tmp_path):
         batch = db.query(BatchStock).filter(BatchStock.reagent_id == reagent_id).first()
         assert batch is not None
         assert batch.quantity == 3
+
+
+def test_export_inventory_all_work_groups_creates_group_sheets(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+
+    with SessionLocal() as db:
+        work_groups = db.query(WorkGroup).order_by(WorkGroup.id.asc()).all()
+        first_group = work_groups[0]
+        second_group = work_groups[1]
+        first_instrument = (
+            db.query(Instrument)
+            .filter(Instrument.work_group_id == first_group.id)
+            .order_by(Instrument.id.asc())
+            .first()
+        )
+        second_instrument = (
+            db.query(Instrument)
+            .filter(Instrument.work_group_id == second_group.id)
+            .order_by(Instrument.id.asc())
+            .first()
+        )
+
+        reagent_one = Reagent(
+            instrument_id=first_instrument.id,
+            name="EXPORT-ALL-A",
+            match_mode="exact",
+            match_pattern="EXPORT-ALL-A",
+            raw_barcode_sample="EXPORT-ALL-A",
+            manufacturer="Maker A",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=2,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        reagent_two = Reagent(
+            instrument_id=second_instrument.id,
+            name="EXPORT-ALL-B",
+            match_mode="exact",
+            match_pattern="EXPORT-ALL-B",
+            raw_barcode_sample="EXPORT-ALL-B",
+            manufacturer="Maker B",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=3,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        archived_reagent = Reagent(
+            instrument_id=first_instrument.id,
+            name="EXPORT-ARCHIVED",
+            match_mode="exact",
+            match_pattern="EXPORT-ARCHIVED",
+            raw_barcode_sample="EXPORT-ARCHIVED",
+            manufacturer="Maker X",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+            is_archived=True,
+        )
+        db.add_all([reagent_one, reagent_two, archived_reagent])
+        db.flush()
+
+        db.add(BatchStock(
+            reagent_id=reagent_one.id,
+            batch_no="BATCH-A1",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 15),
+            quantity=4,
+            loose_min_quantity=1,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=2,
+        ))
+        db.add(BatchStock(
+            reagent_id=reagent_two.id,
+            batch_no="BATCH-B1",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 25),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=3,
+        ))
+        db.add(BatchStock(
+            reagent_id=archived_reagent.id,
+            batch_no="BATCH-X1",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 25),
+            quantity=1,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        ))
+        db.commit()
+        group_names = [group.name for group in work_groups]
+
+    response = client.get("/api/inventory/export")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "attachment;" in response.headers["content-disposition"]
+
+    workbook = load_workbook(filename=BytesIO(response.content))
+    assert workbook.sheetnames == group_names
+
+    first_sheet_values = list(workbook[group_names[0]].iter_rows(values_only=True))
+    second_sheet_values = list(workbook[group_names[1]].iter_rows(values_only=True))
+    assert first_sheet_values[0][0] == "工作组"
+    assert any(row[3] == "EXPORT-ALL-A" for row in first_sheet_values[1:])
+    assert any(row[3] == "EXPORT-ALL-B" for row in second_sheet_values[1:])
+    assert all(row[3] != "EXPORT-ARCHIVED" for row in first_sheet_values[1:])
+
+
+def test_export_inventory_by_work_group_only_contains_that_group(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+
+    with SessionLocal() as db:
+        work_groups = db.query(WorkGroup).order_by(WorkGroup.id.asc()).all()
+        target_group = work_groups[0]
+        other_group = work_groups[1]
+        target_group_id = target_group.id
+        target_group_name = target_group.name
+        target_instruments = (
+            db.query(Instrument)
+            .filter(Instrument.work_group_id == target_group.id)
+            .order_by(Instrument.id.asc())
+            .limit(2)
+            .all()
+        )
+        other_instrument = (
+            db.query(Instrument)
+            .filter(Instrument.work_group_id == other_group.id)
+            .order_by(Instrument.id.asc())
+            .first()
+        )
+
+        reagent_one = Reagent(
+            instrument_id=target_instruments[0].id,
+            name="EXPORT-GROUP-A",
+            match_mode="exact",
+            match_pattern="EXPORT-GROUP-A",
+            raw_barcode_sample="EXPORT-GROUP-A",
+            manufacturer="Maker A",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        reagent_two = Reagent(
+            instrument_id=target_instruments[1].id,
+            name="EXPORT-GROUP-B",
+            match_mode="exact",
+            match_pattern="EXPORT-GROUP-B",
+            raw_barcode_sample="EXPORT-GROUP-B",
+            manufacturer="Maker B",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        reagent_three = Reagent(
+            instrument_id=other_instrument.id,
+            name="EXPORT-GROUP-X",
+            match_mode="exact",
+            match_pattern="EXPORT-GROUP-X",
+            raw_barcode_sample="EXPORT-GROUP-X",
+            manufacturer="Maker X",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add_all([reagent_one, reagent_two, reagent_three])
+        db.flush()
+        for reagent_id in (reagent_one.id, reagent_two.id, reagent_three.id):
+            db.add(BatchStock(
+                reagent_id=reagent_id,
+                batch_no=f"BATCH-{reagent_id}",
+                expiry_date=date.today().fromordinal(date.today().toordinal() + 10),
+                quantity=1,
+                loose_min_quantity=0,
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=1,
+            ))
+        db.commit()
+
+    response = client.get(f"/api/inventory/export?work_group_id={target_group_id}")
+    assert response.status_code == 200
+
+    workbook = load_workbook(filename=BytesIO(response.content))
+    assert workbook.sheetnames == [target_group_name]
+    sheet_rows = list(workbook[target_group_name].iter_rows(values_only=True))[1:]
+    exported_reagents = {row[3] for row in sheet_rows}
+    assert exported_reagents == {"EXPORT-GROUP-A", "EXPORT-GROUP-B"}
+
+
+def test_export_inventory_by_instrument_only_contains_that_instrument(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+
+    with SessionLocal() as db:
+        work_group = db.query(WorkGroup).order_by(WorkGroup.id.asc()).first()
+        work_group_id = work_group.id
+        work_group_name = work_group.name
+        instruments = (
+            db.query(Instrument)
+            .filter(Instrument.work_group_id == work_group.id)
+            .order_by(Instrument.id.asc())
+            .limit(2)
+            .all()
+        )
+        target_instrument = instruments[0]
+        other_instrument = instruments[1]
+        target_instrument_id = target_instrument.id
+        target_instrument_name = target_instrument.name
+
+        reagent_one = Reagent(
+            instrument_id=target_instrument.id,
+            name="EXPORT-INSTRUMENT-A",
+            match_mode="exact",
+            match_pattern="EXPORT-INSTRUMENT-A",
+            raw_barcode_sample="EXPORT-INSTRUMENT-A",
+            manufacturer="Maker A",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        reagent_two = Reagent(
+            instrument_id=other_instrument.id,
+            name="EXPORT-INSTRUMENT-B",
+            match_mode="exact",
+            match_pattern="EXPORT-INSTRUMENT-B",
+            raw_barcode_sample="EXPORT-INSTRUMENT-B",
+            manufacturer="Maker B",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add_all([reagent_one, reagent_two])
+        db.flush()
+        db.add(BatchStock(
+            reagent_id=reagent_one.id,
+            batch_no="BATCH-IA",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 10),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        ))
+        db.add(BatchStock(
+            reagent_id=reagent_two.id,
+            batch_no="BATCH-IB",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 20),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        ))
+        db.commit()
+
+    response = client.get(
+        f"/api/inventory/export?work_group_id={work_group_id}&instrument_id={target_instrument_id}"
+    )
+    assert response.status_code == 200
+
+    workbook = load_workbook(filename=BytesIO(response.content))
+    assert workbook.sheetnames == [work_group_name]
+    sheet_rows = list(workbook[work_group_name].iter_rows(values_only=True))[1:]
+    exported_instruments = {row[1] for row in sheet_rows}
+    exported_reagents = {row[3] for row in sheet_rows}
+    assert exported_instruments == {target_instrument_name}
+    assert exported_reagents == {"EXPORT-INSTRUMENT-A"}
 
 
 def test_manual_inbound_new_reagent_inherits_instrument_defaults(tmp_path):

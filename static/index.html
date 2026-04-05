@@ -248,6 +248,7 @@
                                 <span>仅看预警</span>
                             </label>
                             <div class="button-group">
+                                <button id="inventory-export-btn" class="btn btn-primary">导出 Excel</button>
                                 <button id="inventory-archive-zero-btn" class="btn btn-secondary">一键归档零库存</button>
                                 <button id="inventory-refresh-btn" class="btn btn-secondary">刷新库存</button>
                             </div>
@@ -290,6 +291,40 @@
                         <div class="modal-footer">
                             <button id="inventory-reagent-modal-cancel" class="btn btn-secondary">取消</button>
                             <button id="inventory-reagent-modal-save" class="btn btn-primary">保存试剂信息</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="inventory-export-modal" class="modal hidden">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>导出库存 Excel</h3>
+                            <button id="inventory-export-modal-close" class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="form-group">
+                                <label for="inventory-export-preset">快速范围</label>
+                                <select id="inventory-export-preset" class="form-select">
+                                    <option value="all">全部工作组全部仪器</option>
+                                    <option value="current-group">当前工作组全部仪器</option>
+                                    <option value="current-instrument">当前工作组当前仪器</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="inventory-export-work-group">工作组</label>
+                                    <select id="inventory-export-work-group" class="form-select"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="inventory-export-instrument">仪器</label>
+                                    <select id="inventory-export-instrument" class="form-select"></select>
+                                </div>
+                            </div>
+                            <p class="hint">导出只按这里选定的范围，不受页面当前搜索词、状态筛选和排序方式影响。</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="inventory-export-cancel" class="btn btn-secondary">取消</button>
+                            <button id="inventory-export-confirm" class="btn btn-primary">开始导出</button>
                         </div>
                     </div>
                 </div>

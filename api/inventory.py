@@ -1,7 +1,12 @@
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
 from typing import List, Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -28,6 +33,45 @@ from schemas import (
 )
 
 router = APIRouter()
+
+EXPORT_HEADERS = [
+    "工作组",
+    "仪器名称",
+    "仪器型号",
+    "试剂名称",
+    "厂家",
+    "试剂状态",
+    "失效预警天数",
+    "库存预警最小单位数",
+    "总库存最小单位数",
+    "最小单位",
+    "最近效期",
+    "距最近效期天数",
+    "批次数",
+    "最近出入库时间",
+    "批号",
+    "该批号库存最小单位数",
+    "批号有效期",
+    "该批号距失效天数",
+    "是否过期",
+    "包装单位",
+    "每包装对应最小单位数",
+    "整包装数量",
+    "散装最小单位数量",
+    "批次入库时间",
+]
+RED_FILL = PatternFill(fill_type="solid", fgColor="FDECEC")
+YELLOW_FILL = PatternFill(fill_type="solid", fgColor="FFF6CF")
+HEADER_FILL = PatternFill(fill_type="solid", fgColor="E8EEF7")
+STATUS_RED_LEVELS = {"empty", "expired"}
+STATUS_YELLOW_LEVELS = {"expiring", "low"}
+STATUS_LABELS = {
+    "empty": "零库存",
+    "expired": "已过期",
+    "expiring": "近效期",
+    "low": "低库存",
+    "normal": "正常",
+}
 
 
 def _clean_text(value: str | None) -> str:
@@ -235,43 +279,21 @@ def _status_sort_key(reagent: ReagentInfo):
     )
 
 
-def _validate_reagent_payload(
-    *,
+def _query_inventory_data(
     db: Session,
-    instrument_id: int,
-    name: str,
-    exclude_reagent_id: int | None = None,
-) -> tuple[Instrument, str]:
-    instrument = db.query(Instrument).filter(Instrument.id == instrument_id).first()
-    if not instrument:
-        raise HTTPException(status_code=400, detail=f"仪器 ID {instrument_id} 不存在")
+    *,
+    work_group_id: int | None = None,
+    instrument_id: int | None = None,
+) -> list[WorkGroupInfo]:
+    work_groups_query = db.query(WorkGroup).order_by(WorkGroup.id.asc())
+    if work_group_id is not None:
+        work_groups_query = work_groups_query.filter(WorkGroup.id == work_group_id)
+    work_groups = work_groups_query.all()
 
-    cleaned_name = _clean_text(name)
-    if not cleaned_name:
-        raise HTTPException(status_code=400, detail="试剂名称不能为空")
-
-    normalized_name = _normalize_name(cleaned_name)
-    existing = db.query(Reagent).filter(Reagent.instrument_id == instrument_id).all()
-    for reagent in existing:
-        if exclude_reagent_id is not None and reagent.id == exclude_reagent_id:
-            continue
-        if _normalize_name(reagent.name) == normalized_name:
-            raise HTTPException(
-                status_code=400,
-                detail=f"仪器“{instrument.name}”下已存在同名试剂“{reagent.name}”",
-            )
-
-    return instrument, cleaned_name
-
-
-@router.get("/inventory", response_model=List[WorkGroupInfo])
-def get_inventory(
-    instrument_id: Optional[int] = None,
-    db: Session = Depends(get_db),
-):
-    work_groups = db.query(WorkGroup).order_by(WorkGroup.id.asc()).all()
     instruments_query = db.query(Instrument).order_by(Instrument.work_group_id.asc(), Instrument.id.asc())
-    if instrument_id:
+    if work_group_id is not None:
+        instruments_query = instruments_query.filter(Instrument.work_group_id == work_group_id)
+    if instrument_id is not None:
         instruments_query = instruments_query.filter(Instrument.id == instrument_id)
 
     instruments = instruments_query.all()
@@ -340,6 +362,217 @@ def get_inventory(
         )
 
     return result
+
+
+def _sanitize_sheet_title(name: str, used_titles: set[str]) -> str:
+    cleaned = "".join("_" if ch in '[]:*?/\\' else ch for ch in (name or "工作组")).strip() or "工作组"
+    base = cleaned[:31]
+    title = base
+    index = 1
+    while title in used_titles:
+        suffix = f"_{index}"
+        title = f"{base[: max(0, 31 - len(suffix))]}{suffix}" or f"Sheet{index}"
+        index += 1
+    used_titles.add(title)
+    return title
+
+
+def _format_export_datetime(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, str):
+        return value
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _export_scope_label(
+    db: Session,
+    *,
+    work_group_id: int | None,
+    instrument_id: int | None,
+) -> str:
+    if instrument_id is not None:
+        instrument = db.query(Instrument).filter(Instrument.id == instrument_id).first()
+        if instrument:
+            return instrument.name
+    if work_group_id is not None:
+        work_group = db.query(WorkGroup).filter(WorkGroup.id == work_group_id).first()
+        if work_group:
+            return work_group.name
+    return "全部工作组"
+
+
+def _build_export_rows(group: WorkGroupInfo) -> list[list[str | int]]:
+    rows: list[list[str | int]] = []
+    instruments = sorted(group.instruments, key=lambda item: (item.name, item.id))
+    for instrument in instruments:
+        reagents = sorted(
+            instrument.reagents,
+            key=lambda item: (
+                instrument.name,
+                item.name,
+                _status_sort_key(item),
+            ),
+        )
+        for reagent in reagents:
+            for batch in reagent.batches:
+                rows.append([
+                    group.name,
+                    instrument.name,
+                    instrument.model or "",
+                    reagent.name,
+                    reagent.manufacturer or "",
+                    STATUS_LABELS.get(reagent.status_level, reagent.status_level),
+                    reagent.effective_warning_days,
+                    reagent.effective_warning_stock,
+                    reagent.total_min_quantity,
+                    reagent.unit,
+                    reagent.nearest_expiry_date or "",
+                    reagent.nearest_expiry_days if reagent.nearest_expiry_days is not None else "",
+                    reagent.batch_count,
+                    _format_export_datetime(reagent.last_transaction_at),
+                    batch.batch_no,
+                    batch.available_min_quantity,
+                    batch.expiry_date,
+                    batch.expiry_days_left,
+                    "是" if batch.is_expired else "否",
+                    batch.package_unit,
+                    batch.package_to_min_qty,
+                    batch.quantity,
+                    batch.loose_min_quantity,
+                    _format_export_datetime(batch.created_at),
+                ])
+    return rows
+
+
+def _apply_export_styles(worksheet):
+    header_font = Font(bold=True)
+    for cell in worksheet[1]:
+        cell.font = header_font
+        cell.fill = HEADER_FILL
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+
+    status_col = 6
+    for row_index in range(2, worksheet.max_row + 1):
+        status_value = worksheet.cell(row=row_index, column=status_col).value
+        if status_value in {STATUS_LABELS[level] for level in STATUS_RED_LEVELS}:
+            worksheet.cell(row=row_index, column=status_col).fill = RED_FILL
+        elif status_value in {STATUS_LABELS[level] for level in STATUS_YELLOW_LEVELS}:
+            worksheet.cell(row=row_index, column=status_col).fill = YELLOW_FILL
+
+    for column_cells in worksheet.columns:
+        max_length = max(len(str(cell.value or "")) for cell in column_cells)
+        worksheet.column_dimensions[column_cells[0].column_letter].width = min(max(max_length + 2, 10), 28)
+
+
+def _build_inventory_export_workbook(
+    db: Session,
+    *,
+    work_group_id: int | None,
+    instrument_id: int | None,
+) -> tuple[BytesIO, str]:
+    inventory_data = _query_inventory_data(
+        db,
+        work_group_id=work_group_id,
+        instrument_id=instrument_id,
+    )
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    used_titles: set[str] = set()
+
+    for group in inventory_data:
+        sheet = workbook.create_sheet(title=_sanitize_sheet_title(group.name, used_titles))
+        sheet.append(EXPORT_HEADERS)
+        rows = _build_export_rows(group)
+        if rows:
+            for row in rows:
+                sheet.append(row)
+        _apply_export_styles(sheet)
+
+    if not workbook.sheetnames:
+        sheet = workbook.create_sheet(title="库存")
+        sheet.append(EXPORT_HEADERS)
+        _apply_export_styles(sheet)
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+
+    scope_label = _export_scope_label(db, work_group_id=work_group_id, instrument_id=instrument_id)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    filename = f"库存导出_{scope_label}_{timestamp}.xlsx"
+    return buffer, filename
+
+
+def _validate_reagent_payload(
+    *,
+    db: Session,
+    instrument_id: int,
+    name: str,
+    exclude_reagent_id: int | None = None,
+) -> tuple[Instrument, str]:
+    instrument = db.query(Instrument).filter(Instrument.id == instrument_id).first()
+    if not instrument:
+        raise HTTPException(status_code=400, detail=f"仪器 ID {instrument_id} 不存在")
+
+    cleaned_name = _clean_text(name)
+    if not cleaned_name:
+        raise HTTPException(status_code=400, detail="试剂名称不能为空")
+
+    normalized_name = _normalize_name(cleaned_name)
+    existing = db.query(Reagent).filter(Reagent.instrument_id == instrument_id).all()
+    for reagent in existing:
+        if exclude_reagent_id is not None and reagent.id == exclude_reagent_id:
+            continue
+        if _normalize_name(reagent.name) == normalized_name:
+            raise HTTPException(
+                status_code=400,
+                detail=f"仪器“{instrument.name}”下已存在同名试剂“{reagent.name}”",
+            )
+
+    return instrument, cleaned_name
+
+
+@router.get("/inventory", response_model=List[WorkGroupInfo])
+def get_inventory(
+    instrument_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    return _query_inventory_data(db, instrument_id=instrument_id)
+
+
+@router.get("/inventory/export")
+def export_inventory(
+    work_group_id: int | None = Query(None),
+    instrument_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    if instrument_id is not None:
+        instrument = db.query(Instrument).filter(Instrument.id == instrument_id).first()
+        if not instrument:
+            raise HTTPException(status_code=404, detail="仪器不存在")
+        if work_group_id is not None and instrument.work_group_id != work_group_id:
+            raise HTTPException(status_code=400, detail="所选仪器不属于当前工作组")
+        work_group_id = instrument.work_group_id
+    elif work_group_id is not None:
+        work_group = db.query(WorkGroup).filter(WorkGroup.id == work_group_id).first()
+        if not work_group:
+            raise HTTPException(status_code=404, detail="工作组不存在")
+
+    buffer, filename = _build_inventory_export_workbook(
+        db,
+        work_group_id=work_group_id,
+        instrument_id=instrument_id,
+    )
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+    }
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 @router.get("/work-groups")

@@ -117,6 +117,27 @@ const API = {
             const params = instrumentId ? `?instrument_id=${instrumentId}` : '';
             return API.request(`/inventory${params}`);
         },
+        async exportExcel(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            const response = await fetch(`${API_BASE}/inventory/export${suffix}`);
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.detail || `HTTP ${response.status}`);
+            }
+
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get('Content-Disposition') || '';
+            const match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+            const filename = match ? decodeURIComponent(match[1]) : '库存导出.xlsx';
+            return { blob, filename };
+        },
         getWorkGroups() {
             return API.request('/work-groups');
         },

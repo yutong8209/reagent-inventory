@@ -11,6 +11,7 @@ const inventoryPage = {
         sort: 'severity'
     },
     lastLoadedAt: null,
+    isExporting: false,
 
     async init() {
         if (!this.initialized) {
@@ -42,16 +43,29 @@ const inventoryPage = {
         });
 
         document.getElementById('inventory-refresh-btn').addEventListener('click', () => this.loadInventory());
+        document.getElementById('inventory-export-btn').addEventListener('click', () => this.openExportModal());
         document.getElementById('inventory-archive-zero-btn').addEventListener('click', () => this.archiveZeroStockReagents());
         document.getElementById('inventory-batch-warning-btn').addEventListener('click', () => this.batchUpdateInstrumentWarnings());
         document.getElementById('inventory-reagent-modal-close').addEventListener('click', () => this.closeReagentModal());
         document.getElementById('inventory-reagent-modal-cancel').addEventListener('click', () => this.closeReagentModal());
         document.getElementById('inventory-reagent-modal-save').addEventListener('click', () => this.saveReagentSettings());
+        document.getElementById('inventory-export-preset').addEventListener('change', (event) => this.applyExportPreset(event.target.value));
+        document.getElementById('inventory-export-work-group').addEventListener('change', () => this.handleExportWorkGroupChange());
+        document.getElementById('inventory-export-confirm').addEventListener('click', () => this.exportInventory());
+        document.getElementById('inventory-export-cancel').addEventListener('click', () => this.closeExportModal());
+        document.getElementById('inventory-export-modal-close').addEventListener('click', () => this.closeExportModal());
 
         const modal = document.getElementById('inventory-reagent-modal');
         modal.addEventListener('click', (event) => {
             if (event.target === modal) {
                 this.closeReagentModal();
+            }
+        });
+
+        const exportModal = document.getElementById('inventory-export-modal');
+        exportModal.addEventListener('click', (event) => {
+            if (event.target === exportModal) {
+                this.closeExportModal();
             }
         });
     },
@@ -191,6 +205,84 @@ const inventoryPage = {
         };
     },
 
+    populateExportWorkGroupOptions(selectedValue = '') {
+        const select = document.getElementById('inventory-export-work-group');
+        const currentValue = String(selectedValue || '');
+        select.innerHTML = `
+            <option value="">全部工作组</option>
+            ${this.inventoryData.map((group) => `
+                <option value="${group.id}" ${String(group.id) === currentValue ? 'selected' : ''}>${this.escapeHtml(group.name)}</option>
+            `).join('')}
+        `;
+    },
+
+    populateExportInstrumentOptions(workGroupId, selectedValue = '') {
+        const select = document.getElementById('inventory-export-instrument');
+        const group = this.inventoryData.find((item) => item.id === Number(workGroupId));
+        const instruments = group?.instruments || [];
+        const currentValue = String(selectedValue || '');
+
+        select.innerHTML = `
+            <option value="">全部仪器</option>
+            ${instruments.map((instrument) => `
+                <option value="${instrument.id}" ${String(instrument.id) === currentValue ? 'selected' : ''}>${this.escapeHtml(instrument.name)}</option>
+            `).join('')}
+        `;
+        select.disabled = !workGroupId;
+    },
+
+    applyExportPreset(preset) {
+        const workGroupSelect = document.getElementById('inventory-export-work-group');
+        const instrumentSelect = document.getElementById('inventory-export-instrument');
+
+        if (preset === 'current-instrument' && this.selectedWorkGroupId && this.selectedInstrumentId) {
+            workGroupSelect.value = String(this.selectedWorkGroupId);
+            this.populateExportInstrumentOptions(this.selectedWorkGroupId, this.selectedInstrumentId);
+            instrumentSelect.value = String(this.selectedInstrumentId);
+            return;
+        }
+
+        if (preset === 'current-group' && this.selectedWorkGroupId) {
+            workGroupSelect.value = String(this.selectedWorkGroupId);
+            this.populateExportInstrumentOptions(this.selectedWorkGroupId, '');
+            instrumentSelect.value = '';
+            return;
+        }
+
+        workGroupSelect.value = '';
+        this.populateExportInstrumentOptions('', '');
+        instrumentSelect.value = '';
+    },
+
+    handleExportWorkGroupChange() {
+        const workGroupId = document.getElementById('inventory-export-work-group').value;
+        this.populateExportInstrumentOptions(workGroupId, '');
+    },
+
+    openExportModal() {
+        this.populateExportWorkGroupOptions();
+        this.populateExportInstrumentOptions('', '');
+        const defaultPreset = this.selectedInstrumentId ? 'current-instrument' : 'all';
+        document.getElementById('inventory-export-preset').value = defaultPreset;
+        this.applyExportPreset(defaultPreset);
+        this.setExportButtonLoading(false);
+        document.getElementById('inventory-export-modal').classList.remove('hidden');
+    },
+
+    closeExportModal(force = false) {
+        if (this.isExporting && !force) {
+            return;
+        }
+        document.getElementById('inventory-export-modal').classList.add('hidden');
+    },
+
+    setExportButtonLoading(loading) {
+        this.isExporting = loading;
+        const button = document.getElementById('inventory-export-confirm');
+        button.disabled = loading;
+        button.textContent = loading ? '导出中...' : '开始导出';
+    },
+
     findReagentById(reagentId) {
         for (const group of this.inventoryData) {
             for (const instrument of group.instruments || []) {
@@ -256,6 +348,38 @@ const inventoryPage = {
 
         Utils.showToast(`已归档 ${result.archived_count} 个零库存试剂`, 'success');
         await this.loadInventory();
+    },
+
+    async exportInventory() {
+        if (this.isExporting) {
+            return;
+        }
+
+        const workGroupId = document.getElementById('inventory-export-work-group').value;
+        const instrumentId = document.getElementById('inventory-export-instrument').value;
+        const params = {
+            work_group_id: workGroupId || null,
+            instrument_id: instrumentId || null
+        };
+
+        this.setExportButtonLoading(true);
+        try {
+            const { blob, filename } = await API.inventory.exportExcel(params);
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(downloadUrl);
+            this.closeExportModal(true);
+            Utils.showToast('库存 Excel 已开始下载', 'success');
+        } catch (error) {
+            Utils.showToast(error.message || '导出失败，请稍后重试', 'error');
+        } finally {
+            this.setExportButtonLoading(false);
+        }
     },
 
     openReagentModal(reagentId) {
