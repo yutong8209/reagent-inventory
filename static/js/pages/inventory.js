@@ -20,6 +20,28 @@ const inventoryPage = {
             .replace(/'/g, '&#39;');
     },
 
+    formatBatchQuantity(batch, packageUnit, minUnit) {
+        const whole = `${batch.quantity} ${packageUnit}`;
+        if (!batch.loose_min_quantity) {
+            return whole;
+        }
+        return `${whole} + ${batch.loose_min_quantity} ${minUnit}`;
+    },
+
+    formatTotalQuantity(reagent) {
+        const totalPackages = reagent.batches.reduce((sum, batch) => sum + batch.quantity, 0);
+        const totalMin = reagent.batches.reduce((sum, batch) => sum + (batch.available_min_quantity || 0), 0);
+        const ratio = reagent.package_to_min_qty > 0 ? reagent.package_to_min_qty : 1;
+        const loose = totalMin % ratio;
+        const packageUnit = reagent.package_unit || '盒';
+        const minUnit = reagent.unit || '瓶';
+
+        if (!loose) {
+            return `${totalPackages} ${packageUnit}`;
+        }
+        return `${totalPackages} ${packageUnit} + ${loose} ${minUnit}`;
+    },
+
     async loadCatalog() {
         try {
             this.catalog = await API.inventory.getWorkGroupCatalog();
@@ -140,13 +162,14 @@ const inventoryPage = {
                 `;
 
                 inst.reagents.forEach(reagent => {
-                    const totalQty = reagent.batches.reduce((sum, b) => sum + b.quantity, 0);
                     const displayPackageUnit = reagent.package_unit || '盒';
+                    const displayMinUnit = reagent.unit || '瓶';
+                    const totalMinQty = reagent.batches.reduce((sum, batch) => sum + (batch.available_min_quantity || 0), 0);
                     html += `
                         <div class="tree-reagent">
                             <div class="tree-reagent-header">
-                                <span>${this.escapeHtml(reagent.name)}（最小单位：${this.escapeHtml(reagent.unit)}）</span>
-                                <span>总库存: ${totalQty} ${this.escapeHtml(displayPackageUnit)}</span>
+                                <span>${this.escapeHtml(reagent.name)}（最小单位：${this.escapeHtml(displayMinUnit)}）</span>
+                                <span>总库存: ${this.escapeHtml(this.formatTotalQuantity(reagent))}，折合 ${totalMinQty} ${this.escapeHtml(displayMinUnit)}</span>
                             </div>
                             <div class="tree-batches">
                     `;
@@ -159,7 +182,7 @@ const inventoryPage = {
                         html += `
                             <div class="tree-batch ${expiredClass}">
                                 <span>批号: ${this.escapeHtml(batch.batch_no)}${statusText}</span>
-                                <span>有效期: ${this.escapeHtml(batch.expiry_date)} | 数量: ${batch.quantity} ${this.escapeHtml(batch.package_unit || displayPackageUnit)}</span>
+                                <span>有效期: ${this.escapeHtml(batch.expiry_date)} | 库存: ${this.escapeHtml(this.formatBatchQuantity(batch, batch.package_unit || displayPackageUnit, batch.min_unit || displayMinUnit))} | 折合 ${batch.available_min_quantity || 0} ${this.escapeHtml(batch.min_unit || displayMinUnit)}</span>
                             </div>
                         `;
                     });

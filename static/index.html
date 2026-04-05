@@ -173,7 +173,7 @@
                             <button class="modal-close" onclick="inboundPage.closeNewReagentModal()">&times;</button>
                         </div>
                         <div class="modal-body">
-                            <p>当前条码未识别。请补全该条码对应的试剂资料，保存后会自动加入待入库列表。</p>
+                            <p>当前条码未识别，请补全该条码对应的试剂资料，保存后会自动加入待入库列表。</p>
 
                             <div class="form-group">
                                 <label>扫描条码</label>
@@ -258,35 +258,134 @@
 
             <div id="page-outbound" class="page">
                 <h2>试剂出库</h2>
+
                 <div class="form-section">
-                    <div class="form-group">
-                        <label>扫码输入</label>
-                        <input type="text" id="outbound-barcode" class="form-input" placeholder="扫描试剂条码" autocomplete="off">
-                        <button class="btn btn-primary" onclick="outboundPage.parseBarcode()">识别</button>
+                    <div class="mode-tabs">
+                        <button class="mode-tab active" data-mode="scan" onclick="outboundPage.switchMode('scan')">扫码出库</button>
+                        <button class="mode-tab" data-mode="manual" onclick="outboundPage.switchMode('manual')">手工出库</button>
                     </div>
                 </div>
 
-                <div id="outbound-result" class="result-section hidden">
+                <div id="outbound-scan-mode">
                     <div class="form-section">
-                        <h3>选择批次</h3>
-                        <div id="outbound-batch-list"></div>
+                        <div class="form-group">
+                            <label>扫码输入</label>
+                            <input type="text" id="outbound-barcode" class="form-input" placeholder="扫描试剂条码后按回车" autocomplete="off">
+                            <button class="btn btn-primary" onclick="outboundPage.parseBarcode()">识别</button>
+                        </div>
                     </div>
 
-                    <div id="outbound-form" class="form-section hidden">
-                        <h3>出库信息</h3>
-                        <div class="form-group">
-                            <label>选中批次</label>
-                            <div id="outbound-selected-batch" class="display-field"></div>
+                    <div id="outbound-scan-draft" class="form-section hidden">
+                        <h3>扫码待加入条目</h3>
+                        <div id="outbound-scan-preview" class="outbound-preview-card"></div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>出库数量 <span class="required">*</span></label>
+                                <input type="number" id="outbound-scan-quantity" class="form-input" min="1" value="1">
+                            </div>
+                            <div class="form-group">
+                                <label>出库单位 <span class="required">*</span></label>
+                                <select id="outbound-scan-unit" class="form-select" onchange="outboundPage.refreshScanDraftPreview()">
+                                    <option value="min">瓶</option>
+                                    <option value="package">盒</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>出库数量 <span class="required">*</span></label>
-                            <input type="number" id="outbound-quantity" class="form-input" min="1" value="1">
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="outboundPage.clearScanDraft()">取消</button>
+                            <button class="btn btn-primary" onclick="outboundPage.addScanItem()">加入待出库列表</button>
                         </div>
-                        <div class="form-group">
-                            <label>操作人 <span class="required">*</span></label>
-                            <input type="text" id="outbound-operator" class="form-input" placeholder="输入操作人姓名">
+                    </div>
+                </div>
+
+                <div id="outbound-manual-mode" class="hidden">
+                    <div class="form-section">
+                        <h3>手工选择库存</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>工作组</label>
+                                <select id="outbound-manual-work-group" class="form-select" onchange="outboundPage.loadManualInstruments()">
+                                    <option value="">全部工作组</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>仪器</label>
+                                <select id="outbound-manual-instrument" class="form-select" onchange="outboundPage.loadManualReagents()">
+                                    <option value="">全部仪器</option>
+                                </select>
+                            </div>
                         </div>
-                        <button class="btn btn-primary" onclick="outboundPage.submitOutbound()">确认出库</button>
+
+                        <div class="form-group">
+                            <label>关键词搜索</label>
+                            <input type="text" id="outbound-manual-search" class="form-input" placeholder="输入试剂、仪器或工作组关键词" oninput="outboundPage.searchManualReagents()">
+                        </div>
+
+                        <div class="form-group">
+                            <label>试剂</label>
+                            <select id="outbound-manual-reagent" class="form-select" onchange="outboundPage.selectManualReagentFromDropdown()">
+                                <option value="">请选择试剂</option>
+                            </select>
+                        </div>
+
+                        <div id="outbound-manual-search-results" class="candidate-list hidden"></div>
+                        <div id="outbound-manual-summary" class="outbound-preview-card hidden"></div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>出库数量 <span class="required">*</span></label>
+                                <input type="number" id="outbound-manual-quantity" class="form-input" min="1" value="1">
+                            </div>
+                            <div class="form-group">
+                                <label>出库单位 <span class="required">*</span></label>
+                                <select id="outbound-manual-unit" class="form-select" onchange="outboundPage.refreshManualPreview()">
+                                    <option value="min">瓶</option>
+                                    <option value="package">盒</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="button-group">
+                            <button class="btn btn-secondary" onclick="outboundPage.clearManualSelection()">清空</button>
+                            <button class="btn btn-primary" onclick="outboundPage.addManualItem()">加入待出库列表</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="outbound-items-section" class="form-section hidden">
+                    <h3>待出库列表（<span id="outbound-item-count">0</span>）</h3>
+                    <div id="outbound-items-list" class="scan-items-list"></div>
+
+                    <div class="form-group">
+                        <label>默认出库人（可选）</label>
+                        <select id="outbound-default-operator" class="form-select"></select>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-secondary" onclick="outboundPage.clearPendingItems()">清空列表</button>
+                        <button class="btn btn-primary" onclick="outboundPage.showConfirmModal()">确认出库</button>
+                    </div>
+                </div>
+
+                <div id="outbound-confirm-modal" class="modal hidden">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>出库确认</h3>
+                            <button class="modal-close" onclick="outboundPage.closeConfirmModal()">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <p>请确认以下出库信息，提交后将扣减库存并生成出库流水。</p>
+                            <div class="form-group confirm-operator-group">
+                                <label>出库人 <span class="required">*</span></label>
+                                <select id="outbound-confirm-operator" class="form-select"></select>
+                            </div>
+                            <div id="outbound-confirm-summary" class="confirm-summary"></div>
+                            <div id="outbound-confirm-items" class="confirm-list"></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="outboundPage.closeConfirmModal()">取消</button>
+                            <button id="outbound-confirm-submit" class="btn btn-primary" onclick="outboundPage.submitOutboundBatch()">正式出库</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -359,6 +458,7 @@
         <option value="个"></option>
         <option value="套"></option>
     </datalist>
+
     <datalist id="min-unit-options">
         <option value="瓶"></option>
         <option value="支"></option>

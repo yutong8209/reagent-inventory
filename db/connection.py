@@ -38,6 +38,10 @@ def ensure_schema():
         ],
         "batch_stocks": [
             (
+                "loose_min_quantity",
+                "ALTER TABLE batch_stocks ADD COLUMN loose_min_quantity INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
                 "package_unit",
                 "ALTER TABLE batch_stocks ADD COLUMN package_unit VARCHAR(50) NOT NULL DEFAULT '盒'",
             ),
@@ -88,6 +92,14 @@ def ensure_schema():
             )
 
         if "batch_stocks" in table_columns:
+            connection.execute(
+                text(
+                    """
+                    UPDATE batch_stocks
+                    SET loose_min_quantity = COALESCE(loose_min_quantity, 0)
+                    """
+                )
+            )
             connection.execute(
                 text(
                     """

@@ -29,6 +29,7 @@ class BatchStock(Base):
     batch_no: Mapped[str] = mapped_column(String(100), nullable=False)
     expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    loose_min_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     package_unit: Mapped[str] = mapped_column(String(50), nullable=False, default="盒")
     min_unit: Mapped[str] = mapped_column(String(50), nullable=False, default="瓶")
     package_to_min_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

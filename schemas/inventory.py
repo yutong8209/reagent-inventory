@@ -8,9 +8,12 @@ class BatchInfo(BaseModel):
     batch_no: str
     expiry_date: str
     quantity: int
+    loose_min_quantity: int = 0
+    available_min_quantity: int = 0
     package_unit: str
     min_unit: str
     package_to_min_qty: int
+    is_expired: bool = False
 
 
 class ReagentInfo(BaseModel):
