@@ -47,6 +47,8 @@ const app = {
             outboundPage.init();
         } else if (page === 'inventory' && typeof inventoryPage !== 'undefined') {
             inventoryPage.init();
+        } else if (page === 'catalog' && typeof catalogPage !== 'undefined') {
+            catalogPage.init();
         }
     }
 };

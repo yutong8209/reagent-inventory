@@ -16,6 +16,7 @@ class ReagentCreate(BaseModel):
     package_to_min_qty: int = Field(default=1, gt=0)
     warning_days: int = 30
     warning_stock: int = 5
+    follow_instrument: bool = True
 
 
 class ReagentResponse(BaseModel):
@@ -31,6 +32,8 @@ class ReagentResponse(BaseModel):
     package_to_min_qty: int
     warning_days: int
     warning_stock: int
+    follow_instrument: bool
+    is_archived: bool = False
     created_at: datetime
 
     class Config:
@@ -46,3 +49,4 @@ class ReagentUpdate(BaseModel):
     package_to_min_qty: int = Field(default=1, gt=0)
     warning_days: int = 30
     warning_stock: int = 5
+    follow_instrument: bool = False

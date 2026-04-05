@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -23,6 +23,8 @@ class Reagent(Base):
     package_to_min_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     warning_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    follow_instrument: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )

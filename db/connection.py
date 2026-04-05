@@ -26,6 +26,16 @@ def ensure_schema():
     }
 
     migrations = {
+        "instruments": [
+            (
+                "default_warning_days",
+                "ALTER TABLE instruments ADD COLUMN default_warning_days INTEGER NOT NULL DEFAULT 30",
+            ),
+            (
+                "default_warning_stock",
+                "ALTER TABLE instruments ADD COLUMN default_warning_stock INTEGER NOT NULL DEFAULT 5",
+            ),
+        ],
         "reagents": [
             (
                 "package_unit",
@@ -34,6 +44,14 @@ def ensure_schema():
             (
                 "package_to_min_qty",
                 "ALTER TABLE reagents ADD COLUMN package_to_min_qty INTEGER NOT NULL DEFAULT 1",
+            ),
+            (
+                "follow_instrument",
+                "ALTER TABLE reagents ADD COLUMN follow_instrument BOOLEAN NOT NULL DEFAULT 1",
+            ),
+            (
+                "is_archived",
+                "ALTER TABLE reagents ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0",
             ),
         ],
         "batch_stocks": [
@@ -87,12 +105,27 @@ def ensure_schema():
                 if column_name not in existing_columns:
                     connection.execute(text(statement))
 
+        if "instruments" in table_columns:
+            connection.execute(
+                text(
+                    """
+                    UPDATE instruments
+                    SET default_warning_days = COALESCE(default_warning_days, 30),
+                        default_warning_stock = COALESCE(default_warning_stock, 5)
+                    """
+                )
+            )
+
         if "reagents" in table_columns:
             connection.execute(
                 text(
                     """
                     UPDATE reagents
-                    SET package_to_min_qty = COALESCE(NULLIF(package_to_min_qty, 0), 1)
+                    SET package_to_min_qty = COALESCE(NULLIF(package_to_min_qty, 0), 1),
+                        warning_days = COALESCE(warning_days, 30),
+                        warning_stock = COALESCE(warning_stock, 5),
+                        follow_instrument = COALESCE(follow_instrument, 1),
+                        is_archived = COALESCE(is_archived, 0)
                     """
                 )
             )

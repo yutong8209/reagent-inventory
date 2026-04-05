@@ -105,6 +105,13 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
         if _normalize_name(reagent.name) == normalized_name:
             return reagent
 
+    warning_days = item.warning_days
+    warning_stock = item.warning_stock
+    if warning_days == 30:
+        warning_days = instrument.default_warning_days or 30
+    if warning_stock == 5:
+        warning_stock = instrument.default_warning_stock or 5
+
     reagent = Reagent(
         instrument_id=instrument.id,
         name=reagent_name,
@@ -115,8 +122,9 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
         unit=_clean_text(item.min_unit) or DEFAULT_MIN_UNIT,
         package_unit=_clean_text(item.package_unit) or DEFAULT_PACKAGE_UNIT,
         package_to_min_qty=_resolve_package_to_min_qty(item),
-        warning_days=item.warning_days,
-        warning_stock=item.warning_stock,
+        warning_days=warning_days,
+        warning_stock=warning_stock,
+        follow_instrument=False,
     )
     db.add(reagent)
     db.flush()
@@ -207,6 +215,8 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
     try:
         for item in request.items:
             reagent = _resolve_reagent_for_item(item, db)
+            if reagent.is_archived:
+                reagent.is_archived = False
             if item.reagent_id is not None:
                 package_unit = _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
                 min_unit = _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
@@ -221,8 +231,6 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
                 reagent.package_unit = package_unit
                 reagent.unit = min_unit
                 reagent.package_to_min_qty = package_to_min_qty
-                reagent.warning_days = item.warning_days
-                reagent.warning_stock = item.warning_stock
 
             warning = _build_inbound_warning(reagent, item.expiry_date)
             batch_stock = _upsert_batch_stock(
@@ -296,7 +304,11 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="匹配值不能为空")
 
     normalized_name = _normalize_name(name)
-    instrument_reagents = db.query(Reagent).filter(Reagent.instrument_id == data.instrument_id).all()
+    instrument_reagents = (
+        db.query(Reagent)
+        .filter(Reagent.instrument_id == data.instrument_id, Reagent.is_archived.is_(False))
+        .all()
+    )
     for reagent in instrument_reagents:
         if _normalize_name(reagent.name) == normalized_name:
             raise HTTPException(
@@ -306,6 +318,7 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
 
     if data.match_mode == "exact":
         existing = db.query(Reagent).filter(
+            Reagent.is_archived.is_(False),
             Reagent.match_mode == "exact",
             Reagent.match_pattern == match_pattern,
         ).first()
@@ -316,6 +329,7 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
             )
     else:
         exact_match = db.query(Reagent).filter(
+            Reagent.is_archived.is_(False),
             Reagent.match_mode == "exact",
             Reagent.match_pattern == match_pattern,
         ).first()
@@ -325,7 +339,11 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
                 detail=f"该匹配值已被试剂“{exact_match.name}”作为完整匹配使用",
             )
 
-        existing_prefixes = db.query(Reagent).filter(Reagent.match_mode == "prefix").all()
+        existing_prefixes = (
+            db.query(Reagent)
+            .filter(Reagent.is_archived.is_(False), Reagent.match_mode == "prefix")
+            .all()
+        )
         for existing in existing_prefixes:
             if match_pattern.startswith(existing.match_pattern) or existing.match_pattern.startswith(match_pattern):
                 raise HTTPException(
@@ -345,6 +363,7 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
         package_to_min_qty=data.package_to_min_qty or 1,
         warning_days=data.warning_days,
         warning_stock=data.warning_stock,
+        follow_instrument=data.follow_instrument,
     )
     db.add(reagent)
     db.commit()
@@ -354,7 +373,11 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
 
 @router.get("/reagents/{reagent_id}", response_model=ReagentResponse)
 def get_reagent(reagent_id: int, db: Session = Depends(get_db)):
-    reagent = db.query(Reagent).filter(Reagent.id == reagent_id).first()
+    reagent = (
+        db.query(Reagent)
+        .filter(Reagent.id == reagent_id, Reagent.is_archived.is_(False))
+        .first()
+    )
     if not reagent:
         raise HTTPException(status_code=404, detail="试剂不存在")
     return reagent

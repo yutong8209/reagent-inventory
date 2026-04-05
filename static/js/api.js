@@ -151,6 +151,39 @@ const API = {
                 body: JSON.stringify(data)
             });
         },
+        updateInstrumentWarningDefaults(id, data) {
+            return API.request(`/instruments/${id}/warning-defaults`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        },
+        batchUpdateInstrumentWarnings(id, data) {
+            return API.request(`/instruments/${id}/warning-batch-update`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
+        applyInstrumentWarningDefaults(id) {
+            return API.request(`/instruments/${id}/warning-defaults/apply`, {
+                method: 'POST'
+            });
+        },
+        updateReagentWarningSettings(id, data) {
+            return API.request(`/reagents/${id}/warning-settings`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        },
+        archiveReagent(id) {
+            return API.request(`/reagents/${id}/archive`, {
+                method: 'POST'
+            });
+        },
+        archiveZeroStockReagents() {
+            return API.request('/reagents/archive-zero-stock', {
+                method: 'POST'
+            });
+        },
         resetReagentData() {
             return API.request('/admin/reset-reagent-data', {
                 method: 'POST'

@@ -1,4 +1,5 @@
-from typing import List, Optional
+from datetime import datetime
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -7,6 +8,7 @@ class BatchInfo(BaseModel):
     id: int
     batch_no: str
     expiry_date: str
+    expiry_days_left: int
     quantity: int
     loose_min_quantity: int = 0
     available_min_quantity: int = 0
@@ -14,6 +16,7 @@ class BatchInfo(BaseModel):
     min_unit: str
     package_to_min_qty: int
     is_expired: bool = False
+    created_at: datetime
 
 
 class ReagentInfo(BaseModel):
@@ -23,6 +26,22 @@ class ReagentInfo(BaseModel):
     package_unit: Optional[str]
     package_to_min_qty: int
     manufacturer: Optional[str]
+    warning_days: int
+    warning_stock: int
+    effective_warning_days: int
+    effective_warning_stock: int
+    warning_source: Literal["instrument", "reagent"]
+    follow_instrument: bool = True
+    total_package_quantity: int = 0
+    total_min_quantity: int = 0
+    batch_count: int = 0
+    nearest_expiry_date: Optional[str] = None
+    nearest_expiry_days: Optional[int] = None
+    has_expired_batch: bool = False
+    has_expiring_soon: bool = False
+    is_low_stock: bool = False
+    status_level: Literal["empty", "expired", "expiring", "low", "normal"] = "normal"
+    last_transaction_at: Optional[datetime] = None
     batches: List[BatchInfo]
 
 
@@ -30,6 +49,8 @@ class InstrumentInfo(BaseModel):
     id: int
     name: str
     model: Optional[str]
+    default_warning_days: int
+    default_warning_stock: int
     reagents: List[ReagentInfo]
 
 
@@ -52,6 +73,11 @@ class ReagentCatalogItem(BaseModel):
     package_to_min_qty: int
     warning_days: int
     warning_stock: int
+    follow_instrument: bool
+    is_archived: bool = False
+    effective_warning_days: int
+    effective_warning_stock: int
+    warning_source: Literal["instrument", "reagent"]
 
 
 class InstrumentCatalogItem(BaseModel):
@@ -59,6 +85,8 @@ class InstrumentCatalogItem(BaseModel):
     work_group_id: int
     name: str
     model: Optional[str] = None
+    default_warning_days: int = 30
+    default_warning_stock: int = 5
 
     class Config:
         from_attributes = True
@@ -82,9 +110,24 @@ class InstrumentCreate(BaseModel):
     work_group_id: int
     name: str
     model: Optional[str] = None
+    default_warning_days: int = Field(default=30, ge=0)
+    default_warning_stock: int = Field(default=5, ge=0)
 
 
 class InstrumentUpdate(BaseModel):
     work_group_id: int
     name: str
     model: Optional[str] = None
+    default_warning_days: int = Field(default=30, ge=0)
+    default_warning_stock: int = Field(default=5, ge=0)
+
+
+class InstrumentWarningDefaultsUpdate(BaseModel):
+    default_warning_days: int = Field(default=30, ge=0)
+    default_warning_stock: int = Field(default=5, ge=0)
+
+
+class ReagentWarningSettingsUpdate(BaseModel):
+    follow_instrument: bool = True
+    warning_days: int = Field(default=30, ge=0)
+    warning_stock: int = Field(default=5, ge=0)

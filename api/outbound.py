@@ -134,7 +134,11 @@ def _find_scanned_batch(
 
 
 def _build_preview(request: StockOutPreviewRequest, db: Session) -> StockOutPreviewResponse:
-    reagent = db.query(Reagent).filter(Reagent.id == request.reagent_id).first()
+    reagent = (
+        db.query(Reagent)
+        .filter(Reagent.id == request.reagent_id, Reagent.is_archived.is_(False))
+        .first()
+    )
     if not reagent:
         raise HTTPException(status_code=404, detail=f"试剂 ID {request.reagent_id} 不存在")
 
@@ -306,7 +310,11 @@ def _process_batch_outbound(request: StockOutBatchRequest, db: Session) -> Stock
         warnings: list[str] = []
 
         for item, preview in zip(request.items, previews):
-            reagent = db.query(Reagent).filter(Reagent.id == preview.reagent_id).first()
+            reagent = (
+                db.query(Reagent)
+                .filter(Reagent.id == preview.reagent_id, Reagent.is_archived.is_(False))
+                .first()
+            )
             if not reagent:
                 raise HTTPException(status_code=404, detail=f"试剂 ID {preview.reagent_id} 不存在")
 
@@ -389,6 +397,7 @@ def search_outbound_reagents(
         db.query(Reagent)
         .join(Instrument, Reagent.instrument_id == Instrument.id)
         .join(WorkGroup, Instrument.work_group_id == WorkGroup.id)
+        .filter(Reagent.is_archived.is_(False))
         .order_by(WorkGroup.id.asc(), Instrument.id.asc(), Reagent.id.asc())
     )
 

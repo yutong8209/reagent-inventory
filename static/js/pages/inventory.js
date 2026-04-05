@@ -1,19 +1,59 @@
 const inventoryPage = {
-    catalog: [],
-    reagents: [],
-    operators: [],
-    editingWorkGroupId: null,
-    editingInstrumentId: null,
-    editingOperatorId: null,
-    editingReagentId: null,
+    inventoryData: [],
+    initialized: false,
+    selectedWorkGroupId: null,
+    selectedInstrumentId: null,
+    editReagentId: null,
+    filters: {
+        keyword: '',
+        status: 'all',
+        onlyWarnings: false,
+        sort: 'severity'
+    },
+    lastLoadedAt: null,
 
     async init() {
-        this.refreshReagentRelationPreview();
-        await this.loadCatalog();
-        await this.loadOperators();
-        await this.loadInstruments();
-        await this.loadReagents();
+        if (!this.initialized) {
+            this.bindEvents();
+            this.initialized = true;
+        }
         await this.loadInventory();
+    },
+
+    bindEvents() {
+        document.getElementById('inventory-search').addEventListener('input', Utils.debounce((event) => {
+            this.filters.keyword = event.target.value.trim();
+            this.renderInventoryBody();
+        }, 180));
+
+        document.getElementById('inventory-status-filter').addEventListener('change', (event) => {
+            this.filters.status = event.target.value || 'all';
+            this.renderInventoryBody();
+        });
+
+        document.getElementById('inventory-only-warnings').addEventListener('change', (event) => {
+            this.filters.onlyWarnings = event.target.checked;
+            this.renderInventoryBody();
+        });
+
+        document.getElementById('inventory-sort').addEventListener('change', (event) => {
+            this.filters.sort = event.target.value || 'severity';
+            this.renderInventoryBody();
+        });
+
+        document.getElementById('inventory-refresh-btn').addEventListener('click', () => this.loadInventory());
+        document.getElementById('inventory-archive-zero-btn').addEventListener('click', () => this.archiveZeroStockReagents());
+        document.getElementById('inventory-batch-warning-btn').addEventListener('click', () => this.batchUpdateInstrumentWarnings());
+        document.getElementById('inventory-reagent-modal-close').addEventListener('click', () => this.closeReagentModal());
+        document.getElementById('inventory-reagent-modal-cancel').addEventListener('click', () => this.closeReagentModal());
+        document.getElementById('inventory-reagent-modal-save').addEventListener('click', () => this.saveReagentSettings());
+
+        const modal = document.getElementById('inventory-reagent-modal');
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                this.closeReagentModal();
+            }
+        });
     },
 
     escapeHtml(value) {
@@ -25,399 +65,475 @@ const inventoryPage = {
             .replace(/'/g, '&#39;');
     },
 
-    formatRelation(packageUnit, qty, minUnit) {
-        const packageLabel = String(packageUnit || '盒').trim() || '盒';
-        const minLabel = String(minUnit || '瓶').trim() || '瓶';
-        const ratio = Math.max(parseInt(qty, 10) || 1, 1);
-        return `1${packageLabel} = ${ratio}${minLabel}`;
-    },
-
-    formatBatchQuantity(batch, packageUnit, minUnit) {
-        const whole = `${batch.quantity} ${packageUnit}`;
-        if (!batch.loose_min_quantity) {
-            return whole;
-        }
-        return `${whole} + ${batch.loose_min_quantity} ${minUnit}`;
-    },
-
-    formatTotalQuantity(reagent) {
-        const totalPackages = reagent.batches.reduce((sum, batch) => sum + batch.quantity, 0);
-        const totalMin = reagent.batches.reduce((sum, batch) => sum + (batch.available_min_quantity || 0), 0);
-        const ratio = reagent.package_to_min_qty > 0 ? reagent.package_to_min_qty : 1;
-        const loose = totalMin % ratio;
-        const packageUnit = reagent.package_unit || '盒';
-        const minUnit = reagent.unit || '瓶';
-
-        if (!loose) {
-            return `${totalPackages} ${packageUnit}`;
-        }
-        return `${totalPackages} ${packageUnit} + ${loose} ${minUnit}`;
-    },
-
-    refreshReagentRelationPreview() {
-        const preview = document.getElementById('catalog-reagent-package-relation-preview');
-        if (!preview) return;
-        preview.textContent = this.formatRelation(
-            document.getElementById('catalog-reagent-package-unit').value,
-            document.getElementById('catalog-reagent-package-to-min-qty').value,
-            document.getElementById('catalog-reagent-min-unit').value
-        );
-    },
-
-    async loadCatalog() {
-        this.catalog = await API.inventory.getWorkGroupCatalog();
-        this.renderCatalog();
-    },
-
-    renderCatalog() {
-        this.renderWorkGroupList();
-        this.renderInstrumentGroupSelect();
-        this.renderInstrumentList();
-        this.renderReagentSelectors();
-    },
-
-    renderWorkGroupList() {
-        const list = document.getElementById('catalog-work-group-list');
-        list.innerHTML = this.catalog.length
-            ? this.catalog.map((group) => `
-                <div class="catalog-item">
-                    <div>
-                        <div class="catalog-item-title">${this.escapeHtml(group.name)}</div>
-                        <div class="catalog-item-meta">仪器 ${group.instruments.length} 台</div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="inventoryPage.editWorkGroup(${group.id})">编辑</button>
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">暂无工作组</p>';
-    },
-
-    renderInstrumentGroupSelect() {
-        const baseOptions = ['<option value="">请选择工作组</option>'].concat(
-            this.catalog.map((group) => `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`)
-        ).join('');
-
-        ['catalog-instrument-work-group', 'catalog-reagent-filter-work-group', 'catalog-reagent-work-group'].forEach((id) => {
-            const select = document.getElementById(id);
-            const currentValue = select.value;
-            select.innerHTML = id === 'catalog-reagent-filter-work-group'
-                ? baseOptions.replace('请选择工作组', '全部工作组')
-                : baseOptions;
-            if ([...select.options].some((option) => option.value === currentValue)) {
-                select.value = currentValue;
-            }
-        });
-    },
-
-    renderInstrumentList() {
-        const list = document.getElementById('catalog-instrument-list');
-        list.innerHTML = this.catalog.length
-            ? this.catalog.map((group) => `
-                <div class="catalog-group">
-                    <div class="catalog-group-title">${this.escapeHtml(group.name)}</div>
-                    ${(group.instruments || []).length
-                        ? group.instruments.map((instrument) => `
-                            <div class="catalog-item">
-                                <div>
-                                    <div class="catalog-item-title">${this.escapeHtml(instrument.name)}</div>
-                                    <div class="catalog-item-meta">${this.escapeHtml(instrument.model || '未填写型号')}</div>
-                                </div>
-                                <button class="btn btn-secondary" onclick="inventoryPage.editInstrument(${instrument.id})">编辑</button>
-                            </div>
-                        `).join('')
-                        : '<p class="catalog-empty">该工作组暂无仪器</p>'}
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">暂无仪器</p>';
-    },
-
-    renderReagentSelectors() {
-        this.loadReagentFilterInstruments();
-        this.loadReagentFormInstruments();
-    },
-
-    async loadReagentFilterInstruments() {
-        const workGroupId = document.getElementById('catalog-reagent-filter-work-group').value;
-        const select = document.getElementById('catalog-reagent-filter-instrument');
-        select.innerHTML = '<option value="">全部仪器</option>';
-        const instruments = await API.inventory.getInstruments(workGroupId || null).catch(() => []);
-        select.innerHTML += instruments.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`).join('');
-    },
-
-    async loadReagentFormInstruments(selectedValue = '') {
-        const workGroupId = document.getElementById('catalog-reagent-work-group').value;
-        const select = document.getElementById('catalog-reagent-instrument');
-        select.innerHTML = '<option value="">请选择仪器</option>';
-        if (!workGroupId) return;
-        const instruments = await API.inventory.getInstruments(workGroupId).catch(() => []);
-        select.innerHTML += instruments.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`).join('');
-        if (selectedValue) {
-            select.value = String(selectedValue);
-        }
-    },
-
-    async loadOperators() {
-        this.operators = await API.operators.list();
-        const list = document.getElementById('catalog-operator-list');
-        list.innerHTML = this.operators.length
-            ? this.operators.map((item) => `
-                <div class="catalog-item">
-                    <div>
-                        <div class="catalog-item-title">${this.escapeHtml(item.name)}</div>
-                        <div class="catalog-item-meta">${item.is_active ? '启用中' : '已停用'}</div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="inventoryPage.editOperator(${item.id})">编辑</button>
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">暂无操作人</p>';
-    },
-
-    async loadInstruments() {
-        const instruments = await API.inventory.getInstruments();
-        const select = document.getElementById('inventory-instrument');
-        const currentValue = select.value;
-        select.innerHTML = '<option value="">全部仪器</option>' + instruments.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`).join('');
-        if ([...select.options].some((option) => option.value === currentValue)) {
-            select.value = currentValue;
-        }
-    },
-
-    async loadReagents() {
-        const params = {
-            work_group_id: document.getElementById('catalog-reagent-filter-work-group').value || null,
-            instrument_id: document.getElementById('catalog-reagent-filter-instrument').value || null,
-            keyword: document.getElementById('catalog-reagent-filter-keyword').value.trim() || null
-        };
-        this.reagents = await API.reagents.list(params);
-
-        const list = document.getElementById('catalog-reagent-list');
-        list.innerHTML = this.reagents.length
-            ? this.reagents.map((item) => `
-                <div class="catalog-item">
-                    <div>
-                        <div class="catalog-item-title">${this.escapeHtml(item.name)}</div>
-                        <div class="catalog-item-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
-                        <div class="catalog-item-meta">${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</div>
-                        <div class="catalog-item-meta">低库存预警：${item.warning_stock} ${this.escapeHtml(item.unit || '瓶')}</div>
-                    </div>
-                    <button class="btn btn-secondary" onclick="inventoryPage.editReagent(${item.id})">编辑</button>
-                </div>
-            `).join('')
-            : '<p class="catalog-empty">没有找到试剂档案</p>';
-    },
-
     async loadInventory() {
-        const instrumentId = document.getElementById('inventory-instrument').value;
-        const data = await API.inventory.get(instrumentId || null);
-        const resultDiv = document.getElementById('inventory-result');
-        if (!data.length) {
-            resultDiv.innerHTML = '<p class="catalog-empty">暂无库存数据</p>';
+        this.inventoryData = await API.inventory.get();
+        this.lastLoadedAt = new Date();
+        this.ensureSelection();
+        this.syncFilterControls();
+        this.render();
+    },
+
+    ensureSelection() {
+        const allInstruments = this.inventoryData.flatMap((group) => group.instruments || []);
+        if (!allInstruments.length) {
+            this.selectedWorkGroupId = null;
+            this.selectedInstrumentId = null;
             return;
         }
 
-        resultDiv.innerHTML = data.map((group) => `
-            <div class="tree-group">
-                <div class="tree-group-header">${this.escapeHtml(group.name)}</div>
-                ${group.instruments.map((instrument) => `
-                    <div class="tree-instrument">
-                        <div class="tree-instrument-header">${this.escapeHtml(instrument.name)}${instrument.model ? ` (${this.escapeHtml(instrument.model)})` : ''}</div>
-                        ${instrument.reagents.map((reagent) => `
-                            <div class="tree-reagent">
-                                <div class="tree-reagent-header">
-                                    <span>${this.escapeHtml(reagent.name)}${reagent.unit ? `（最小单位：${this.escapeHtml(reagent.unit)}）` : ''}</span>
-                                    <span>
-                                        总库存 ${this.escapeHtml(this.formatTotalQuantity(reagent))}
-                                        ，折合 ${reagent.batches.reduce((sum, batch) => sum + (batch.available_min_quantity || 0), 0)} ${this.escapeHtml(reagent.unit || '瓶')}
-                                    </span>
-                                </div>
-                                <div class="tree-batches">
-                                    ${reagent.batches.map((batch) => `
-                                        <div class="tree-batch ${Utils.isExpired(batch.expiry_date) ? 'expired' : ''}">
-                                            <span>批号：${this.escapeHtml(batch.batch_no)}${batch.is_expired ? ' [已过期]' : ''}</span>
-                                            <span>
-                                                效期：${this.escapeHtml(batch.expiry_date)}
-                                                | 库存：${this.escapeHtml(this.formatBatchQuantity(
-                                                    batch,
-                                                    batch.package_unit || reagent.package_unit || '盒',
-                                                    batch.min_unit || reagent.unit || '瓶'
-                                                ))}
-                                                | 折合 ${batch.available_min_quantity || 0} ${this.escapeHtml(batch.min_unit || reagent.unit || '瓶')}
-                                            </span>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                            </div>
-                        `).join('')}
+        if (!this.inventoryData.some((group) => group.id === this.selectedWorkGroupId)) {
+            const firstGroup = this.inventoryData.find((group) => (group.instruments || []).length > 0) || this.inventoryData[0];
+            this.selectedWorkGroupId = firstGroup?.id ?? null;
+        }
+
+        const selectedGroup = this.getSelectedWorkGroup();
+        const groupInstruments = selectedGroup?.instruments || [];
+        if (!groupInstruments.some((item) => item.id === this.selectedInstrumentId)) {
+            this.selectedInstrumentId = groupInstruments[0]?.id ?? null;
+        }
+    },
+
+    syncFilterControls() {
+        document.getElementById('inventory-search').value = this.filters.keyword;
+        document.getElementById('inventory-status-filter').value = this.filters.status;
+        document.getElementById('inventory-only-warnings').checked = this.filters.onlyWarnings;
+        document.getElementById('inventory-sort').value = this.filters.sort;
+    },
+
+    getSelectedWorkGroup() {
+        return this.inventoryData.find((group) => group.id === this.selectedWorkGroupId) || null;
+    },
+
+    getSelectedInstrument() {
+        const group = this.getSelectedWorkGroup();
+        return (group?.instruments || []).find((instrument) => instrument.id === this.selectedInstrumentId) || null;
+    },
+
+    getGroupWarningCount(group) {
+        return (group.instruments || []).reduce((sum, instrument) => sum + this.getInstrumentWarningCount(instrument), 0);
+    },
+
+    getInstrumentWarningCount(instrument) {
+        return (instrument.reagents || []).filter((item) => item.status_level !== 'normal').length;
+    },
+
+    getInstrumentSummary(instrument) {
+        const reagents = instrument?.reagents || [];
+        return {
+            reagentCount: reagents.length,
+            expiringCount: reagents.filter((item) => item.status_level === 'expiring').length,
+            lowStockCount: reagents.filter((item) => item.status_level === 'low' || item.status_level === 'empty').length,
+            expiredBatchCount: reagents.reduce((sum, item) => sum + item.batches.filter((batch) => batch.is_expired).length, 0)
+        };
+    },
+
+    getSortedReagents(reagents) {
+        const levelPriority = { empty: 0, expired: 1, expiring: 2, low: 3, normal: 4 };
+        const next = [...reagents];
+        next.sort((left, right) => {
+            if (this.filters.sort === 'name') {
+                return left.name.localeCompare(right.name, 'zh-CN');
+            }
+            if (this.filters.sort === 'stock') {
+                return (
+                    left.total_min_quantity - right.total_min_quantity
+                    || left.name.localeCompare(right.name, 'zh-CN')
+                );
+            }
+            if (this.filters.sort === 'expiry') {
+                return (
+                    (left.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER) - (right.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER)
+                    || levelPriority[left.status_level] - levelPriority[right.status_level]
+                    || left.name.localeCompare(right.name, 'zh-CN')
+                );
+            }
+            return (
+                levelPriority[left.status_level] - levelPriority[right.status_level]
+                || (left.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER) - (right.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER)
+                || left.name.localeCompare(right.name, 'zh-CN')
+            );
+        });
+        return next;
+    },
+
+    getFilteredReagents(instrument) {
+        const keyword = this.filters.keyword.toLowerCase();
+        return this.getSortedReagents((instrument?.reagents || []).filter((reagent) => {
+            if (keyword && !reagent.name.toLowerCase().includes(keyword)) {
+                return false;
+            }
+            if (this.filters.status !== 'all' && reagent.status_level !== this.filters.status) {
+                return false;
+            }
+            if (this.filters.onlyWarnings && reagent.status_level === 'normal') {
+                return false;
+            }
+            return true;
+        }));
+    },
+
+    selectWorkGroup(groupId) {
+        this.selectedWorkGroupId = groupId;
+        const group = this.getSelectedWorkGroup();
+        this.selectedInstrumentId = group?.instruments?.[0]?.id ?? null;
+        this.render();
+    },
+
+    selectInstrument(instrumentId) {
+        this.selectedInstrumentId = instrumentId;
+        this.render();
+    },
+
+    readBatchWarningInputs() {
+        return {
+            default_warning_days: Math.max(parseInt(document.getElementById('inventory-default-warning-days').value, 10) || 0, 0),
+            default_warning_stock: Math.max(parseInt(document.getElementById('inventory-default-warning-stock').value, 10) || 0, 0)
+        };
+    },
+
+    findReagentById(reagentId) {
+        for (const group of this.inventoryData) {
+            for (const instrument of group.instruments || []) {
+                const reagent = (instrument.reagents || []).find((item) => item.id === reagentId);
+                if (reagent) {
+                    return reagent;
+                }
+            }
+        }
+        return null;
+    },
+
+    findInstrumentById(instrumentId) {
+        for (const group of this.inventoryData) {
+            const instrument = (group.instruments || []).find((item) => item.id === instrumentId);
+            if (instrument) {
+                return { group, instrument };
+            }
+        }
+        return null;
+    },
+
+    async batchUpdateInstrumentWarnings() {
+        const instrument = this.getSelectedInstrument();
+        if (!instrument) {
+            return;
+        }
+
+        const payload = this.readBatchWarningInputs();
+        if (!confirm(`确定批量设置“${instrument.name}”下全部试剂的预警值吗？`)) {
+            return;
+        }
+
+        const result = await API.inventory.batchUpdateInstrumentWarnings(instrument.id, payload);
+        Utils.showToast(`已批量更新 ${result.updated_count} 个试剂，并同步保存为当前仪器默认值`, 'success');
+        await this.loadInventory();
+    },
+
+    async archiveReagent(reagentId) {
+        const reagent = this.findReagentById(reagentId);
+        if (!reagent || reagent.total_min_quantity > 0) {
+            return;
+        }
+        if (!confirm(`确定归档零库存试剂“${reagent.name}”吗？归档后它将不再出现在库存页面。`)) {
+            return;
+        }
+
+        await API.inventory.archiveReagent(reagentId);
+        Utils.showToast('试剂已归档', 'success');
+        await this.loadInventory();
+    },
+
+    async archiveZeroStockReagents() {
+        if (!confirm('确定一键归档所有零库存试剂吗？归档后它们将不再出现在库存页面。')) {
+            return;
+        }
+
+        const result = await API.inventory.archiveZeroStockReagents();
+        if (!result.archived_count) {
+            Utils.showToast('当前没有可归档的零库存试剂', 'warning');
+            return;
+        }
+
+        Utils.showToast(`已归档 ${result.archived_count} 个零库存试剂`, 'success');
+        await this.loadInventory();
+    },
+
+    openReagentModal(reagentId) {
+        const reagent = this.findReagentById(reagentId);
+        if (!reagent) {
+            return;
+        }
+
+        this.editReagentId = reagentId;
+        document.getElementById('inventory-reagent-modal-title').textContent = `设置试剂信息 · ${reagent.name}`;
+        document.getElementById('inventory-reagent-name').value = reagent.name;
+        document.getElementById('inventory-reagent-warning-days').value = String(reagent.warning_days);
+        document.getElementById('inventory-reagent-warning-stock').value = String(reagent.warning_stock);
+
+        const instrumentSelect = document.getElementById('inventory-reagent-instrument');
+        instrumentSelect.innerHTML = this.inventoryData.map((group) => `
+            <optgroup label="${this.escapeHtml(group.name)}">
+                ${(group.instruments || []).map((instrument) => `
+                    <option value="${instrument.id}" ${instrument.id === reagent.instrument_id ? 'selected' : ''}>
+                        ${this.escapeHtml(instrument.name)}
+                    </option>
+                `).join('')}
+            </optgroup>
+        `).join('');
+
+        document.getElementById('inventory-reagent-modal').classList.remove('hidden');
+    },
+
+    closeReagentModal() {
+        this.editReagentId = null;
+        document.getElementById('inventory-reagent-modal').classList.add('hidden');
+    },
+
+    async saveReagentSettings() {
+        if (!this.editReagentId) {
+            return;
+        }
+
+        const reagent = this.findReagentById(this.editReagentId);
+        if (!reagent) {
+            return;
+        }
+
+        const payload = {
+            instrument_id: parseInt(document.getElementById('inventory-reagent-instrument').value, 10),
+            name: document.getElementById('inventory-reagent-name').value.trim(),
+            manufacturer: reagent.manufacturer,
+            unit: reagent.unit,
+            package_unit: reagent.package_unit,
+            package_to_min_qty: reagent.package_to_min_qty,
+            warning_days: Math.max(parseInt(document.getElementById('inventory-reagent-warning-days').value, 10) || 0, 0),
+            warning_stock: Math.max(parseInt(document.getElementById('inventory-reagent-warning-stock').value, 10) || 0, 0),
+            follow_instrument: false
+        };
+
+        if (!payload.instrument_id || !payload.name) {
+            return Utils.showToast('请完整填写试剂名称和所属仪器', 'warning');
+        }
+
+        await API.reagents.update(this.editReagentId, payload);
+        this.closeReagentModal();
+        Utils.showToast('试剂信息已更新', 'success');
+        await this.loadInventory();
+    },
+
+    render() {
+        this.renderWorkGroupTabs();
+        this.renderInstrumentTabs();
+        this.renderInventoryHeader();
+        this.renderInventoryBody();
+    },
+
+    renderWorkGroupTabs() {
+        const container = document.getElementById('inventory-work-group-tabs');
+        if (!this.inventoryData.length) {
+            container.innerHTML = '<p class="catalog-empty">暂无工作组</p>';
+            return;
+        }
+
+        container.innerHTML = this.inventoryData.map((group) => {
+            const warningCount = this.getGroupWarningCount(group);
+            return `
+                <button class="inventory-tab ${group.id === this.selectedWorkGroupId ? 'active' : ''}" onclick="inventoryPage.selectWorkGroup(${group.id})">
+                    <span>${this.escapeHtml(group.name)}</span>
+                    ${warningCount ? `<span class="inventory-tab-badge">${warningCount}</span>` : ''}
+                </button>
+            `;
+        }).join('');
+    },
+
+    renderInstrumentTabs() {
+        const container = document.getElementById('inventory-instrument-tabs');
+        const group = this.getSelectedWorkGroup();
+        const instruments = group?.instruments || [];
+        if (!instruments.length) {
+            container.innerHTML = '<p class="catalog-empty">当前工作组下暂无仪器</p>';
+            return;
+        }
+
+        container.innerHTML = instruments.map((instrument) => {
+            const warningCount = this.getInstrumentWarningCount(instrument);
+            return `
+                <button class="inventory-subtab ${instrument.id === this.selectedInstrumentId ? 'active' : ''}" onclick="inventoryPage.selectInstrument(${instrument.id})">
+                    <span>${this.escapeHtml(instrument.name)}</span>
+                    ${warningCount ? `<span class="inventory-tab-badge">${warningCount}</span>` : ''}
+                </button>
+            `;
+        }).join('');
+    },
+
+    renderInventoryHeader() {
+        const instrument = this.getSelectedInstrument();
+        const title = document.getElementById('inventory-current-title');
+        const subtitle = document.getElementById('inventory-current-subtitle');
+        const refreshed = document.getElementById('inventory-last-refreshed');
+        const summaryContainer = document.getElementById('inventory-summary-cards');
+        const daysInput = document.getElementById('inventory-default-warning-days');
+        const stockInput = document.getElementById('inventory-default-warning-stock');
+
+        refreshed.textContent = this.lastLoadedAt ? `最近刷新：${Utils.formatDateTime(this.lastLoadedAt)}` : '';
+
+        if (!instrument) {
+            title.textContent = '暂无可查看的仪器';
+            subtitle.textContent = '请先维护工作组和仪器，或切换到有库存的仪器。';
+            summaryContainer.innerHTML = '';
+            daysInput.value = '30';
+            stockInput.value = '5';
+            return;
+        }
+
+        const group = this.getSelectedWorkGroup();
+        const summary = this.getInstrumentSummary(instrument);
+        title.textContent = instrument.model ? `${instrument.name} (${instrument.model})` : instrument.name;
+        subtitle.textContent = `${group?.name || '未分组'} · 在这里可以批量设置当前仪器下试剂的预警值，并同步保存为以后新试剂的默认值。`;
+        daysInput.value = String(instrument.default_warning_days ?? 30);
+        stockInput.value = String(instrument.default_warning_stock ?? 5);
+
+        summaryContainer.innerHTML = `
+            <div class="inventory-summary-card">
+                <div class="inventory-summary-label">在库试剂数</div>
+                <div class="inventory-summary-value">${summary.reagentCount}</div>
+            </div>
+            <div class="inventory-summary-card inventory-summary-warn">
+                <div class="inventory-summary-label">近效期数</div>
+                <div class="inventory-summary-value">${summary.expiringCount}</div>
+            </div>
+            <div class="inventory-summary-card inventory-summary-caution">
+                <div class="inventory-summary-label">低库存数</div>
+                <div class="inventory-summary-value">${summary.lowStockCount}</div>
+            </div>
+            <div class="inventory-summary-card inventory-summary-danger">
+                <div class="inventory-summary-label">已过期批次数</div>
+                <div class="inventory-summary-value">${summary.expiredBatchCount}</div>
+            </div>
+        `;
+    },
+
+    renderInventoryBody() {
+        const instrument = this.getSelectedInstrument();
+        const container = document.getElementById('inventory-reagent-list');
+        const resultMeta = document.getElementById('inventory-result-meta');
+
+        if (!instrument) {
+            resultMeta.textContent = '';
+            container.innerHTML = '<div class="inventory-empty">当前没有可展示的库存数据。</div>';
+            return;
+        }
+
+        const reagents = this.getFilteredReagents(instrument);
+        resultMeta.textContent = `显示 ${reagents.length} / ${instrument.reagents.length} 个试剂`;
+
+        if (!reagents.length) {
+            container.innerHTML = '<div class="inventory-empty">当前筛选条件下没有匹配的库存试剂。</div>';
+            return;
+        }
+
+        container.innerHTML = reagents.map((reagent) => this.renderReagentCard(reagent)).join('');
+    },
+
+    getStatusLabel(level) {
+        if (level === 'empty') {
+            return '零库存';
+        }
+        return {
+            expired: '已过期',
+            expiring: '近效期',
+            low: '低库存',
+            normal: '正常'
+        }[level] || '正常';
+    },
+
+    formatDaysLabel(days) {
+        if (days === null || days === undefined) {
+            return '未知';
+        }
+        if (days < 0) {
+            return `已过期 ${Math.abs(days)} 天`;
+        }
+        if (days === 0) {
+            return '今天到期';
+        }
+        return `剩余 ${days} 天`;
+    },
+
+    getBatchStatus(batch, reagent) {
+        if (batch.available_min_quantity <= 0 || batch.is_expired) {
+            return 'expired';
+        }
+        if (batch.expiry_days_left <= reagent.effective_warning_days) {
+            return 'expiring';
+        }
+        return 'normal';
+    },
+
+    renderReagentCard(reagent) {
+        const manufacturerHtml = reagent.manufacturer
+            ? `<div class="inventory-card-maker">${this.escapeHtml(reagent.manufacturer)}</div>`
+            : '';
+        const archiveButtonHtml = reagent.status_level === 'empty'
+            ? `<button class="btn btn-danger btn-small" onclick="inventoryPage.archiveReagent(${reagent.id})">归档</button>`
+            : '';
+        const actionButtonsHtml = `
+            <div class="inventory-card-actions">
+                ${archiveButtonHtml}
+                <button class="btn btn-secondary btn-small" onclick="inventoryPage.openReagentModal(${reagent.id})">设置试剂信息</button>
+            </div>
+        `;
+
+        const batchListHtml = reagent.batches.length > 1 ? `
+            <div class="inventory-batch-list">
+                ${reagent.batches.map((batch) => `
+                    <div class="inventory-batch-row ${this.getBatchStatus(batch, reagent)}">
+                        <div class="inventory-batch-primary">
+                            <span class="inventory-batch-code">批号 ${this.escapeHtml(batch.batch_no)}</span>
+                            <span class="inventory-batch-expiry">有效期 ${this.escapeHtml(batch.expiry_date)}</span>
+                            <span class="inventory-batch-days">${this.escapeHtml(this.formatDaysLabel(batch.expiry_days_left))}</span>
+                        </div>
+                        <div class="inventory-batch-secondary">
+                            <span>当前库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit)}</span>
+                        </div>
                     </div>
                 `).join('')}
             </div>
-        `).join('');
-    },
+        ` : '';
 
-    resetWorkGroupForm() {
-        this.editingWorkGroupId = null;
-        document.getElementById('catalog-work-group-name').value = '';
-    },
-
-    editWorkGroup(id) {
-        const item = this.catalog.find((group) => group.id === id);
-        if (!item) return;
-        this.editingWorkGroupId = id;
-        document.getElementById('catalog-work-group-name').value = item.name;
-    },
-
-    async submitWorkGroup() {
-        const name = document.getElementById('catalog-work-group-name').value.trim();
-        if (!name) {
-            return Utils.showToast('请输入工作组名称', 'warning');
-        }
-        if (this.editingWorkGroupId) {
-            await API.inventory.updateWorkGroup(this.editingWorkGroupId, { name });
-        } else {
-            await API.inventory.createWorkGroup({ name });
-        }
-        Utils.showToast(this.editingWorkGroupId ? '工作组已更新' : '工作组已新增', 'success');
-        this.resetWorkGroupForm();
-        await this.loadCatalog();
-        await this.loadInstruments();
-    },
-
-    resetInstrumentForm() {
-        this.editingInstrumentId = null;
-        document.getElementById('catalog-instrument-work-group').value = '';
-        document.getElementById('catalog-instrument-name').value = '';
-        document.getElementById('catalog-instrument-model').value = '';
-    },
-
-    editInstrument(id) {
-        for (const group of this.catalog) {
-            const instrument = (group.instruments || []).find((item) => item.id === id);
-            if (!instrument) continue;
-            this.editingInstrumentId = id;
-            document.getElementById('catalog-instrument-work-group').value = String(instrument.work_group_id);
-            document.getElementById('catalog-instrument-name').value = instrument.name;
-            document.getElementById('catalog-instrument-model').value = instrument.model || '';
-            return;
-        }
-    },
-
-    async submitInstrument() {
-        const payload = {
-            work_group_id: parseInt(document.getElementById('catalog-instrument-work-group').value, 10),
-            name: document.getElementById('catalog-instrument-name').value.trim(),
-            model: document.getElementById('catalog-instrument-model').value.trim() || null
-        };
-        if (!payload.work_group_id || !payload.name) {
-            return Utils.showToast('请填写所属工作组和仪器名称', 'warning');
-        }
-        if (this.editingInstrumentId) {
-            await API.inventory.updateInstrument(this.editingInstrumentId, payload);
-        } else {
-            await API.inventory.createInstrument(payload);
-        }
-        Utils.showToast(this.editingInstrumentId ? '仪器已更新' : '仪器已新增', 'success');
-        this.resetInstrumentForm();
-        await this.loadCatalog();
-        await this.loadInstruments();
-    },
-
-    resetOperatorForm() {
-        this.editingOperatorId = null;
-        document.getElementById('catalog-operator-name').value = '';
-        document.getElementById('catalog-operator-active').checked = true;
-    },
-
-    editOperator(id) {
-        const item = this.operators.find((operator) => operator.id === id);
-        if (!item) return;
-        this.editingOperatorId = id;
-        document.getElementById('catalog-operator-name').value = item.name;
-        document.getElementById('catalog-operator-active').checked = item.is_active;
-    },
-
-    async submitOperator() {
-        const name = document.getElementById('catalog-operator-name').value.trim();
-        const isActive = document.getElementById('catalog-operator-active').checked;
-        if (!name) {
-            return Utils.showToast('请输入操作人姓名', 'warning');
-        }
-        if (this.editingOperatorId) {
-            await API.operators.update(this.editingOperatorId, { name, is_active: isActive });
-        } else {
-            await API.operators.create({ name });
-        }
-        Utils.operatorsLoaded = false;
-        await Utils.loadOperators(true);
-        await this.loadOperators();
-        this.resetOperatorForm();
-        Utils.showToast(this.editingOperatorId ? '操作人已更新' : '操作人已新增', 'success');
-    },
-
-    clearReagentFilters() {
-        document.getElementById('catalog-reagent-filter-work-group').value = '';
-        document.getElementById('catalog-reagent-filter-instrument').innerHTML = '<option value="">全部仪器</option>';
-        document.getElementById('catalog-reagent-filter-keyword').value = '';
-        this.loadReagents();
-    },
-
-    resetReagentForm() {
-        this.editingReagentId = null;
-        document.getElementById('catalog-reagent-work-group').value = '';
-        document.getElementById('catalog-reagent-instrument').innerHTML = '<option value="">请选择仪器</option>';
-        document.getElementById('catalog-reagent-name').value = '';
-        document.getElementById('catalog-reagent-manufacturer').value = '';
-        document.getElementById('catalog-reagent-package-unit').value = '盒';
-        document.getElementById('catalog-reagent-min-unit').value = '瓶';
-        document.getElementById('catalog-reagent-package-to-min-qty').value = '1';
-        document.getElementById('catalog-reagent-warning-days').value = '30';
-        document.getElementById('catalog-reagent-warning-stock').value = '5';
-        this.refreshReagentRelationPreview();
-    },
-
-    async editReagent(id) {
-        const item = this.reagents.find((reagent) => reagent.id === id);
-        if (!item) return;
-        this.editingReagentId = id;
-        document.getElementById('catalog-reagent-work-group').value = String(item.work_group_id);
-        await this.loadReagentFormInstruments(item.instrument_id);
-        document.getElementById('catalog-reagent-name').value = item.name;
-        document.getElementById('catalog-reagent-manufacturer').value = item.manufacturer || '';
-        document.getElementById('catalog-reagent-package-unit').value = item.package_unit;
-        document.getElementById('catalog-reagent-min-unit').value = item.unit;
-        document.getElementById('catalog-reagent-package-to-min-qty').value = String(item.package_to_min_qty);
-        document.getElementById('catalog-reagent-warning-days').value = String(item.warning_days);
-        document.getElementById('catalog-reagent-warning-stock').value = String(item.warning_stock);
-        this.refreshReagentRelationPreview();
-    },
-
-    async submitReagent() {
-        if (!this.editingReagentId) {
-            return Utils.showToast('请先从左侧选择一个试剂档案进行编辑', 'warning');
-        }
-        const payload = {
-            instrument_id: parseInt(document.getElementById('catalog-reagent-instrument').value, 10),
-            name: document.getElementById('catalog-reagent-name').value.trim(),
-            manufacturer: document.getElementById('catalog-reagent-manufacturer').value.trim() || null,
-            package_unit: document.getElementById('catalog-reagent-package-unit').value.trim(),
-            unit: document.getElementById('catalog-reagent-min-unit').value.trim(),
-            package_to_min_qty: parseInt(document.getElementById('catalog-reagent-package-to-min-qty').value, 10),
-            warning_days: parseInt(document.getElementById('catalog-reagent-warning-days').value, 10),
-            warning_stock: parseInt(document.getElementById('catalog-reagent-warning-stock').value, 10)
-        };
-        if (!payload.instrument_id || !payload.name || !payload.package_unit || !payload.unit || !payload.package_to_min_qty) {
-            return Utils.showToast('请完整填写试剂档案信息', 'warning');
-        }
-        await API.reagents.update(this.editingReagentId, payload);
-        Utils.showToast('试剂档案已更新', 'success');
-        await this.loadReagents();
-        await this.loadInventory();
-    },
-
-    async resetReagentData() {
-        if (!confirm('此操作会清空所有试剂、库存和流水记录，确定继续吗？')) return;
-        await API.inventory.resetReagentData();
-        Utils.showToast('试剂与库存数据已重置', 'success');
-        this.resetReagentForm();
-        await this.loadReagents();
-        await this.loadInventory();
+        return `
+            <article class="inventory-card inventory-card-${reagent.status_level}">
+                <div class="inventory-card-accent"></div>
+                <div class="inventory-card-header">
+                    <div class="inventory-card-main">
+                        <div class="inventory-card-title-row">
+                            <h4>${this.escapeHtml(reagent.name)}</h4>
+                            <span class="inventory-status inventory-status-${reagent.status_level}">${this.getStatusLabel(reagent.status_level)}</span>
+                        </div>
+                        ${manufacturerHtml}
+                        <div class="inventory-key-metrics">
+                            <div class="inventory-key-metric">
+                                <span>当前总库存</span>
+                                <strong>${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
+                            </div>
+                            <div class="inventory-key-metric">
+                                <span>最近效期</span>
+                                <strong>${this.escapeHtml(reagent.nearest_expiry_date || '暂无')}</strong>
+                            </div>
+                            <div class="inventory-key-metric">
+                                <span>离失效剩余</span>
+                                <strong>${this.escapeHtml(this.formatDaysLabel(reagent.nearest_expiry_days))}</strong>
+                            </div>
+                            <div class="inventory-key-metric">
+                                <span>批次数</span>
+                                <strong>${reagent.batch_count}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    ${actionButtonsHtml}
+                </div>
+                ${batchListHtml}
+            </article>
+        `;
     }
 };

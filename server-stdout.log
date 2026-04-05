@@ -1,0 +1,10 @@
+INFO:     127.0.0.1:49992 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53576 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:53576 - "GET /css/main.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:54396 - "GET /js/api.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:60181 - "GET /js/pages/inventory.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:60181 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53890 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53890 - "POST /api/barcode/parse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60143 - "POST /api/inbound/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60143 - "GET /api/inventory HTTP/1.1" 200 OK

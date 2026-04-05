@@ -34,6 +34,8 @@ from .inventory import (
     WorkGroupUpdate,
     InstrumentCreate,
     InstrumentUpdate,
+    InstrumentWarningDefaultsUpdate,
+    ReagentWarningSettingsUpdate,
 )
 
 __all__ = [
@@ -76,4 +78,6 @@ __all__ = [
     "WorkGroupUpdate",
     "InstrumentCreate",
     "InstrumentUpdate",
+    "InstrumentWarningDefaultsUpdate",
+    "ReagentWarningSettingsUpdate",
 ]
