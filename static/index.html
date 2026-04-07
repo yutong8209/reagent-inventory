@@ -13,7 +13,6 @@
             <nav class="nav">
                 <a href="#" class="nav-link active" data-page="dashboard">首页</a>
                 <a href="#" class="nav-link" data-page="inbound">入库</a>
-                <a href="#" class="nav-link" data-page="outbound">出库</a>
                 <a href="#" class="nav-link" data-page="inventory">库存</a>
                 <a href="#" class="nav-link" data-page="reports">流水及用量</a>
                 <a href="#" class="nav-link" data-page="catalog">资料设置</a>
@@ -22,17 +21,164 @@
 
         <main class="main-content">
             <div id="page-dashboard" class="page active">
-                <div class="dashboard">
-                    <h2>欢迎使用</h2>
-                    <p class="dashboard-copy">支持首次建档入库、扫码补全入库，以及已建档试剂不同批号的快速入库和批量出库。</p>
-                    <div class="quick-actions">
-                        <button class="btn btn-primary" onclick="app.navigate('inbound')">试剂入库</button>
-                        <button class="btn btn-primary" onclick="app.navigate('outbound')">试剂出库</button>
-                        <button class="btn btn-secondary" onclick="app.navigate('inventory')">查看库存</button>
-                        <button class="btn btn-secondary" onclick="app.navigate('reports')">流水及用量</button>
-                        <button class="btn btn-secondary" onclick="app.navigate('catalog')">资料设置</button>
-                    </div>
+                <div class="dashboard-shell">
+                    <section class="dashboard-main">
+                        <div class="dashboard-header">
+                            <div>
+                                <h2>出库工作台</h2>
+                                <p class="dashboard-copy">首页直接处理试剂出库，并同时查看近期出库和预警事项。</p>
+                            </div>
+                            <div class="dashboard-shortcuts">
+                                <button class="btn btn-secondary btn-small" onclick="app.navigate('inbound')">入库</button>
+                                <button class="btn btn-secondary btn-small" onclick="app.navigate('inventory')">库存</button>
+                                <button class="btn btn-secondary btn-small" onclick="app.navigate('reports')">流水及用量</button>
+                                <button class="btn btn-secondary btn-small" onclick="app.navigate('catalog')">资料设置</button>
+                            </div>
+                        </div>
+
+                        <section class="form-section" id="dashboard-outbound-panel">
+                            <div class="mode-tabs">
+                                <button class="mode-tab active" data-mode="scan" onclick="outboundPage.switchMode('scan')">扫码出库</button>
+                                <button class="mode-tab" data-mode="manual" onclick="outboundPage.switchMode('manual')">手工出库</button>
+                            </div>
+                        </section>
+
+                        <div id="outbound-scan-mode">
+                            <div class="form-section">
+                                <div class="form-group form-group-inline">
+                                    <label for="outbound-barcode">扫码输入</label>
+                                    <input type="text" id="outbound-barcode" class="form-input" placeholder="扫描试剂条码后按回车" autocomplete="off">
+                                    <button class="btn btn-primary" onclick="outboundPage.parseBarcode()">识别</button>
+                                </div>
+                                <p class="hint">识别后会先预览当前试剂和可扣减批次，再决定是否加入待出库列表。</p>
+                            </div>
+
+                            <div id="outbound-scan-draft" class="form-section hidden">
+                                <h3>扫码待加入条目</h3>
+                                <div id="outbound-scan-preview" class="outbound-preview-card"></div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="outbound-scan-quantity">出库数量 <span class="required">*</span></label>
+                                        <input type="number" id="outbound-scan-quantity" class="form-input" min="1" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outbound-scan-unit">出库单位 <span class="required">*</span></label>
+                                        <select id="outbound-scan-unit" class="form-select" onchange="outboundPage.refreshScanDraftPreview()">
+                                            <option value="min">瓶</option>
+                                            <option value="package">盒</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="button-group">
+                                    <button class="btn btn-secondary" onclick="outboundPage.clearScanDraft()">取消</button>
+                                    <button class="btn btn-primary" onclick="outboundPage.addScanItem()">加入待出库列表</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="outbound-manual-mode" class="hidden">
+                            <div class="form-section">
+                                <h3>手工出库</h3>
+                                <p class="hint">先按工作组、仪器或关键词定位试剂，再选择出库数量和单位加入列表。</p>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="outbound-manual-work-group">工作组</label>
+                                        <select id="outbound-manual-work-group" class="form-select" onchange="outboundPage.loadManualInstruments()">
+                                            <option value="">全部工作组</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outbound-manual-instrument">仪器</label>
+                                        <select id="outbound-manual-instrument" class="form-select" onchange="outboundPage.loadManualReagents()">
+                                            <option value="">全部仪器</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="outbound-manual-search">关键词搜索</label>
+                                    <input type="text" id="outbound-manual-search" class="form-input" placeholder="输入试剂、仪器或工作组关键词" oninput="outboundPage.searchManualReagents()">
+                                </div>
+                                <div class="form-group">
+                                    <label for="outbound-manual-reagent">试剂</label>
+                                    <select id="outbound-manual-reagent" class="form-select" onchange="outboundPage.selectManualReagentFromDropdown()">
+                                        <option value="">请选择试剂</option>
+                                    </select>
+                                </div>
+                                <div id="outbound-manual-search-results" class="candidate-list hidden"></div>
+                                <div id="outbound-manual-summary" class="outbound-preview-card hidden"></div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="outbound-manual-quantity">出库数量 <span class="required">*</span></label>
+                                        <input type="number" id="outbound-manual-quantity" class="form-input" min="1" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outbound-manual-unit">出库单位 <span class="required">*</span></label>
+                                        <select id="outbound-manual-unit" class="form-select" onchange="outboundPage.refreshManualPreview()">
+                                            <option value="min">瓶</option>
+                                            <option value="package">盒</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="button-group">
+                                    <button class="btn btn-secondary" onclick="outboundPage.clearManualSelection()">清空</button>
+                                    <button class="btn btn-primary" onclick="outboundPage.addManualItem()">加入待出库列表</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="outbound-items-section" class="form-section hidden">
+                            <h3>待出库列表（<span id="outbound-item-count">0</span>）</h3>
+                            <div id="outbound-items-list" class="scan-items-list"></div>
+                            <div class="form-group">
+                                <label for="outbound-default-operator">默认出库人（可选）</label>
+                                <select id="outbound-default-operator" class="form-select"></select>
+                            </div>
+                            <div class="button-group">
+                                <button class="btn btn-secondary" onclick="outboundPage.clearPendingItems()">清空列表</button>
+                                <button class="btn btn-primary" onclick="outboundPage.showConfirmModal()">确认出库</button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <aside class="dashboard-side">
+                        <section class="form-section dashboard-side-section">
+                            <div class="dashboard-side-header">
+                                <div>
+                                    <h3>待处理事项</h3>
+                                    <p class="hint">优先关注过期、低库存和零库存未归档试剂。</p>
+                                </div>
+                                <div class="dashboard-side-tools">
+                                    <button class="btn btn-secondary btn-small" onclick="dashboardPage.openInventory()">去库存查看</button>
+                                    <button class="btn btn-secondary btn-small" id="dashboard-refresh-btn">刷新</button>
+                                </div>
+                            </div>
+                            <div id="dashboard-pending-tasks" class="dashboard-task-grid"></div>
+                        </section>
+
+                        <section class="form-section dashboard-side-section">
+                            <div class="dashboard-side-header">
+                                <div>
+                                    <h3>重点预警</h3>
+                                    <p class="hint">最多展示 6 个最需要先处理的试剂。</p>
+                                </div>
+                            </div>
+                            <div id="dashboard-warning-list" class="dashboard-warning-list"></div>
+                        </section>
+
+                        <section class="form-section dashboard-side-section">
+                            <div class="dashboard-side-header">
+                                <div>
+                                    <h3>最近出库</h3>
+                                    <p class="hint">默认显示最新 20 条出库流水。</p>
+                                </div>
+                                <button class="btn btn-secondary btn-small" onclick="app.navigate('reports')">去流水查看</button>
+                            </div>
+                            <div id="dashboard-recent-outbounds" class="dashboard-recent-list"></div>
+                        </section>
+                    </aside>
                 </div>
+
+                <div id="outbound-confirm-modal" class="modal hidden"><div class="modal-content"><div class="modal-header"><h3>出库确认</h3><button class="modal-close" onclick="outboundPage.closeConfirmModal()">&times;</button></div><div class="modal-body"><p>请确认以下出库信息，提交后将扣减库存并生成出库流水。</p><div class="form-group confirm-operator-group"><label for="outbound-confirm-operator">出库人 <span class="required">*</span></label><select id="outbound-confirm-operator" class="form-select"></select></div><div id="outbound-confirm-summary" class="confirm-summary"></div><div id="outbound-confirm-items" class="confirm-list"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="outboundPage.closeConfirmModal()">取消</button><button id="outbound-confirm-submit" class="btn btn-primary" onclick="outboundPage.submitOutboundBatch()">正式出库</button></div></div></div>
             </div>
 
             <div id="page-inbound" class="page">
@@ -169,15 +315,6 @@
                 <div id="new-reagent-modal" class="modal hidden"><div class="modal-content modal-wide"><div class="modal-header"><h3>扫码建档</h3><button class="modal-close" onclick="inboundPage.closeNewReagentModal()">&times;</button></div><div class="modal-body"><p>当前条码未识别到已有试剂，请补全档案信息后加入待入库列表。</p><div class="form-group"><label for="new-reagent-barcode">扫描条码</label><input type="text" id="new-reagent-barcode" class="form-input" readonly></div><div class="form-row"><div class="form-group"><label for="new-reagent-product-code">试剂编码</label><input type="text" id="new-reagent-product-code" class="form-input" placeholder="可自动识别，也可手工修正"></div><div class="form-group"><label for="new-reagent-production-date">生产日期</label><input type="date" id="new-reagent-production-date" class="form-input"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-work-group">工作组</label><select id="new-reagent-work-group" class="form-select" onchange="inboundPage.loadNewReagentInstruments()"><option value="">请选择工作组</option></select></div><div class="form-group"><label for="new-reagent-instrument">仪器</label><select id="new-reagent-instrument" class="form-select"><option value="">请选择仪器</option></select></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-name">试剂名称</label><input type="text" id="new-reagent-name" class="form-input" placeholder="输入试剂名称"></div><div class="form-group"><label for="new-reagent-manufacturer">厂家</label><input type="text" id="new-reagent-manufacturer" class="form-input" placeholder="可选"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-batch-no">批号</label><input type="text" id="new-reagent-batch-no" class="form-input" placeholder="输入批号"></div><div class="form-group"><label for="new-reagent-expiry-date">有效期</label><input type="date" id="new-reagent-expiry-date" class="form-input"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-package-unit">包装单位</label><input type="text" id="new-reagent-package-unit" class="form-input" list="package-unit-options" value="盒" oninput="inboundPage.refreshNewReagentRelationPreview()"></div><div class="form-group"><label for="new-reagent-min-unit">最小单位</label><input type="text" id="new-reagent-min-unit" class="form-input" list="min-unit-options" value="瓶" oninput="inboundPage.refreshNewReagentRelationPreview()"></div><div class="form-group"><label for="new-reagent-package-to-min-qty">包装关系</label><input type="number" id="new-reagent-package-to-min-qty" class="form-input" min="1" value="1" oninput="inboundPage.refreshNewReagentRelationPreview()"><div id="new-reagent-package-relation-preview" class="field-hint"></div></div><div class="form-group"><label for="new-reagent-quantity">入库量</label><input type="number" id="new-reagent-quantity" class="form-input" min="1" value="1"></div></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="inboundPage.closeNewReagentModal()">取消</button><button id="new-reagent-submit-btn" class="btn btn-primary" onclick="inboundPage.submitNewReagentFromScan()">保存并加入列表</button></div></div></div>
             </div>
 
-            <div id="page-outbound" class="page">
-                <h2>试剂出库</h2>
-                <div class="form-section"><div class="mode-tabs"><button class="mode-tab active" data-mode="scan" onclick="outboundPage.switchMode('scan')">扫码出库</button><button class="mode-tab" data-mode="manual" onclick="outboundPage.switchMode('manual')">手工出库</button></div></div>
-                <div id="outbound-scan-mode"><div class="form-section"><div class="form-group"><label for="outbound-barcode">扫码输入</label><input type="text" id="outbound-barcode" class="form-input" placeholder="扫描试剂条码后按回车" autocomplete="off"><button class="btn btn-primary" onclick="outboundPage.parseBarcode()">识别</button></div></div><div id="outbound-scan-draft" class="form-section hidden"><h3>扫码待加入条目</h3><div id="outbound-scan-preview" class="outbound-preview-card"></div><div class="form-row"><div class="form-group"><label for="outbound-scan-quantity">出库数量 <span class="required">*</span></label><input type="number" id="outbound-scan-quantity" class="form-input" min="1" value="1"></div><div class="form-group"><label for="outbound-scan-unit">出库单位 <span class="required">*</span></label><select id="outbound-scan-unit" class="form-select" onchange="outboundPage.refreshScanDraftPreview()"><option value="min">瓶</option><option value="package">盒</option></select></div></div><div class="button-group"><button class="btn btn-secondary" onclick="outboundPage.clearScanDraft()">取消</button><button class="btn btn-primary" onclick="outboundPage.addScanItem()">加入待出库列表</button></div></div></div>
-                <div id="outbound-manual-mode" class="hidden"><div class="form-section"><h3>手工选择库存</h3><div class="form-row"><div class="form-group"><label for="outbound-manual-work-group">工作组</label><select id="outbound-manual-work-group" class="form-select" onchange="outboundPage.loadManualInstruments()"><option value="">全部工作组</option></select></div><div class="form-group"><label for="outbound-manual-instrument">仪器</label><select id="outbound-manual-instrument" class="form-select" onchange="outboundPage.loadManualReagents()"><option value="">全部仪器</option></select></div></div><div class="form-group"><label for="outbound-manual-search">关键词搜索</label><input type="text" id="outbound-manual-search" class="form-input" placeholder="输入试剂、仪器或工作组关键词" oninput="outboundPage.searchManualReagents()"></div><div class="form-group"><label for="outbound-manual-reagent">试剂</label><select id="outbound-manual-reagent" class="form-select" onchange="outboundPage.selectManualReagentFromDropdown()"><option value="">请选择试剂</option></select></div><div id="outbound-manual-search-results" class="candidate-list hidden"></div><div id="outbound-manual-summary" class="outbound-preview-card hidden"></div><div class="form-row"><div class="form-group"><label for="outbound-manual-quantity">出库数量 <span class="required">*</span></label><input type="number" id="outbound-manual-quantity" class="form-input" min="1" value="1"></div><div class="form-group"><label for="outbound-manual-unit">出库单位 <span class="required">*</span></label><select id="outbound-manual-unit" class="form-select" onchange="outboundPage.refreshManualPreview()"><option value="min">瓶</option><option value="package">盒</option></select></div></div><div class="button-group"><button class="btn btn-secondary" onclick="outboundPage.clearManualSelection()">清空</button><button class="btn btn-primary" onclick="outboundPage.addManualItem()">加入待出库列表</button></div></div></div>
-                <div id="outbound-items-section" class="form-section hidden"><h3>待出库列表（<span id="outbound-item-count">0</span>）</h3><div id="outbound-items-list" class="scan-items-list"></div><div class="form-group"><label for="outbound-default-operator">默认出库人（可选）</label><select id="outbound-default-operator" class="form-select"></select></div><div class="button-group"><button class="btn btn-secondary" onclick="outboundPage.clearPendingItems()">清空列表</button><button class="btn btn-primary" onclick="outboundPage.showConfirmModal()">确认出库</button></div></div>
-                <div id="outbound-confirm-modal" class="modal hidden"><div class="modal-content"><div class="modal-header"><h3>出库确认</h3><button class="modal-close" onclick="outboundPage.closeConfirmModal()">&times;</button></div><div class="modal-body"><p>请确认以下出库信息，提交后将扣减库存并生成出库流水。</p><div class="form-group confirm-operator-group"><label for="outbound-confirm-operator">出库人 <span class="required">*</span></label><select id="outbound-confirm-operator" class="form-select"></select></div><div id="outbound-confirm-summary" class="confirm-summary"></div><div id="outbound-confirm-items" class="confirm-list"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="outboundPage.closeConfirmModal()">取消</button><button id="outbound-confirm-submit" class="btn btn-primary" onclick="outboundPage.submitOutboundBatch()">正式出库</button></div></div></div>
-            </div>
-
             <div id="page-inventory" class="page">
                 <div class="inventory-shell">
                     <div class="inventory-sticky-stack">
@@ -189,31 +326,10 @@
                         <div class="inventory-overview-head">
                             <div>
                                 <h2 id="inventory-current-title">库存总览</h2>
-                                <p id="inventory-current-subtitle" class="inventory-overview-copy">按工作组和仪器切换库存，异常状态会优先突出显示。</p>
+                                <p id="inventory-current-subtitle" class="inventory-overview-copy">按工作组和仪器切换库存，预警默认值请到资料设置里的工作组与仪器中调整。</p>
                             </div>
                             <div id="inventory-last-refreshed" class="inventory-last-refreshed"></div>
                         </div>
-
-                        <div class="inventory-defaults-panel">
-                            <div class="inventory-defaults-copy">
-                                <h3>当前仪器批量预警</h3>
-                                <p class="hint">点击按钮后，会同时更新当前仪器下已有试剂的预警值，并保存为以后新试剂的默认值。</p>
-                            </div>
-                            <div class="inventory-defaults-form">
-                                <label class="inventory-inline-field">
-                                    <span>失效预警天数</span>
-                                    <input type="number" id="inventory-default-warning-days" class="form-input" min="0" value="30">
-                                </label>
-                                <label class="inventory-inline-field">
-                                    <span>库存报警最小单位数</span>
-                                    <input type="number" id="inventory-default-warning-stock" class="form-input" min="0" value="5">
-                                </label>
-                                <div class="button-group">
-                                    <button id="inventory-batch-warning-btn" class="btn btn-primary">批量设置当前仪器预警</button>
-                                </div>
-                            </div>
-                        </div>
-
                         <div id="inventory-summary-cards" class="inventory-summary-grid"></div>
                     </div>
 
@@ -230,6 +346,7 @@
                                     <option value="empty">零库存</option>
                                     <option value="expired">已过期</option>
                                     <option value="expiring">近效期</option>
+                                    <option value="low_or_empty">低库存/零库存</option>
                                     <option value="low">低库存</option>
                                     <option value="normal">正常</option>
                                 </select>
@@ -554,6 +671,7 @@
     <script src="/js/utils.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/main.js"></script>
+    <script src="/js/pages/dashboard.js"></script>
     <script src="/js/pages/inbound.js"></script>
     <script src="/js/pages/outbound.js"></script>
     <script src="/js/pages/inventory.js"></script>

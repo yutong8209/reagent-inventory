@@ -197,6 +197,19 @@ const catalogPage = {
         return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
     },
 
+    promptAdminPassword(actionLabel) {
+        const password = window.prompt(`执行“${actionLabel}”需要输入密码：`);
+        if (password === null) {
+            return null;
+        }
+        const normalized = this.normalizeText(password);
+        if (!normalized) {
+            Utils.showToast('未输入密码，操作已取消', 'warning');
+            return null;
+        }
+        return normalized;
+    },
+
     formatRelation(packageUnit, qty, minUnit) {
         const packageLabel = this.normalizeText(packageUnit) || Utils.getDefaultUnit('package', '盒');
         const minLabel = this.normalizeText(minUnit) || Utils.getDefaultUnit('min', '瓶');
@@ -323,7 +336,7 @@ const catalogPage = {
             ? `
                 <div class="settings-editor-header">
                     <h4>${selectedInstrument ? '编辑仪器' : '新建仪器'}</h4>
-                    <p class="hint">这里只维护仪器结构信息；默认预警值请到库存页当前仪器中批量设置。</p>
+                    <p class="hint">这里同时维护仪器结构和当前仪器的批量预警设置，保存仪器信息不会自动覆盖已有试剂。</p>
                 </div>
                 <div class="form-group">
                     <label for="catalog-structure-instrument-work-group">所属工作组</label>
@@ -339,8 +352,19 @@ const catalogPage = {
                     <label for="catalog-structure-instrument-model">型号</label>
                     <input type="text" id="catalog-structure-instrument-model" class="form-input" placeholder="可选" value="${this.escapeHtml(selectedInstrument?.model || '')}">
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="catalog-structure-instrument-warning-days">失效预警天数</label>
+                        <input type="number" id="catalog-structure-instrument-warning-days" class="form-input" min="0" value="${selectedInstrument?.default_warning_days ?? 30}">
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-structure-instrument-warning-stock">库存预警最小单位数</label>
+                        <input type="number" id="catalog-structure-instrument-warning-stock" class="form-input" min="0" value="${selectedInstrument?.default_warning_stock ?? 5}">
+                    </div>
+                </div>
                 <div class="button-group">
                     <button class="btn btn-primary" onclick="catalogPage.submitInstrument()">保存仪器</button>
+                    ${selectedInstrument ? '<button class="btn btn-secondary" onclick="catalogPage.batchUpdateStructureInstrumentWarnings()">批量设置当前仪器预警</button>' : ''}
                     <button class="btn btn-secondary" onclick="catalogPage.startCreateInstrument(${defaultGroupId || 'null'})">新建仪器</button>
                     <button class="btn btn-secondary" onclick="catalogPage.selectWorkGroup(${defaultGroupId || 'null'})">返回工作组</button>
                 </div>
@@ -776,8 +800,8 @@ const catalogPage = {
             work_group_id: parseInt(document.getElementById('catalog-structure-instrument-work-group')?.value, 10),
             name: this.normalizeText(document.getElementById('catalog-structure-instrument-name')?.value),
             model: this.normalizeText(document.getElementById('catalog-structure-instrument-model')?.value) || null,
-            default_warning_days: selectedBundle?.instrument?.default_warning_days ?? 30,
-            default_warning_stock: selectedBundle?.instrument?.default_warning_stock ?? 5
+            default_warning_days: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-days')?.value, selectedBundle?.instrument?.default_warning_days ?? 30),
+            default_warning_stock: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-stock')?.value, selectedBundle?.instrument?.default_warning_stock ?? 5)
         };
         if (!payload.work_group_id || !payload.name) {
             return Utils.showToast('请完整填写所属工作组和仪器名称', 'warning');
@@ -791,6 +815,28 @@ const catalogPage = {
             this.structureEditor = { type: 'instrument', id: created.id, mode: 'edit' };
             Utils.showToast('仪器已新增', 'success');
         }
+        await this.loadCatalog();
+        this.ensureSelections();
+        this.render();
+    },
+
+    async batchUpdateStructureInstrumentWarnings() {
+        if (!this.structureEditor.id) {
+            return;
+        }
+        const instrumentBundle = this.getInstrumentById(this.structureEditor.id);
+        if (!instrumentBundle?.instrument) {
+            return;
+        }
+        const payload = {
+            default_warning_days: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-days')?.value, instrumentBundle.instrument.default_warning_days ?? 30),
+            default_warning_stock: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-stock')?.value, instrumentBundle.instrument.default_warning_stock ?? 5)
+        };
+        if (!confirm(`确定批量更新“${instrumentBundle.instrument.name}”下全部试剂的预警值吗？`)) {
+            return;
+        }
+        const result = await API.inventory.batchUpdateInstrumentWarnings(instrumentBundle.instrument.id, payload);
+        Utils.showToast(`已批量更新 ${result.updated_count} 个试剂，并同步保存为当前仪器默认值`, 'success');
         await this.loadCatalog();
         this.ensureSelections();
         this.render();
@@ -963,7 +1009,11 @@ const catalogPage = {
         if (!confirm('此操作会清空所有试剂、库存和流水记录，确定继续吗？')) {
             return;
         }
-        await API.inventory.resetReagentData();
+        const password = this.promptAdminPassword('重置试剂与库存数据');
+        if (!password) {
+            return;
+        }
+        await API.inventory.resetReagentData(password);
         Utils.showToast('试剂与库存数据已重置', 'success');
         this.selectedReagentId = null;
         await Promise.all([
@@ -1005,7 +1055,11 @@ const catalogPage = {
         if (!confirm('确定清空所有试剂库存吗？这不会删除试剂档案，也不会影响条码识别信息。')) {
             return;
         }
-        const result = await API.inventory.clearStock();
+        const password = this.promptAdminPassword('清空库存');
+        if (!password) {
+            return;
+        }
+        const result = await API.inventory.clearStock(password);
         Utils.showToast(`已清空 ${result.cleared_batch_count} 条库存批次`, 'success');
     },
 
@@ -1024,6 +1078,11 @@ const catalogPage = {
         if (!confirm(confirmMessage)) {
             return;
         }
+        const password = this.promptAdminPassword('清空流水');
+        if (!password) {
+            return;
+        }
+        payload.password = password;
         const result = await API.inventory.clearTransactions(payload);
         Utils.showToast(result.deleted_count ? `已清空 ${result.deleted_count} 条流水` : '当前条件下没有可清空的流水', result.deleted_count ? 'success' : 'warning');
     }

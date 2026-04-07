@@ -19,6 +19,7 @@ const inventoryPage = {
             this.initialized = true;
         }
         await this.loadInventory();
+        this.consumeNavigationContext();
     },
 
     bindEvents() {
@@ -42,18 +43,17 @@ const inventoryPage = {
             this.renderInventoryBody();
         });
 
-        document.getElementById('inventory-refresh-btn').addEventListener('click', () => this.loadInventory());
-        document.getElementById('inventory-export-btn').addEventListener('click', () => this.openExportModal());
-        document.getElementById('inventory-archive-zero-btn').addEventListener('click', () => this.archiveZeroStockReagents());
-        document.getElementById('inventory-batch-warning-btn').addEventListener('click', () => this.batchUpdateInstrumentWarnings());
-        document.getElementById('inventory-reagent-modal-close').addEventListener('click', () => this.closeReagentModal());
-        document.getElementById('inventory-reagent-modal-cancel').addEventListener('click', () => this.closeReagentModal());
-        document.getElementById('inventory-reagent-modal-save').addEventListener('click', () => this.saveReagentSettings());
-        document.getElementById('inventory-export-preset').addEventListener('change', (event) => this.applyExportPreset(event.target.value));
-        document.getElementById('inventory-export-work-group').addEventListener('change', () => this.handleExportWorkGroupChange());
-        document.getElementById('inventory-export-confirm').addEventListener('click', () => this.exportInventory());
-        document.getElementById('inventory-export-cancel').addEventListener('click', () => this.closeExportModal());
-        document.getElementById('inventory-export-modal-close').addEventListener('click', () => this.closeExportModal());
+        document.getElementById('inventory-refresh-btn')?.addEventListener('click', () => this.loadInventory());
+        document.getElementById('inventory-export-btn')?.addEventListener('click', () => this.openExportModal());
+        document.getElementById('inventory-archive-zero-btn')?.addEventListener('click', () => this.archiveZeroStockReagents());
+        document.getElementById('inventory-reagent-modal-close')?.addEventListener('click', () => this.closeReagentModal());
+        document.getElementById('inventory-reagent-modal-cancel')?.addEventListener('click', () => this.closeReagentModal());
+        document.getElementById('inventory-reagent-modal-save')?.addEventListener('click', () => this.saveReagentSettings());
+        document.getElementById('inventory-export-preset')?.addEventListener('change', (event) => this.applyExportPreset(event.target.value));
+        document.getElementById('inventory-export-work-group')?.addEventListener('change', () => this.handleExportWorkGroupChange());
+        document.getElementById('inventory-export-confirm')?.addEventListener('click', () => this.exportInventory());
+        document.getElementById('inventory-export-cancel')?.addEventListener('click', () => this.closeExportModal());
+        document.getElementById('inventory-export-modal-close')?.addEventListener('click', () => this.closeExportModal());
 
         const modal = document.getElementById('inventory-reagent-modal');
         modal.addEventListener('click', (event) => {
@@ -85,6 +85,81 @@ const inventoryPage = {
         this.ensureSelection();
         this.syncFilterControls();
         this.render();
+    },
+
+    consumeNavigationContext() {
+        if (typeof app === 'undefined' || !app.navigationContext || app.currentPage !== 'inventory') {
+            return;
+        }
+        this.applyExternalFilters(app.navigationContext);
+        app.navigationContext = null;
+    },
+
+    applyExternalFilters(context = {}) {
+        if (typeof context.keyword === 'string') {
+            this.filters.keyword = context.keyword.trim();
+        }
+        if (typeof context.status === 'string') {
+            this.filters.status = context.status;
+        }
+        if (typeof context.onlyWarnings === 'boolean') {
+            this.filters.onlyWarnings = context.onlyWarnings;
+        }
+        if (typeof context.sort === 'string') {
+            this.filters.sort = context.sort;
+        }
+
+        if (context.workGroupId && context.instrumentId) {
+            this.selectedWorkGroupId = Number(context.workGroupId);
+            this.selectedInstrumentId = Number(context.instrumentId);
+        } else {
+            const matched = this.findMatchingInstrument(context);
+            if (matched) {
+                this.selectedWorkGroupId = matched.workGroupId;
+                this.selectedInstrumentId = matched.instrumentId;
+            }
+        }
+
+        this.syncFilterControls();
+        this.render();
+    },
+
+    findMatchingInstrument(context = {}) {
+        const keyword = String(context.keyword || '').trim().toLowerCase();
+        const targetStatus = context.status && context.status !== 'all' ? context.status : null;
+        for (const group of this.inventoryData) {
+            for (const instrument of (group.instruments || [])) {
+                const hasMatch = (instrument.reagents || []).some((reagent) => {
+                    if (context.reagentId && reagent.id !== Number(context.reagentId)) {
+                        return false;
+                    }
+                    if (keyword && !reagent.name.toLowerCase().includes(keyword)) {
+                        return false;
+                    }
+                    if (targetStatus && !this.matchesStatusFilter(reagent, targetStatus)) {
+                        return false;
+                    }
+                    if (context.onlyWarnings && reagent.status_level === 'normal') {
+                        return false;
+                    }
+                    return true;
+                });
+                if (hasMatch) {
+                    return { workGroupId: group.id, instrumentId: instrument.id };
+                }
+            }
+        }
+        return null;
+    },
+
+    matchesStatusFilter(reagent, status) {
+        if (!status || status === 'all') {
+            return true;
+        }
+        if (status === 'low_or_empty') {
+            return reagent.status_level === 'low' || reagent.status_level === 'empty';
+        }
+        return reagent.status_level === status;
     },
 
     ensureSelection() {
@@ -176,7 +251,7 @@ const inventoryPage = {
             if (keyword && !reagent.name.toLowerCase().includes(keyword)) {
                 return false;
             }
-            if (this.filters.status !== 'all' && reagent.status_level !== this.filters.status) {
+            if (!this.matchesStatusFilter(reagent, this.filters.status)) {
                 return false;
             }
             if (this.filters.onlyWarnings && reagent.status_level === 'normal') {
@@ -196,13 +271,6 @@ const inventoryPage = {
     selectInstrument(instrumentId) {
         this.selectedInstrumentId = instrumentId;
         this.render();
-    },
-
-    readBatchWarningInputs() {
-        return {
-            default_warning_days: Math.max(parseInt(document.getElementById('inventory-default-warning-days').value, 10) || 0, 0),
-            default_warning_stock: Math.max(parseInt(document.getElementById('inventory-default-warning-stock').value, 10) || 0, 0)
-        };
     },
 
     populateExportWorkGroupOptions(selectedValue = '') {
@@ -496,8 +564,6 @@ const inventoryPage = {
         const subtitle = document.getElementById('inventory-current-subtitle');
         const refreshed = document.getElementById('inventory-last-refreshed');
         const summaryContainer = document.getElementById('inventory-summary-cards');
-        const daysInput = document.getElementById('inventory-default-warning-days');
-        const stockInput = document.getElementById('inventory-default-warning-stock');
 
         refreshed.textContent = this.lastLoadedAt ? `最近刷新：${Utils.formatDateTime(this.lastLoadedAt)}` : '';
 
@@ -505,18 +571,16 @@ const inventoryPage = {
             title.textContent = '暂无可查看的仪器';
             subtitle.textContent = '请先维护工作组和仪器，或切换到有库存的仪器。';
             summaryContainer.innerHTML = '';
-            daysInput.value = '30';
-            stockInput.value = '5';
             return;
         }
 
         const group = this.getSelectedWorkGroup();
         const summary = this.getInstrumentSummary(instrument);
         title.textContent = instrument.model ? `${instrument.name} (${instrument.model})` : instrument.name;
+        subtitle.textContent = `${group?.name || '未分组'} / 当前库存页优先展示更多试剂；仪器预警请到资料设置中维护。`;
         subtitle.textContent = `${group?.name || '未分组'} · 在这里可以批量设置当前仪器下试剂的预警值，并同步保存为以后新试剂的默认值。`;
-        daysInput.value = String(instrument.default_warning_days ?? 30);
-        stockInput.value = String(instrument.default_warning_stock ?? 5);
 
+        subtitle.textContent = `${group?.name || '未分组'} / 当前库存页优先展示更多试剂；仪器预警请到资料设置中维护。`;
         summaryContainer.innerHTML = `
             <div class="inventory-summary-card">
                 <div class="inventory-summary-label">在库试剂数</div>
@@ -556,7 +620,72 @@ const inventoryPage = {
             return;
         }
 
-        container.innerHTML = reagents.map((reagent) => this.renderReagentCard(reagent)).join('');
+        container.innerHTML = reagents.map((reagent) => this.renderCompactReagentCard(reagent)).join('');
+    },
+
+    renderCompactReagentCard(reagent) {
+        const manufacturerHtml = reagent.manufacturer
+            ? `<span class="inventory-card-maker">${this.escapeHtml(reagent.manufacturer)}</span>`
+            : '';
+        const archiveButtonHtml = reagent.status_level === 'empty'
+            ? `<button class="btn btn-danger btn-small" onclick="inventoryPage.archiveReagent(${reagent.id})">归档</button>`
+            : '';
+        const batchListHtml = reagent.batches.length ? `
+            <div class="inventory-batch-list compact">
+                ${reagent.batches.map((batch) => `
+                    <div class="inventory-batch-row compact ${this.getBatchStatus(batch, reagent)}">
+                        <div class="inventory-batch-primary">
+                            <span class="inventory-batch-code">批号 ${this.escapeHtml(batch.batch_no)}</span>
+                            <span class="inventory-batch-expiry">效期 ${this.escapeHtml(batch.expiry_date)}</span>
+                            <span class="inventory-batch-days">${this.escapeHtml(this.formatDaysLabel(batch.expiry_days_left))}</span>
+                        </div>
+                        <div class="inventory-batch-secondary">
+                            <span>库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit || reagent.unit || '瓶')}</span>
+                            <span>入库 ${this.escapeHtml(Utils.formatDate(batch.created_at) || '')}</span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : '';
+
+        return `
+            <article class="inventory-card inventory-card-compact inventory-card-${reagent.status_level}">
+                <div class="inventory-card-accent"></div>
+                <div class="inventory-card-header compact">
+                    <div class="inventory-card-main">
+                        <div class="inventory-card-title-row compact">
+                            <h4>${this.escapeHtml(reagent.name)}</h4>
+                            ${manufacturerHtml}
+                            <span class="inventory-status inventory-status-${reagent.status_level}">${this.getStatusLabel(reagent.status_level)}</span>
+                            <span class="inventory-inline-meta">批次 ${reagent.batch_count}</span>
+                        </div>
+                        <div class="inventory-key-metrics compact">
+                            <div class="inventory-key-metric compact">
+                                <span>总库存</span>
+                                <strong>${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
+                            </div>
+                            <div class="inventory-key-metric compact">
+                                <span>最近效期</span>
+                                <strong>${this.escapeHtml(reagent.nearest_expiry_date || '暂无')}</strong>
+                            </div>
+                            <div class="inventory-key-metric compact">
+                                <span>剩余天数</span>
+                                <strong>${this.escapeHtml(this.formatDaysLabel(reagent.nearest_expiry_days))}</strong>
+                            </div>
+                            <div class="inventory-key-metric compact">
+                                <span>预警值</span>
+                                <strong>${reagent.warning_stock} / ${reagent.warning_days}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="inventory-card-actions compact">
+                        ${archiveButtonHtml}
+                        <button class="btn btn-secondary btn-small" onclick="inventoryPage.openReagentModal(${reagent.id})">设置试剂信息</button>
+                    </div>
+                </div>
+                ${batchListHtml}
+            </article>
+        `;
     },
 
     getStatusLabel(level) {

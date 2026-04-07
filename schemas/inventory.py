@@ -61,6 +61,33 @@ class WorkGroupInfo(BaseModel):
     instruments: List[InstrumentInfo]
 
 
+class DashboardPendingTasks(BaseModel):
+    expired_batch_count: int = 0
+    expiring_reagent_count: int = 0
+    low_or_empty_reagent_count: int = 0
+    zero_stock_unarchived_count: int = 0
+
+
+class DashboardWarningReagent(BaseModel):
+    reagent_id: int
+    reagent_name: str
+    work_group_id: int
+    work_group_name: str
+    instrument_id: int
+    instrument_name: str
+    total_min_quantity: int = 0
+    min_unit: str = ""
+    nearest_expiry_date: Optional[str] = None
+    nearest_expiry_days: Optional[int] = None
+    status_level: Literal["empty", "expired", "expiring", "low", "normal"] = "normal"
+
+
+class DashboardOverviewResponse(BaseModel):
+    pending_tasks: DashboardPendingTasks
+    warning_reagents: List[DashboardWarningReagent] = Field(default_factory=list)
+    recent_outbounds: List["TransactionListItem"] = Field(default_factory=list)
+
+
 class ReagentCatalogItem(BaseModel):
     id: int
     instrument_id: int
@@ -134,9 +161,19 @@ class ReagentWarningSettingsUpdate(BaseModel):
     warning_stock: int = Field(default=5, ge=0)
 
 
+class AdminPasswordRequest(BaseModel):
+    password: str
+
+
 class ClearTransactionsRequest(BaseModel):
+    password: str
     work_group_id: Optional[int] = None
     instrument_id: Optional[int] = None
     reagent_id: Optional[int] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+
+
+from .reporting import TransactionListItem
+
+DashboardOverviewResponse.model_rebuild()

@@ -2,6 +2,7 @@
 
 const app = {
     currentPage: 'dashboard',
+    navigationContext: null,
 
     init() {
         this.bindNavigation();
@@ -19,8 +20,9 @@ const app = {
         });
     },
 
-    navigate(page) {
+    navigate(page, context = null) {
         this.currentPage = page;
+        this.navigationContext = context;
         this.loadPage(page);
 
         // Update nav active state
@@ -42,10 +44,10 @@ const app = {
         }
 
         // Initialize page-specific logic
-        if (page === 'inbound' && typeof inboundPage !== 'undefined') {
+        if (page === 'dashboard' && typeof dashboardPage !== 'undefined') {
+            dashboardPage.init();
+        } else if (page === 'inbound' && typeof inboundPage !== 'undefined') {
             inboundPage.init();
-        } else if (page === 'outbound' && typeof outboundPage !== 'undefined') {
-            outboundPage.init();
         } else if (page === 'inventory' && typeof inventoryPage !== 'undefined') {
             inventoryPage.init();
         } else if (page === 'reports' && typeof reportsPage !== 'undefined') {

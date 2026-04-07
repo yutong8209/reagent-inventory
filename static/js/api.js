@@ -140,6 +140,12 @@ const API = {
         }
     },
 
+    dashboard: {
+        overview() {
+            return API.request('/dashboard/overview');
+        }
+    },
+
     // Inventory
     inventory: {
         get(instrumentId = null) {
@@ -239,9 +245,10 @@ const API = {
                 method: 'POST'
             });
         },
-        clearStock() {
+        clearStock(password) {
             return API.request('/admin/clear-stock', {
-                method: 'POST'
+                method: 'POST',
+                body: JSON.stringify({ password })
             });
         },
         clearTransactions(data) {
@@ -250,9 +257,10 @@ const API = {
                 body: JSON.stringify(data)
             });
         },
-        resetReagentData() {
+        resetReagentData(password) {
             return API.request('/admin/reset-reagent-data', {
-                method: 'POST'
+                method: 'POST',
+                body: JSON.stringify({ password })
             });
         }
     },

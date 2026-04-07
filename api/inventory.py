@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 from db import get_db
 from models import BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, UnitOption, WorkGroup
 from schemas import (
+    AdminPasswordRequest,
     BatchInfo,
+    DashboardOverviewResponse,
+    DashboardPendingTasks,
+    DashboardWarningReagent,
     InstrumentCatalogItem,
     InstrumentCreate,
     InstrumentInfo,
@@ -27,6 +31,7 @@ from schemas import (
     ReagentInfo,
     ReagentUpdate,
     ReagentWarningSettingsUpdate,
+    TransactionListItem,
     UnitOptionCreate,
     UnitOptionResponse,
     UnitOptionUpdate,
@@ -37,6 +42,7 @@ from schemas import (
 )
 
 router = APIRouter()
+ADMIN_ACTION_PASSWORD = "wtsyyjyk"
 
 EXPORT_HEADERS = [
     "工作组",
@@ -110,6 +116,11 @@ def _unit_option_matches_scope(option_scope: str, scope: str | None) -> bool:
     if scope == "min":
         return option_scope in {"min", "both"}
     return True
+
+
+def _require_admin_action_password(password: str):
+    if password != ADMIN_ACTION_PASSWORD:
+        raise HTTPException(status_code=403, detail="密码错误，不能执行危险操作")
 
 
 def _days_until(target: date) -> int:
@@ -412,6 +423,111 @@ def _query_inventory_data(
     return result
 
 
+def _build_dashboard_pending_tasks(inventory_data: list[WorkGroupInfo]) -> DashboardPendingTasks:
+    expired_batch_count = 0
+    expiring_reagent_count = 0
+    low_or_empty_reagent_count = 0
+    zero_stock_unarchived_count = 0
+
+    for group in inventory_data:
+        for instrument in group.instruments:
+            for reagent in instrument.reagents:
+                expired_batch_count += sum(1 for batch in reagent.batches if batch.is_expired)
+                if reagent.status_level == "expiring":
+                    expiring_reagent_count += 1
+                if reagent.status_level in {"low", "empty"}:
+                    low_or_empty_reagent_count += 1
+                if reagent.total_min_quantity <= 0:
+                    zero_stock_unarchived_count += 1
+
+    return DashboardPendingTasks(
+        expired_batch_count=expired_batch_count,
+        expiring_reagent_count=expiring_reagent_count,
+        low_or_empty_reagent_count=low_or_empty_reagent_count,
+        zero_stock_unarchived_count=zero_stock_unarchived_count,
+    )
+
+
+def _build_dashboard_warning_reagents(inventory_data: list[WorkGroupInfo]) -> list[DashboardWarningReagent]:
+    items: list[DashboardWarningReagent] = []
+    for group in inventory_data:
+        for instrument in group.instruments:
+            for reagent in instrument.reagents:
+                if reagent.status_level == "normal":
+                    continue
+                items.append(
+                    DashboardWarningReagent(
+                        reagent_id=reagent.id,
+                        reagent_name=reagent.name,
+                        work_group_id=group.id,
+                        work_group_name=group.name,
+                        instrument_id=instrument.id,
+                        instrument_name=instrument.name,
+                        total_min_quantity=reagent.total_min_quantity,
+                        min_unit=reagent.unit,
+                        nearest_expiry_date=reagent.nearest_expiry_date,
+                        nearest_expiry_days=reagent.nearest_expiry_days,
+                        status_level=reagent.status_level,
+                    )
+                )
+
+    level_priority = {"expired": 0, "empty": 1, "expiring": 2, "low": 3, "normal": 4}
+    items.sort(
+        key=lambda item: (
+            level_priority.get(item.status_level, 99),
+            item.nearest_expiry_days if item.nearest_expiry_days is not None else 10**9,
+            item.total_min_quantity,
+            item.reagent_name,
+            item.reagent_id,
+        )
+    )
+    return items[:6]
+
+
+def _serialize_transaction_list_item(row) -> TransactionListItem:
+    transaction, reagent, instrument, work_group, batch_stock = row
+    min_unit = (
+        _clean_text(transaction.min_unit)
+        or _clean_text(batch_stock.min_unit if batch_stock else None)
+        or _clean_text(reagent.unit)
+        or "最小单位"
+    )
+    ratio = transaction.package_to_min_qty if transaction.package_to_min_qty and transaction.package_to_min_qty > 0 else 1
+    quantity_min = transaction.quantity * ratio if transaction.type == "IN" else transaction.quantity
+    return TransactionListItem(
+        id=transaction.id,
+        created_at=transaction.created_at,
+        type=transaction.type,
+        work_group_id=work_group.id if work_group else None,
+        work_group_name=work_group.name if work_group else "",
+        instrument_id=instrument.id if instrument else None,
+        instrument_name=instrument.name if instrument else "",
+        reagent_id=reagent.id,
+        reagent_name=reagent.name,
+        manufacturer=reagent.manufacturer,
+        batch_no=batch_stock.batch_no if batch_stock and batch_stock.batch_no else "",
+        quantity_min=quantity_min,
+        min_unit=min_unit,
+        operator=transaction.operator,
+        source=transaction.source,
+    )
+
+
+def _query_recent_outbounds(db: Session, limit: int = 20) -> list[TransactionListItem]:
+    rows = (
+        db.query(Transaction, Reagent, Instrument, WorkGroup, BatchStock)
+        .join(Reagent, Transaction.reagent_id == Reagent.id)
+        .join(Instrument, Reagent.instrument_id == Instrument.id)
+        .join(WorkGroup, Instrument.work_group_id == WorkGroup.id)
+        .outerjoin(BatchStock, Transaction.batch_stock_id == BatchStock.id)
+        .filter(Transaction.type == "OUT")
+        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return [_serialize_transaction_list_item(row) for row in rows]
+
+
 def _sanitize_sheet_title(name: str, used_titles: set[str]) -> str:
     cleaned = "".join("_" if ch in '[]:*?/\\' else ch for ch in (name or "工作组")).strip() or "工作组"
     base = cleaned[:31]
@@ -588,6 +704,16 @@ def get_inventory(
     db: Session = Depends(get_db),
 ):
     return _query_inventory_data(db, instrument_id=instrument_id)
+
+
+@router.get("/dashboard/overview", response_model=DashboardOverviewResponse)
+def get_dashboard_overview(db: Session = Depends(get_db)):
+    inventory_data = _query_inventory_data(db)
+    return DashboardOverviewResponse(
+        pending_tasks=_build_dashboard_pending_tasks(inventory_data),
+        warning_reagents=_build_dashboard_warning_reagents(inventory_data),
+        recent_outbounds=_query_recent_outbounds(db, limit=20),
+    )
 
 
 @router.get("/inventory/export")
@@ -1132,7 +1258,8 @@ def update_operator(operator_id: int, data: OperatorUpdate, db: Session = Depend
 
 
 @router.post("/admin/reset-reagent-data")
-def reset_reagent_data(db: Session = Depends(get_db)):
+def reset_reagent_data(data: AdminPasswordRequest, db: Session = Depends(get_db)):
+    _require_admin_action_password(data.password)
     db.query(Transaction).delete(synchronize_session=False)
     db.query(BatchStock).delete(synchronize_session=False)
     db.query(ParseLog).delete(synchronize_session=False)
@@ -1153,7 +1280,8 @@ def reset_reagent_data(db: Session = Depends(get_db)):
 
 
 @router.post("/admin/clear-stock")
-def clear_stock(db: Session = Depends(get_db)):
+def clear_stock(data: AdminPasswordRequest, db: Session = Depends(get_db)):
+    _require_admin_action_password(data.password)
     transaction_batch_links_cleared = (
         db.query(Transaction)
         .filter(Transaction.batch_stock_id.is_not(None))
@@ -1177,6 +1305,7 @@ def clear_stock(db: Session = Depends(get_db)):
 
 @router.post("/admin/clear-transactions")
 def clear_transactions(data: ClearTransactionsRequest, db: Session = Depends(get_db)):
+    _require_admin_action_password(data.password)
     if data.start_date and data.end_date and data.start_date > data.end_date:
         raise HTTPException(status_code=400, detail="开始日期不能晚于结束日期")
 

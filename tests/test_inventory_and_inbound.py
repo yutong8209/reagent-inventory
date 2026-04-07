@@ -227,7 +227,7 @@ def test_reset_reagent_data_keeps_catalog_and_operators(tmp_path):
         db.add(ParseLog(raw_barcode="RESET-001", match_result="exact", matched_reagent_id=reagent.id))
         db.commit()
 
-    reset_response = client.post("/api/admin/reset-reagent-data")
+    reset_response = client.post("/api/admin/reset-reagent-data", json={"password": "wtsyyjyk"})
     assert reset_response.status_code == 200
     assert reset_response.json()["success"] is True
 
@@ -438,6 +438,120 @@ def test_batch_update_instrument_warnings_updates_existing_reagents_and_defaults
         assert reagent.follow_instrument is False
 
 
+def test_dashboard_overview_returns_pending_tasks_warnings_and_recent_outbounds(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent_expired = Reagent(
+            instrument_id=instrument_id,
+            name="DASH-EXPIRED",
+            match_mode="exact",
+            match_pattern="DASH-EXPIRED",
+            raw_barcode_sample="DASH-EXPIRED",
+            manufacturer="Maker A",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        reagent_empty = Reagent(
+            instrument_id=instrument_id,
+            name="DASH-EMPTY",
+            match_mode="exact",
+            match_pattern="DASH-EMPTY",
+            raw_barcode_sample="DASH-EMPTY",
+            manufacturer="Maker B",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        reagent_normal = Reagent(
+            instrument_id=instrument_id,
+            name="DASH-NORMAL",
+            match_mode="exact",
+            match_pattern="DASH-NORMAL",
+            raw_barcode_sample="DASH-NORMAL",
+            manufacturer="Maker C",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=5,
+            warning_stock=1,
+            follow_instrument=False,
+        )
+        db.add_all([reagent_expired, reagent_empty, reagent_normal])
+        db.flush()
+
+        expired_batch = BatchStock(
+            reagent_id=reagent_expired.id,
+            batch_no="DASH-EXP-001",
+            expiry_date=date.today().fromordinal(date.today().toordinal() - 1),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        empty_batch = BatchStock(
+            reagent_id=reagent_empty.id,
+            batch_no="DASH-EMP-001",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 20),
+            quantity=0,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        normal_batch = BatchStock(
+            reagent_id=reagent_normal.id,
+            batch_no="DASH-NOR-001",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 40),
+            quantity=5,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        db.add_all([expired_batch, empty_batch, normal_batch])
+        db.flush()
+
+        db.add(Transaction(
+            reagent_id=reagent_expired.id,
+            batch_stock_id=expired_batch.id,
+            type="OUT",
+            quantity=1,
+            operator="陈茹",
+            source="scan",
+            raw_barcode="DASH-EXPIRED",
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+            remark=None,
+        ))
+        db.commit()
+
+    response = client.get("/api/dashboard/overview")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["pending_tasks"]["expired_batch_count"] == 1
+    assert payload["pending_tasks"]["low_or_empty_reagent_count"] == 1
+    assert payload["pending_tasks"]["zero_stock_unarchived_count"] == 1
+
+    warning_names = [item["reagent_name"] for item in payload["warning_reagents"]]
+    assert warning_names[:2] == ["DASH-EXPIRED", "DASH-EMPTY"]
+
+    assert len(payload["recent_outbounds"]) == 1
+    assert payload["recent_outbounds"][0]["type"] == "OUT"
+    assert payload["recent_outbounds"][0]["reagent_name"] == "DASH-EXPIRED"
+
+
 def test_reagent_status_filter_and_restore(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     _, instrument_id = get_first_catalog_session(SessionLocal)
@@ -559,7 +673,7 @@ def test_clear_stock_keeps_reagents_and_parse_logs(tmp_path):
         db.commit()
         reagent_id = reagent.id
 
-    response = client.post("/api/admin/clear-stock")
+    response = client.post("/api/admin/clear-stock", json={"password": "wtsyyjyk"})
     assert response.status_code == 200
     assert response.json()["cleared_batch_count"] == 1
 
@@ -656,6 +770,7 @@ def test_clear_transactions_with_filters_only_removes_matching_rows(tmp_path):
         keep_reagent_id = keep_reagent.id
 
     response = client.post("/api/admin/clear-transactions", json={
+        "password": "wtsyyjyk",
         "work_group_id": work_group_id,
         "instrument_id": instrument_id,
         "reagent_id": reagent_id,
@@ -669,6 +784,19 @@ def test_clear_transactions_with_filters_only_removes_matching_rows(tmp_path):
         assert db.query(Transaction).filter(Transaction.reagent_id == reagent_id).count() == 0
         assert db.query(Transaction).filter(Transaction.reagent_id == keep_reagent_id).count() == 1
         assert db.query(BatchStock).count() == 1
+
+
+def test_dangerous_admin_actions_require_password(tmp_path):
+    client, _ = build_client(tmp_path)
+
+    clear_stock = client.post("/api/admin/clear-stock", json={"password": "wrong"})
+    assert clear_stock.status_code == 403
+
+    clear_transactions = client.post("/api/admin/clear-transactions", json={"password": "wrong"})
+    assert clear_transactions.status_code == 403
+
+    reset_response = client.post("/api/admin/reset-reagent-data", json={"password": "wrong"})
+    assert reset_response.status_code == 403
 
 
 def test_inventory_keeps_zero_stock_reagent_and_marks_empty(tmp_path):

@@ -8,6 +8,7 @@ const outboundPage = {
     manualSearchResults: [],
     selectedManualReagent: null,
     candidateModalContext: null,
+    modeContainerSelector: '#dashboard-outbound-panel',
 
     async init() {
         await Utils.loadOperators();
@@ -58,7 +59,7 @@ const outboundPage = {
 
     switchMode(mode) {
         this.currentMode = mode;
-        document.querySelectorAll('#page-outbound .mode-tab').forEach((tab) => {
+        document.querySelectorAll(`${this.modeContainerSelector} .mode-tab[data-mode]`).forEach((tab) => {
             tab.classList.toggle('active', tab.dataset.mode === mode);
         });
         document.getElementById('outbound-scan-mode').classList.toggle('hidden', mode !== 'scan');
@@ -854,6 +855,9 @@ const outboundPage = {
             this.pendingItems = [];
             this.renderPendingItems();
             this.closeConfirmModal();
+            if (typeof dashboardPage !== 'undefined' && typeof dashboardPage.refreshOverview === 'function') {
+                dashboardPage.refreshOverview();
+            }
 
             if (result.warnings && result.warnings.length > 0) {
                 Utils.showToast(`成功出库 ${result.item_count} 条，其中 ${result.warnings.length} 条包含过期批次`, 'warning', 5000);
