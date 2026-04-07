@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from api import barcode, inbound, inventory
 from db import get_db
 from db.base import Base
-from models import BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
+from models import BarcodeBatchRule, BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
 from services import ensure_default_catalog, ensure_default_operators, ensure_default_unit_options
 
 

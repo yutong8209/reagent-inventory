@@ -18,6 +18,9 @@ const dashboardPage = {
         document.getElementById('dashboard-refresh-btn')?.addEventListener('click', () => {
             this.refreshOverview();
         });
+        document.getElementById('dashboard-open-inventory-btn')?.addEventListener('click', () => {
+            this.openInventory();
+        });
     },
 
     startAutoRefresh() {
@@ -82,24 +85,8 @@ const dashboardPage = {
 
     render() {
         this.renderPendingTasks();
-        try {
-            this.renderWarnings();
-        } catch (error) {
-            console.error('Failed to render dashboard warnings:', error);
-            const container = document.getElementById('dashboard-warning-list');
-            if (container) {
-                container.innerHTML = '<div class="inventory-empty">预警数据渲染失败，请刷新重试。</div>';
-            }
-        }
-        try {
-            this.renderRecentOutbounds();
-        } catch (error) {
-            console.error('Failed to render dashboard recent outbounds:', error);
-            const container = document.getElementById('dashboard-recent-outbounds');
-            if (container) {
-                container.innerHTML = '<div class="inventory-empty">最近出库渲染失败，请刷新重试。</div>';
-            }
-        }
+        this.renderWarnings();
+        this.renderRecentOutbounds();
     },
 
     renderPendingTasks() {
@@ -114,14 +101,20 @@ const dashboardPage = {
         }
 
         const cards = [
-            { label: '已过期批次', value: pending.expired_batch_count, type: 'danger' },
-            { label: '近效期试剂', value: pending.expiring_reagent_count, type: 'warning' },
-            { label: '低库存/零库存', value: pending.low_or_empty_reagent_count, type: 'warning' },
-            { label: '零库存未归档', value: pending.zero_stock_unarchived_count, type: 'danger' }
+            { label: '已过期批次', value: pending.expired_batch_count, type: 'danger', status: 'expired' },
+            { label: '近效期试剂', value: pending.expiring_reagent_count, type: 'warning', status: 'expiring' },
+            { label: '低库存/零库存', value: pending.low_or_empty_reagent_count, type: 'warning', status: 'low_or_empty' },
+            { label: '零库存未归档', value: pending.zero_stock_unarchived_count, type: 'danger', status: 'empty' }
         ];
 
         container.innerHTML = cards.map((item) => `
-            <article class="dashboard-task-card dashboard-task-${item.type}">
+            <article
+                class="dashboard-task-card dashboard-task-${item.type}"
+                role="button"
+                tabindex="0"
+                onclick="dashboardPage.openInventoryForPending('${item.status}')"
+                onkeydown="dashboardPage.handleCardKeydown(event, () => dashboardPage.openInventoryForPending('${item.status}'))"
+            >
                 <div class="dashboard-task-copy">
                     <span class="dashboard-task-label">${item.label}</span>
                     <strong class="dashboard-task-value">${item.value}</strong>
@@ -142,7 +135,13 @@ const dashboardPage = {
         }
 
         container.innerHTML = warnings.map((item) => `
-            <article class="dashboard-warning-card dashboard-warning-${item.status_level}">
+            <article
+                class="dashboard-warning-card dashboard-warning-${item.status_level}"
+                role="button"
+                tabindex="0"
+                onclick="dashboardPage.openInventoryForReagent(${item.reagent_id})"
+                onkeydown="dashboardPage.handleCardKeydown(event, () => dashboardPage.openInventoryForReagent(${item.reagent_id}))"
+            >
                 <div class="dashboard-warning-head">
                     <div>
                         <div class="dashboard-warning-title">${this.escapeHtml(item.reagent_name)}</div>
@@ -183,10 +182,35 @@ const dashboardPage = {
         `).join('');
     },
 
+    handleCardKeydown(event, callback) {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        event.preventDefault();
+        callback();
+    },
+
     openInventory() {
         app.navigate('inventory', {
             status: 'all',
             onlyWarnings: true,
+            sort: 'severity'
+        });
+    },
+
+    openInventoryForPending(status) {
+        app.navigate('inventory', {
+            status,
+            onlyWarnings: status !== 'empty',
+            sort: 'severity',
+            focusFirstMatch: true
+        });
+    },
+
+    openInventoryForReagent(reagentId) {
+        app.navigate('inventory', {
+            reagentId,
+            focusReagentId: reagentId,
             sort: 'severity'
         });
     }

@@ -1,0 +1,60 @@
+INFO:     127.0.0.1:58728 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49892 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49877 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55837 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55837 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55837 - "GET /css/main.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61996 - "GET /js/pages/dashboard.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63604 - "GET /js/pages/inbound.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:61509 - "GET /js/pages/catalog.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:61996 - "GET /api/unit-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55837 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55837 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55837 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55837 - "GET /css/main.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61996 - "GET /js/utils.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61509 - "GET /js/api.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63604 - "GET /js/main.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63693 - "GET /js/pages/dashboard.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49643 - "GET /js/pages/inbound.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55837 - "GET /js/pages/outbound.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61996 - "GET /js/pages/inventory.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63604 - "GET /js/pages/reports.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61509 - "GET /js/pages/catalog.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61509 - "GET /api/unit-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61996 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63604 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63604 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63604 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54865 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58078 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58078 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58078 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55107 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55107 - "GET / HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:55107 - "GET /css/main.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:58730 - "GET /js/pages/dashboard.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:54570 - "GET /js/pages/inventory.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:58730 - "GET /api/operators HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54570 - "GET /api/unit-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54570 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54570 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52364 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52364 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52364 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52364 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52364 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52364 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55029 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55029 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60727 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60727 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60727 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60727 - "GET /api/dashboard/overview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60727 - "GET /api/dashboard/overview HTTP/1.1" 200 OK

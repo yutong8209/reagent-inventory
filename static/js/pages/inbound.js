@@ -11,6 +11,7 @@ const inboundPage = {
     newReagentContext: null,
     initialized: false,
     isSubmitting: false,
+    scanAutoSubmitTimer: null,
     defaultPackageUnit: '盒',
     defaultMinUnit: '瓶',
 
@@ -35,11 +36,16 @@ const inboundPage = {
     },
 
     setupEventListeners() {
-        this.el('scan-barcode').addEventListener('keydown', (event) => {
+        const scanInput = this.el('scan-barcode');
+        scanInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
+                window.clearTimeout(this.scanAutoSubmitTimer);
                 this.addScanItem();
             }
+        });
+        scanInput.addEventListener('input', () => {
+            this.scheduleScanAutoSubmit();
         });
 
         this.el('manual-search-keyword').addEventListener('input', Utils.debounce(() => {
@@ -93,6 +99,30 @@ const inboundPage = {
 
     createItemId() {
         return Date.now() + Math.floor(Math.random() * 1000);
+    },
+
+    scheduleScanAutoSubmit() {
+        window.clearTimeout(this.scanAutoSubmitTimer);
+        if (this.currentMode !== 'scan') return;
+
+        const input = this.el('scan-barcode');
+        const value = this.normalizeText(input.value);
+        if (!value || value.length < 12) return;
+
+        this.scanAutoSubmitTimer = window.setTimeout(() => {
+            const latestValue = this.normalizeText(input.value);
+            const newReagentHidden = this.el('new-reagent-modal')?.classList.contains('hidden');
+            if (
+                this.currentMode !== 'scan' ||
+                !latestValue ||
+                latestValue !== value ||
+                !newReagentHidden ||
+                document.getElementById('candidate-modal')
+            ) {
+                return;
+            }
+            this.addScanItem();
+        }, 180);
     },
 
     formatRelation(packageUnit, qty, minUnit) {
@@ -320,6 +350,7 @@ const inboundPage = {
             manufacturer: picked.manufacturer ?? null,
             productCode: result.extracted_product_code || '',
             productionDate: this.normalizeDate(result.extracted_production_date),
+            parsedBatchNo: this.normalizeText(result.extracted_batch_no),
             batchNo: this.normalizeText(result.extracted_batch_no),
             expiryDate: this.normalizeDate(result.extracted_expiry_date),
             packageUnit: this.normalizeText(picked.package_unit ?? result.package_unit, this.defaultPackageUnit),
@@ -444,6 +475,15 @@ const inboundPage = {
         this.el('new-reagent-instrument').innerHTML = '<option value="">请选择仪器</option>';
         this.refreshNewReagentRelationPreview();
         this.el('new-reagent-modal').classList.remove('hidden');
+        if (result.work_group_id) {
+            this.el('new-reagent-work-group').value = String(result.work_group_id);
+            await this.loadInstrumentsForSelect(
+                'new-reagent-instrument',
+                result.work_group_id,
+                '请选择仪器',
+                result.instrument_id ? String(result.instrument_id) : ''
+            );
+        }
     },
 
     closeNewReagentModal() {
@@ -513,6 +553,7 @@ const inboundPage = {
                 manufacturer: reagent.manufacturer,
                 productCode: this.el('new-reagent-product-code').value.trim(),
                 productionDate: this.el('new-reagent-production-date').value,
+                parsedBatchNo: this.normalizeText(this.newReagentContext.result?.extracted_batch_no),
                 batchNo,
                 expiryDate,
                 packageUnit: reagent.package_unit,
@@ -880,7 +921,8 @@ const inboundPage = {
             package_unit: item.packageUnit,
             min_unit: item.minUnit,
             package_to_min_qty: item.packageToMinQty,
-            raw_barcode: item.barcode || `MANUAL::${item.instrumentId || 'UNKNOWN'}::${item.batchNo}`
+            raw_barcode: item.barcode || `MANUAL::${item.instrumentId || 'UNKNOWN'}::${item.batchNo}`,
+            parsed_batch_no: item.parsedBatchNo || null
         }));
     },
 

@@ -12,6 +12,7 @@ const inventoryPage = {
     },
     lastLoadedAt: null,
     isExporting: false,
+    focusReagentId: null,
 
     async init() {
         if (!this.initialized) {
@@ -108,6 +109,11 @@ const inventoryPage = {
         if (typeof context.sort === 'string') {
             this.filters.sort = context.sort;
         }
+        if (context.focusReagentId || context.reagentId) {
+            this.focusReagentId = Number(context.focusReagentId || context.reagentId);
+        } else if (context.focusFirstMatch) {
+            this.focusReagentId = null;
+        }
 
         if (context.workGroupId && context.instrumentId) {
             this.selectedWorkGroupId = Number(context.workGroupId);
@@ -145,6 +151,24 @@ const inventoryPage = {
                     return true;
                 });
                 if (hasMatch) {
+                    if (!this.focusReagentId && context.focusFirstMatch) {
+                        const firstMatch = (instrument.reagents || []).find((reagent) => {
+                            if (context.reagentId && reagent.id !== Number(context.reagentId)) {
+                                return false;
+                            }
+                            if (keyword && !reagent.name.toLowerCase().includes(keyword)) {
+                                return false;
+                            }
+                            if (targetStatus && !this.matchesStatusFilter(reagent, targetStatus)) {
+                                return false;
+                            }
+                            if (context.onlyWarnings && reagent.status_level === 'normal') {
+                                return false;
+                            }
+                            return true;
+                        });
+                        this.focusReagentId = firstMatch?.id ?? null;
+                    }
                     return { workGroupId: group.id, instrumentId: instrument.id };
                 }
             }
@@ -621,6 +645,27 @@ const inventoryPage = {
         }
 
         container.innerHTML = reagents.map((reagent) => this.renderCompactReagentCard(reagent)).join('');
+        this.focusTargetReagentCard();
+    },
+
+    focusTargetReagentCard() {
+        if (!this.focusReagentId) {
+            return;
+        }
+
+        const targetCard = document.querySelector(`[data-reagent-id="${this.focusReagentId}"]`);
+        if (!targetCard) {
+            return;
+        }
+
+        targetCard.classList.remove('inventory-card-focused');
+        targetCard.offsetWidth;
+        targetCard.classList.add('inventory-card-focused');
+        targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.setTimeout(() => {
+            targetCard.classList.remove('inventory-card-focused');
+        }, 2200);
+        this.focusReagentId = null;
     },
 
     renderCompactReagentCard(reagent) {
@@ -649,7 +694,7 @@ const inventoryPage = {
         ` : '';
 
         return `
-            <article class="inventory-card inventory-card-compact inventory-card-${reagent.status_level}">
+            <article class="inventory-card inventory-card-compact inventory-card-${reagent.status_level}" data-reagent-id="${reagent.id}">
                 <div class="inventory-card-accent"></div>
                 <div class="inventory-card-header compact">
                     <div class="inventory-card-main">

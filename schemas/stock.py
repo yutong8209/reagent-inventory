@@ -57,6 +57,7 @@ class StockInBatchItem(BaseModel):
     warning_days: int = Field(default=30, ge=0)
     warning_stock: int = Field(default=5, ge=0)
     raw_barcode: str = ""
+    parsed_batch_no: Optional[str] = None
 
 
 class StockInItemResult(BaseModel):

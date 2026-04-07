@@ -6,6 +6,7 @@ from .transaction import Transaction
 from .parse_log import ParseLog
 from .operator import Operator
 from .unit_option import UnitOption
+from .barcode_batch_rule import BarcodeBatchRule
 
 __all__ = [
     "WorkGroup",
@@ -16,4 +17,5 @@ __all__ = [
     "ParseLog",
     "Operator",
     "UnitOption",
+    "BarcodeBatchRule",
 ]

@@ -26,9 +26,10 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:14px;line-
 .dashboard-side-tools .btn.btn-small,.dashboard-side-header > .btn.btn-small{padding:6px 10px;font-size:12px;border-radius:8px}
 .dashboard-side-section .hint{font-size:11px}
 .dashboard-task-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
-.dashboard-task-card{display:flex;flex-direction:column;gap:6px;padding:9px 10px;border:1px solid #dde6ef;border-radius:10px;background:#fff}
+.dashboard-task-card{display:flex;flex-direction:column;gap:6px;padding:9px 10px;border:1px solid #dde6ef;border-radius:10px;background:#fff;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
 .dashboard-task-danger{border-color:#f2c3be;background:#fff8f7}
 .dashboard-task-warning{border-color:#f0df94;background:#fffcef}
+.dashboard-task-card:hover,.dashboard-task-card:focus-visible{transform:translateY(-1px);box-shadow:0 10px 20px rgba(18,39,67,.08)}
 .dashboard-task-copy{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .dashboard-task-label{font-size:11px;color:#60748c}
 .dashboard-task-value{font-size:20px;line-height:1;color:#17304f}
@@ -37,6 +38,8 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:14px;line-
 .dashboard-warning-list,.dashboard-recent-list{display:flex;flex-direction:column;gap:6px;max-height:280px;overflow:auto}
 .dashboard-warning-card,.dashboard-recent-item{padding:9px 10px;border:1px solid #dde6ef;border-radius:10px;background:#fff}
 .dashboard-warning-card{display:flex;flex-direction:column;gap:6px}
+.dashboard-warning-card{cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.dashboard-warning-card:hover,.dashboard-warning-card:focus-visible{transform:translateY(-1px);box-shadow:0 10px 20px rgba(18,39,67,.08)}
 .dashboard-warning-head,.dashboard-recent-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
 .dashboard-warning-title{font-size:13px;font-weight:700;color:#172c45}
 .dashboard-warning-meta,.dashboard-warning-metrics,.dashboard-recent-meta{font-size:11px;color:#63768c}
@@ -250,6 +253,7 @@ body{font-family:"Microsoft YaHei","PingFang SC",sans-serif;font-size:14px;line-
 .inventory-batch-row.compact .inventory-batch-code{font-size:12px}
 .inventory-batch-row.compact .inventory-batch-expiry,.inventory-batch-row.compact .inventory-batch-days{font-size:11px}
 .inventory-card-compact .btn.btn-small{padding:6px 9px;font-size:12px}
+.inventory-card-focused{box-shadow:0 0 0 2px #8bb8f2,0 16px 32px rgba(20,71,138,.18)!important;transform:translateY(-1px)}
 .inventory-empty{padding:28px;border:1px dashed #ced9e5;border-radius:16px;background:#fbfdff;color:#64788f;text-align:center}
 .reports-shell{display:flex;flex-direction:column;gap:18px}
 .reports-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}

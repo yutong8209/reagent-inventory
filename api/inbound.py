@@ -16,6 +16,7 @@ from schemas import (
     StockInRequest,
     StockInResponse,
 )
+from services import BarcodeParser
 
 router = APIRouter()
 
@@ -205,6 +206,7 @@ def _create_transaction(
 
 def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockInBatchResponse:
     operator = _require_operator(request.operator, db)
+    parser = BarcodeParser(db)
 
     if not request.items:
         raise HTTPException(status_code=400, detail="请至少提交一条入库记录")
@@ -251,6 +253,13 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
                 package_to_min_qty,
                 db,
             )
+            if item.source == "scan" and item.raw_barcode:
+                parser.learn_batch_rule(
+                    barcode=item.raw_barcode,
+                    reagent=reagent,
+                    confirmed_batch_no=item.batch_no,
+                    parsed_batch_no=item.parsed_batch_no,
+                )
 
             if warning:
                 warnings.append(warning)
