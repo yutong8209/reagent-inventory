@@ -5,6 +5,7 @@ from models import Operator
 
 DEFAULT_OPERATORS = [
     "陈茜",
+    "陈茹",
     "刘进文",
     "徐元庆",
     "杨振华",

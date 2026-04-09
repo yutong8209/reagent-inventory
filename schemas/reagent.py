@@ -17,6 +17,8 @@ class ReagentCreate(BaseModel):
     warning_days: int = 30
     warning_stock: int = 5
     follow_instrument: bool = True
+    is_calibrator: Optional[bool] = None
+    calibration_result_unit: Optional[str] = "nmmol/L"
 
 
 class ReagentResponse(BaseModel):
@@ -33,6 +35,8 @@ class ReagentResponse(BaseModel):
     warning_days: int
     warning_stock: int
     follow_instrument: bool
+    is_calibrator: bool = False
+    calibration_result_unit: str = "nmmol/L"
     is_archived: bool = False
     created_at: datetime
 
@@ -50,3 +54,5 @@ class ReagentUpdate(BaseModel):
     warning_days: int = 30
     warning_stock: int = 5
     follow_instrument: bool = False
+    is_calibrator: bool = False
+    calibration_result_unit: str = "nmmol/L"

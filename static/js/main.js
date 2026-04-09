@@ -5,9 +5,16 @@ const app = {
     navigationContext: null,
 
     init() {
+        this.hoistModals();
         this.bindNavigation();
         Utils.loadUnitOptions();
         this.loadPage('dashboard');
+    },
+
+    hoistModals() {
+        document.querySelectorAll('.page > .modal').forEach(modal => {
+            document.body.appendChild(modal);
+        });
     },
 
     bindNavigation() {
@@ -50,6 +57,8 @@ const app = {
             inboundPage.init();
         } else if (page === 'inventory' && typeof inventoryPage !== 'undefined') {
             inventoryPage.init();
+        } else if (page === 'calibration' && typeof calibrationPage !== 'undefined') {
+            calibrationPage.init();
         } else if (page === 'reports' && typeof reportsPage !== 'undefined') {
             reportsPage.init();
         } else if (page === 'catalog' && typeof catalogPage !== 'undefined') {

@@ -24,6 +24,10 @@ class Reagent(Base):
     warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     warning_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     follow_instrument: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_calibrator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    calibration_result_unit: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="nmmol/L"
+    )
     is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now

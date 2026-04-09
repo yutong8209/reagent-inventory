@@ -152,6 +152,36 @@ const API = {
         }
     },
 
+    calibration: {
+        scanPreview(barcode) {
+            return API.request('/calibration/scan-preview', {
+                method: 'POST',
+                body: JSON.stringify({ barcode })
+            });
+        },
+        listRecords(limit = 20) {
+            return API.request(`/calibration/records?limit=${limit}`);
+        },
+        targetPreview(reagentId) {
+            return API.request(`/calibration/target-preview?reagent_id=${reagentId}`);
+        },
+        getRecord(id) {
+            return API.request(`/calibration/records/${id}`);
+        },
+        createRecord(data) {
+            return API.request('/calibration/records', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
+        updateRecord(id, data) {
+            return API.request(`/calibration/records/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        }
+    },
+
     // Inventory
     inventory: {
         get(instrumentId = null) {

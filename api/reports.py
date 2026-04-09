@@ -97,7 +97,7 @@ def _build_transaction_query(
         )
 
     normalized_type = _clean_text(transaction_type).upper()
-    if normalized_type in {"IN", "OUT"}:
+    if normalized_type in {"IN", "OUT", "CALIBRATION"}:
         query = query.filter(Transaction.type == normalized_type)
 
     start_dt, end_dt = _build_datetime_range(start_date, end_date)
@@ -254,6 +254,14 @@ def _excel_response(buffer: BytesIO, filename: str) -> StreamingResponse:
     )
 
 
+def _type_label(value: str) -> str:
+    return {
+        "IN": "入库",
+        "OUT": "出库",
+        "CALIBRATION": "校准",
+    }.get(value, value)
+
+
 @router.get("/transactions", response_model=list[TransactionListItem])
 def list_transactions(
     work_group_id: Optional[int] = Query(None),
@@ -382,7 +390,7 @@ def export_transactions(
     rows = [
         [
             item.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "入库" if item.type == "IN" else "出库",
+            _type_label(item.type),
             item.work_group_name,
             item.instrument_name,
             item.reagent_name,

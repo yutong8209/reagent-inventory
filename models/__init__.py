@@ -7,6 +7,7 @@ from .parse_log import ParseLog
 from .operator import Operator
 from .unit_option import UnitOption
 from .barcode_batch_rule import BarcodeBatchRule
+from .calibration_record import CalibrationRecord
 
 __all__ = [
     "WorkGroup",
@@ -18,4 +19,5 @@ __all__ = [
     "Operator",
     "UnitOption",
     "BarcodeBatchRule",
+    "CalibrationRecord",
 ]

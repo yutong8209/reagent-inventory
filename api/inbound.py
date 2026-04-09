@@ -23,6 +23,7 @@ router = APIRouter()
 MANUAL_MATCH_PREFIX = "MANUAL::"
 DEFAULT_PACKAGE_UNIT = "盒"
 DEFAULT_MIN_UNIT = "瓶"
+DEFAULT_CALIBRATOR_UNIT = "次"
 
 
 def _normalize_manual_key(value: str) -> str:
@@ -39,6 +40,10 @@ def _build_manual_match_pattern(instrument_id: int, reagent_name: str) -> str:
 
 def _clean_text(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _is_calibrator_name(name: str | None) -> bool:
+    return _clean_text(name).endswith("校准品")
 
 
 def _require_operator(operator_name: str, db: Session) -> str:
@@ -113,6 +118,7 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
     if warning_stock == 5:
         warning_stock = instrument.default_warning_stock or 5
 
+    is_calibrator = _is_calibrator_name(reagent_name)
     reagent = Reagent(
         instrument_id=instrument.id,
         name=reagent_name,
@@ -120,12 +126,14 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
         match_pattern=_build_manual_match_pattern(instrument.id, reagent_name),
         raw_barcode_sample="MANUAL",
         manufacturer=_clean_text(item.manufacturer) or None,
-        unit=_clean_text(item.min_unit) or DEFAULT_MIN_UNIT,
-        package_unit=_clean_text(item.package_unit) or DEFAULT_PACKAGE_UNIT,
-        package_to_min_qty=_resolve_package_to_min_qty(item),
+        unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(item.min_unit) or DEFAULT_MIN_UNIT),
+        package_unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(item.package_unit) or DEFAULT_PACKAGE_UNIT),
+        package_to_min_qty=1 if is_calibrator else _resolve_package_to_min_qty(item),
         warning_days=warning_days,
         warning_stock=warning_stock,
         follow_instrument=False,
+        is_calibrator=is_calibrator,
+        calibration_result_unit="nmmol/L",
     )
     db.add(reagent)
     db.flush()
@@ -140,11 +148,15 @@ def _upsert_batch_stock(
     package_to_min_qty: int,
     db: Session,
 ) -> BatchStock:
-    batch_stock = db.query(BatchStock).filter(
-        BatchStock.reagent_id == reagent.id,
-        BatchStock.batch_no == item.batch_no,
-        BatchStock.expiry_date == item.expiry_date,
-    ).first()
+    batch_stock = (
+        db.query(BatchStock)
+        .filter(
+            BatchStock.reagent_id == reagent.id,
+            BatchStock.batch_no == item.batch_no,
+            BatchStock.expiry_date == item.expiry_date,
+        )
+        .first()
+    )
 
     if batch_stock:
         if (
@@ -219,20 +231,31 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
             reagent = _resolve_reagent_for_item(item, db)
             if reagent.is_archived:
                 reagent.is_archived = False
+
             if item.reagent_id is not None:
                 package_unit = _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
                 min_unit = _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
                 package_to_min_qty = reagent.package_to_min_qty or 1
             else:
-                package_unit = _clean_text(item.package_unit) or _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
-                min_unit = _clean_text(item.min_unit) or _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
-                package_to_min_qty = _resolve_package_to_min_qty(item, reagent)
+                if reagent.is_calibrator:
+                    package_unit = DEFAULT_CALIBRATOR_UNIT
+                    min_unit = DEFAULT_CALIBRATOR_UNIT
+                    package_to_min_qty = 1
+                else:
+                    package_unit = _clean_text(item.package_unit) or _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
+                    min_unit = _clean_text(item.min_unit) or _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
+                    package_to_min_qty = _resolve_package_to_min_qty(item, reagent)
 
             if item.source == "manual" and item.reagent_id is None:
                 reagent.manufacturer = _clean_text(item.manufacturer) or reagent.manufacturer
-                reagent.package_unit = package_unit
-                reagent.unit = min_unit
-                reagent.package_to_min_qty = package_to_min_qty
+                if reagent.is_calibrator:
+                    reagent.package_unit = DEFAULT_CALIBRATOR_UNIT
+                    reagent.unit = DEFAULT_CALIBRATOR_UNIT
+                    reagent.package_to_min_qty = 1
+                else:
+                    reagent.package_unit = package_unit
+                    reagent.unit = min_unit
+                    reagent.package_to_min_qty = package_to_min_qty
 
             warning = _build_inbound_warning(reagent, item.expiry_date)
             batch_stock = _upsert_batch_stock(
@@ -326,22 +349,30 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
             )
 
     if data.match_mode == "exact":
-        existing = db.query(Reagent).filter(
-            Reagent.is_archived.is_(False),
-            Reagent.match_mode == "exact",
-            Reagent.match_pattern == match_pattern,
-        ).first()
+        existing = (
+            db.query(Reagent)
+            .filter(
+                Reagent.is_archived.is_(False),
+                Reagent.match_mode == "exact",
+                Reagent.match_pattern == match_pattern,
+            )
+            .first()
+        )
         if existing:
             raise HTTPException(
                 status_code=400,
                 detail=f"已存在使用相同完整匹配规则的试剂：{existing.name}",
             )
     else:
-        exact_match = db.query(Reagent).filter(
-            Reagent.is_archived.is_(False),
-            Reagent.match_mode == "exact",
-            Reagent.match_pattern == match_pattern,
-        ).first()
+        exact_match = (
+            db.query(Reagent)
+            .filter(
+                Reagent.is_archived.is_(False),
+                Reagent.match_mode == "exact",
+                Reagent.match_pattern == match_pattern,
+            )
+            .first()
+        )
         if exact_match:
             raise HTTPException(
                 status_code=400,
@@ -360,6 +391,7 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
                     detail=f"匹配值与现有试剂“{existing.name}”的前缀匹配规则冲突",
                 )
 
+    is_calibrator = bool(data.is_calibrator if data.is_calibrator is not None else _is_calibrator_name(name))
     reagent = Reagent(
         instrument_id=data.instrument_id,
         name=name,
@@ -367,12 +399,14 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
         match_pattern=match_pattern,
         raw_barcode_sample=_clean_text(data.raw_barcode_sample) or None,
         manufacturer=_clean_text(data.manufacturer) or None,
-        unit=_clean_text(data.unit) or DEFAULT_MIN_UNIT,
-        package_unit=_clean_text(data.package_unit) or DEFAULT_PACKAGE_UNIT,
-        package_to_min_qty=data.package_to_min_qty or 1,
+        unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(data.unit) or DEFAULT_MIN_UNIT),
+        package_unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(data.package_unit) or DEFAULT_PACKAGE_UNIT),
+        package_to_min_qty=1 if is_calibrator else (data.package_to_min_qty or 1),
         warning_days=data.warning_days,
         warning_stock=data.warning_stock,
         follow_instrument=data.follow_instrument,
+        is_calibrator=is_calibrator,
+        calibration_result_unit=_clean_text(data.calibration_result_unit) or "nmmol/L",
     )
     db.add(reagent)
     db.commit()

@@ -227,6 +227,8 @@ def _serialize_reagent(reagent: Reagent) -> ReagentCatalogItem:
         work_group_name=work_group.name if work_group else "",
         name=reagent.name,
         manufacturer=reagent.manufacturer,
+        is_calibrator=bool(reagent.is_calibrator),
+        calibration_result_unit=_clean_text(reagent.calibration_result_unit) or "nmmol/L",
         unit=reagent.unit,
         package_unit=reagent.package_unit,
         package_to_min_qty=reagent.package_to_min_qty,
@@ -305,6 +307,8 @@ def _build_reagent_info(
         package_unit=reagent.package_unit,
         package_to_min_qty=reagent.package_to_min_qty,
         manufacturer=reagent.manufacturer,
+        is_calibrator=bool(reagent.is_calibrator),
+        calibration_result_unit=_clean_text(reagent.calibration_result_unit) or "nmmol/L",
         warning_days=reagent.warning_days,
         warning_stock=reagent.warning_stock,
         effective_warning_days=effective_warning_days,
@@ -1093,9 +1097,16 @@ def update_reagent(reagent_id: int, data: ReagentUpdate, db: Session = Depends(g
     reagent.instrument_id = instrument.id
     reagent.name = name
     reagent.manufacturer = _clean_text(data.manufacturer) or None
-    reagent.unit = _clean_text(data.unit) or reagent.unit
-    reagent.package_unit = _clean_text(data.package_unit) or reagent.package_unit
-    reagent.package_to_min_qty = data.package_to_min_qty
+    reagent.is_calibrator = bool(data.is_calibrator)
+    reagent.calibration_result_unit = _clean_text(data.calibration_result_unit) or "nmmol/L"
+    if reagent.is_calibrator:
+        reagent.unit = "次"
+        reagent.package_unit = "次"
+        reagent.package_to_min_qty = 1
+    else:
+        reagent.unit = _clean_text(data.unit) or reagent.unit
+        reagent.package_unit = _clean_text(data.package_unit) or reagent.package_unit
+        reagent.package_to_min_qty = data.package_to_min_qty
     reagent.warning_days = _safe_int(data.warning_days, 30)
     reagent.warning_stock = _safe_int(data.warning_stock, 5)
     reagent.follow_instrument = bool(data.follow_instrument)

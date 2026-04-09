@@ -8,6 +8,7 @@ const inventoryPage = {
         keyword: '',
         status: 'all',
         onlyWarnings: false,
+        onlyCalibrators: false,
         sort: 'severity'
     },
     lastLoadedAt: null,
@@ -36,6 +37,11 @@ const inventoryPage = {
 
         document.getElementById('inventory-only-warnings').addEventListener('change', (event) => {
             this.filters.onlyWarnings = event.target.checked;
+            this.renderInventoryBody();
+        });
+
+        document.getElementById('inventory-only-calibrators').addEventListener('change', (event) => {
+            this.filters.onlyCalibrators = event.target.checked;
             this.renderInventoryBody();
         });
 
@@ -105,6 +111,9 @@ const inventoryPage = {
         }
         if (typeof context.onlyWarnings === 'boolean') {
             this.filters.onlyWarnings = context.onlyWarnings;
+        }
+        if (typeof context.onlyCalibrators === 'boolean') {
+            this.filters.onlyCalibrators = context.onlyCalibrators;
         }
         if (typeof context.sort === 'string') {
             this.filters.sort = context.sort;
@@ -210,6 +219,7 @@ const inventoryPage = {
         document.getElementById('inventory-search').value = this.filters.keyword;
         document.getElementById('inventory-status-filter').value = this.filters.status;
         document.getElementById('inventory-only-warnings').checked = this.filters.onlyWarnings;
+        document.getElementById('inventory-only-calibrators').checked = this.filters.onlyCalibrators;
         document.getElementById('inventory-sort').value = this.filters.sort;
     },
 
@@ -279,6 +289,9 @@ const inventoryPage = {
                 return false;
             }
             if (this.filters.onlyWarnings && reagent.status_level === 'normal') {
+                return false;
+            }
+            if (this.filters.onlyCalibrators && !reagent.is_calibrator) {
                 return false;
             }
             return true;

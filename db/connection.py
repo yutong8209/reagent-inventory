@@ -53,6 +53,14 @@ def ensure_schema():
                 "is_archived",
                 "ALTER TABLE reagents ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0",
             ),
+            (
+                "is_calibrator",
+                "ALTER TABLE reagents ADD COLUMN is_calibrator BOOLEAN NOT NULL DEFAULT 0",
+            ),
+            (
+                "calibration_result_unit",
+                "ALTER TABLE reagents ADD COLUMN calibration_result_unit VARCHAR(50) NOT NULL DEFAULT 'nmmol/L'",
+            ),
         ],
         "batch_stocks": [
             (
@@ -139,7 +147,29 @@ def ensure_schema():
                         warning_days = COALESCE(warning_days, 30),
                         warning_stock = COALESCE(warning_stock, 5),
                         follow_instrument = COALESCE(follow_instrument, 1),
-                        is_archived = COALESCE(is_archived, 0)
+                        is_archived = COALESCE(is_archived, 0),
+                        is_calibrator = COALESCE(is_calibrator, 0),
+                        calibration_result_unit = COALESCE(NULLIF(calibration_result_unit, ''), 'nmmol/L')
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    UPDATE reagents
+                    SET is_calibrator = 1
+                    WHERE TRIM(COALESCE(name, '')) LIKE '%校准品'
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    UPDATE reagents
+                    SET package_unit = '次',
+                        unit = '次',
+                        package_to_min_qty = 1
+                    WHERE is_calibrator = 1
                     """
                 )
             )
@@ -150,6 +180,21 @@ def ensure_schema():
                     """
                     UPDATE batch_stocks
                     SET loose_min_quantity = COALESCE(loose_min_quantity, 0)
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    UPDATE batch_stocks
+                    SET package_unit = '次',
+                        min_unit = '次',
+                        package_to_min_qty = 1
+                    WHERE reagent_id IN (
+                        SELECT id
+                        FROM reagents
+                        WHERE is_calibrator = 1
+                    )
                     """
                 )
             )

@@ -27,6 +27,8 @@ class ReagentInfo(BaseModel):
     package_unit: Optional[str]
     package_to_min_qty: int
     manufacturer: Optional[str]
+    is_calibrator: bool = False
+    calibration_result_unit: str = "nmmol/L"
     warning_days: int
     warning_stock: int
     effective_warning_days: int
@@ -102,6 +104,8 @@ class ReagentCatalogItem(BaseModel):
     work_group_name: str
     name: str
     manufacturer: Optional[str] = None
+    is_calibrator: bool = False
+    calibration_result_unit: str = "nmmol/L"
     unit: str
     package_unit: str
     package_to_min_qty: int

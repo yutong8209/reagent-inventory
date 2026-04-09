@@ -503,10 +503,12 @@ const reportsPage = {
             return;
         }
 
+        const typeLabel = (value) => ({ IN: '入库', OUT: '出库', CALIBRATION: '校准' }[value] || value);
+        const typeClass = (value) => ({ IN: 'success', OUT: 'info', CALIBRATION: 'warning' }[value] || 'info');
         body.innerHTML = this.transactionRows.map((item) => `
             <tr>
                 <td>${Utils.formatDateTime(item.created_at)}</td>
-                <td><span class="item-status ${item.type === 'IN' ? 'success' : 'info'}">${item.type === 'IN' ? '入库' : '出库'}</span></td>
+                <td><span class="item-status ${typeClass(item.type)}">${typeLabel(item.type)}</span></td>
                 <td>${item.work_group_name || '-'}</td>
                 <td>${item.instrument_name || '-'}</td>
                 <td>${item.reagent_name}</td>

@@ -16,6 +16,7 @@
                 <a href="#" class="nav-link active" data-page="dashboard">首页</a>
                 <a href="#" class="nav-link" data-page="inbound">入库</a>
                 <a href="#" class="nav-link" data-page="inventory">库存</a>
+                <a href="#" class="nav-link" data-page="calibration">校准</a>
                 <a href="#" class="nav-link" data-page="reports">流水及用量</a>
                 <a href="#" class="nav-link" data-page="catalog">资料设置</a>
             </nav>
@@ -43,6 +44,7 @@
                                 <div class="dashboard-shortcuts">
                                     <button class="btn btn-secondary btn-small" onclick="app.navigate('inbound')">入库</button>
                                     <button class="btn btn-secondary btn-small" onclick="app.navigate('inventory')">库存</button>
+                                    <button class="btn btn-secondary btn-small" onclick="app.navigate('calibration')">校准</button>
                                     <button class="btn btn-secondary btn-small" onclick="app.navigate('reports')">流水及用量</button>
                                     <button class="btn btn-secondary btn-small" onclick="app.navigate('catalog')">资料设置</button>
                                 </div>
@@ -379,6 +381,10 @@
                                 <input type="checkbox" id="inventory-only-warnings">
                                 <span>仅看预警</span>
                             </label>
+                            <label class="checkbox-row">
+                                <input type="checkbox" id="inventory-only-calibrators">
+                                <span>仅看校准品</span>
+                            </label>
                             <div class="button-group">
                                 <button id="inventory-export-btn" class="btn btn-primary">导出 Excel</button>
                                 <button id="inventory-archive-zero-btn" class="btn btn-secondary">一键归档零库存</button>
@@ -462,6 +468,187 @@
                 </div>
             </div>
 
+            <div id="page-calibration" class="page">
+                <div class="reports-shell calibration-shell">
+                    <div class="reports-header">
+                        <div>
+                            <h2>校准</h2>
+                            <p class="dashboard-copy">扫描校准品条码后，记录新旧批号与校准结果。校准消耗会同步扣减库存并写入流水。</p>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="form-group form-group-inline">
+                            <label for="calibration-barcode">扫码校准</label>
+                            <input type="text" id="calibration-barcode" class="form-input" placeholder="扫描校准品条码后按回车" autocomplete="off">
+                            <button id="calibration-preview-btn" class="btn btn-primary">识别校准品</button>
+                        </div>
+                        <p class="hint">只接受校准品条码；默认会带出被校准试剂、最新批号和次新批号。</p>
+                    </div>
+
+                    <div id="calibration-form-panel" class="form-section hidden">
+                        <div class="reports-result-header">
+                            <h3>本次校准</h3>
+                            <div id="calibration-preview-meta" class="catalog-item-meta"></div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-calibrator-name">校准品</label>
+                                <input type="text" id="calibration-calibrator-name" class="form-input" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-calibrator-batch">校准品批号</label>
+                                <input type="text" id="calibration-calibrator-batch" class="form-input" readonly>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-target-reagent">被校准试剂</label>
+                                <select id="calibration-target-reagent" class="form-select"></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-result-unit">结果单位</label>
+                                <input type="text" id="calibration-result-unit" class="form-input" readonly>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-old-batch">旧试剂批号</label>
+                                <select id="calibration-old-batch" class="form-select"></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-new-batch">新试剂批号</label>
+                                <select id="calibration-new-batch" class="form-select"></select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-usage-times">校准用量</label>
+                                <input type="number" id="calibration-usage-times" class="form-input" min="1" value="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-operator">操作人</label>
+                                <select id="calibration-operator" class="form-select"></select>
+                            </div>
+                        </div>
+                        <div class="button-group">
+                            <button id="calibration-save-btn" class="btn btn-primary">保存本次校准</button>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <div class="reports-result-header">
+                            <h3>最近校准记录</h3>
+                            <div id="calibration-record-meta" class="catalog-item-meta"></div>
+                        </div>
+                        <div id="calibration-record-list" class="inventory-card-list"></div>
+                    </div>
+                </div>
+
+                <div id="calibration-record-modal" class="modal hidden">
+                    <div class="modal-content modal-wide">
+                        <div class="modal-header">
+                            <h3>编辑校准记录</h3>
+                            <button id="calibration-record-modal-close" class="modal-close">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calibration-edit-target-reagent">被校准试剂</label>
+                                    <select id="calibration-edit-target-reagent" class="form-select"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="calibration-edit-result-unit">结果单位</label>
+                                    <input type="text" id="calibration-edit-result-unit" class="form-input">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calibration-edit-old-batch">旧试剂批号</label>
+                                    <select id="calibration-edit-old-batch" class="form-select"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="calibration-edit-new-batch">新试剂批号</label>
+                                    <select id="calibration-edit-new-batch" class="form-select"></select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="calibration-edit-usage-times">校准用量</label>
+                                    <input type="number" id="calibration-edit-usage-times" class="form-input" min="1" value="1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="calibration-edit-operator">操作人</label>
+                                    <select id="calibration-edit-operator" class="form-select"></select>
+                                </div>
+                            </div>
+                            <div class="calibration-result-groups">
+                                <section class="calibration-result-group">
+                                    <div class="calibration-result-group-head">
+                                        <h4>旧批号结果</h4>
+                                        <p>记录旧批号 5 次校准结果，未完成时可先留空。</p>
+                                    </div>
+                                    <div class="calibration-result-grid">
+                                        <div class="form-group">
+                                            <label for="calibration-edit-old-result-1">第 1 次</label>
+                                            <input type="text" id="calibration-edit-old-result-1" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-old-result-2">第 2 次</label>
+                                            <input type="text" id="calibration-edit-old-result-2" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-old-result-3">第 3 次</label>
+                                            <input type="text" id="calibration-edit-old-result-3" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-old-result-4">第 4 次</label>
+                                            <input type="text" id="calibration-edit-old-result-4" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-old-result-5">第 5 次</label>
+                                            <input type="text" id="calibration-edit-old-result-5" class="form-input" placeholder="输入结果">
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="calibration-result-group">
+                                    <div class="calibration-result-group-head">
+                                        <h4>新批号结果</h4>
+                                        <p>记录新批号 5 次校准结果，用于对照新旧批号差异。</p>
+                                    </div>
+                                    <div class="calibration-result-grid">
+                                        <div class="form-group">
+                                            <label for="calibration-edit-new-result-1">第 1 次</label>
+                                            <input type="text" id="calibration-edit-new-result-1" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-new-result-2">第 2 次</label>
+                                            <input type="text" id="calibration-edit-new-result-2" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-new-result-3">第 3 次</label>
+                                            <input type="text" id="calibration-edit-new-result-3" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-new-result-4">第 4 次</label>
+                                            <input type="text" id="calibration-edit-new-result-4" class="form-input" placeholder="输入结果">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="calibration-edit-new-result-5">第 5 次</label>
+                                            <input type="text" id="calibration-edit-new-result-5" class="form-input" placeholder="输入结果">
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button id="calibration-record-modal-cancel" class="btn btn-secondary">取消</button>
+                            <button id="calibration-record-modal-save" class="btn btn-primary">保存校准记录</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="page-reports" class="page">
                 <div class="reports-shell">
                     <div class="reports-header">
@@ -513,6 +700,7 @@
                                         <option value="">全部</option>
                                         <option value="IN">入库</option>
                                         <option value="OUT">出库</option>
+                                        <option value="CALIBRATION">校准</option>
                                     </select>
                                 </div>
                             </div>
@@ -690,6 +878,7 @@
     <script src="/js/pages/inbound.js"></script>
     <script src="/js/pages/outbound.js"></script>
     <script src="/js/pages/inventory.js"></script>
+    <script src="/js/pages/calibration.js"></script>
     <script src="/js/pages/reports.js"></script>
     <script src="/js/pages/catalog.js"></script>
 </body>

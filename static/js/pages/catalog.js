@@ -541,6 +541,16 @@ const catalogPage = {
                                 <input type="number" id="catalog-reagent-warning-stock" class="form-input" min="0" value="${selected.warning_stock}">
                             </div>
                         </div>
+                        <div class="form-row">
+                            <label class="checkbox-row">
+                                <input type="checkbox" id="catalog-reagent-is-calibrator" ${selected.is_calibrator ? 'checked' : ''}>
+                                <span>是否校准品</span>
+                            </label>
+                            <div class="form-group">
+                                <label for="catalog-reagent-calibration-result-unit">校准结果默认单位</label>
+                                <input type="text" id="catalog-reagent-calibration-result-unit" class="form-input" value="${this.escapeHtml(selected.calibration_result_unit || 'nmmol/L')}" placeholder="例如 nmmol/L">
+                            </div>
+                        </div>
                         <div class="settings-inline-note">${selected.is_archived ? '当前试剂已归档，不会出现在库存页。' : '当前试剂处于启用中。'}</div>
                         <div class="button-group">
                             <button class="btn btn-primary" onclick="catalogPage.submitReagent()">保存试剂档案</button>
@@ -908,7 +918,9 @@ const catalogPage = {
             package_to_min_qty: Math.max(parseInt(document.getElementById('catalog-reagent-package-to-min-qty')?.value, 10) || 1, 1),
             warning_days: this.parseNonNegative(document.getElementById('catalog-reagent-warning-days')?.value, 30),
             warning_stock: this.parseNonNegative(document.getElementById('catalog-reagent-warning-stock')?.value, 5),
-            follow_instrument: false
+            follow_instrument: false,
+            is_calibrator: Boolean(document.getElementById('catalog-reagent-is-calibrator')?.checked),
+            calibration_result_unit: this.normalizeText(document.getElementById('catalog-reagent-calibration-result-unit')?.value) || 'nmmol/L'
         };
 
         if (!payload.instrument_id || !payload.name || !payload.package_unit || !payload.unit) {
