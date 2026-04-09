@@ -416,7 +416,19 @@ const mobileApp = {
       return;
     }
     try {
-      this.inboundResults = await API.outbound.searchReagents({ q: keyword });
+      const reagents = await API.reagents.list({ keyword, status: 'active' });
+      this.inboundResults = reagents.map((item) => ({
+        reagent_id: item.id,
+        reagent_name: item.name,
+        instrument_id: item.instrument_id,
+        instrument_name: item.instrument_name,
+        work_group_id: item.work_group_id,
+        work_group_name: item.work_group_name,
+        package_unit: item.package_unit,
+        min_unit: item.unit,
+        package_to_min_qty: item.package_to_min_qty,
+        manufacturer: item.manufacturer || ''
+      }));
       document.getElementById('mobile-inbound-results')?.classList.remove('hidden');
       this.renderInboundResults();
     } catch (error) {
@@ -465,11 +477,22 @@ const mobileApp = {
       `包装关系：1${reagent.package_unit} = ${reagent.package_to_min_qty}${reagent.min_unit}`;
     await Utils.populateOperatorSelect('mobile-inbound-operator', { allowEmpty: false, defaultValue: Utils.getLastOperator() });
 
-    try {
-      const batches = await API.outbound.getStock(reagentId);
-      this.inboundBatchSuggestions = batches.slice(0, 6);
-    } catch (error) {
-      this.inboundBatchSuggestions = [];
+    const inventoryReagent = this.getInventoryReagentById(reagentId);
+    if (inventoryReagent?.batches?.length) {
+      this.inboundBatchSuggestions = [...inventoryReagent.batches]
+        .sort((left, right) => {
+          const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0;
+          const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0;
+          return rightTime - leftTime;
+        })
+        .slice(0, 8);
+    } else {
+      try {
+        const batches = await API.outbound.getStock(`${reagentId}?include_zero_stock=true`);
+        this.inboundBatchSuggestions = batches.slice(0, 8);
+      } catch (error) {
+        this.inboundBatchSuggestions = [];
+      }
     }
     this.renderInboundBatchSuggestions();
   },
@@ -619,6 +642,10 @@ const mobileApp = {
       });
     });
     return items;
+  },
+
+  getInventoryReagentById(reagentId) {
+    return this.getFlattenedInventoryItems().find((item) => Number(item.id) === Number(reagentId)) || null;
   },
 
   matchesInventoryFilter(item) {

@@ -74,6 +74,15 @@ def _query_available_batches(db: Session, reagent_id: int) -> list[BatchStock]:
     )
 
 
+def _query_all_batches(db: Session, reagent_id: int) -> list[BatchStock]:
+    return (
+        db.query(BatchStock)
+        .filter(BatchStock.reagent_id == reagent_id)
+        .order_by(BatchStock.expiry_date.desc(), BatchStock.created_at.desc(), BatchStock.id.desc())
+        .all()
+    )
+
+
 def _requested_min_quantity(quantity: int, outbound_unit: str, package_to_min_qty: int) -> int:
     ratio = _safe_ratio(package_to_min_qty)
     return quantity * ratio if outbound_unit == "package" else quantity
@@ -381,8 +390,12 @@ def _process_batch_outbound(request: StockOutBatchRequest, db: Session) -> Stock
 
 
 @router.get("/stock/{reagent_id}", response_model=list[BatchStockInfo])
-def get_stock_by_reagent(reagent_id: int, db: Session = Depends(get_db)):
-    stocks = _query_available_batches(db, reagent_id)
+def get_stock_by_reagent(
+    reagent_id: int,
+    include_zero_stock: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    stocks = _query_all_batches(db, reagent_id) if include_zero_stock else _query_available_batches(db, reagent_id)
     return [_build_batch_stock_info(stock) for stock in stocks]
 
 
@@ -391,6 +404,7 @@ def search_outbound_reagents(
     q: str | None = Query(None),
     work_group_id: int | None = Query(None),
     instrument_id: int | None = Query(None),
+    include_zero_stock: bool = Query(False),
     db: Session = Depends(get_db),
 ):
     query = (
@@ -421,7 +435,7 @@ def search_outbound_reagents(
     items: list[OutboundReagentItem] = []
     for reagent in query.all():
         batches = _query_available_batches(db, reagent.id)
-        if not batches:
+        if not batches and not include_zero_stock:
             continue
 
         instrument = reagent.instrument

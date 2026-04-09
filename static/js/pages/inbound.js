@@ -222,7 +222,7 @@ const inboundPage = {
         select.innerHTML = '<option value="">请选择试剂</option>';
         this.clearManualSelection();
         if (!instrumentId) return;
-        const reagents = await API.reagents.list({ instrument_id: instrumentId }).catch(() => []);
+        const reagents = await API.reagents.list({ instrument_id: instrumentId, status: 'active' }).catch(() => []);
         select.innerHTML = ['<option value="">请选择试剂</option>'].concat(
             reagents.map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)}</option>`)
         ).join('');
@@ -246,7 +246,7 @@ const inboundPage = {
         }
 
         try {
-            this.manualSearchResults = await API.reagents.list({ keyword });
+            this.manualSearchResults = await API.reagents.list({ keyword, status: 'active' });
             if (this.manualSearchResults.length === 0) {
                 resultEl.innerHTML = '<p class="catalog-empty">没有找到匹配的试剂档案</p>';
                 return;
