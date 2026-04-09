@@ -376,7 +376,7 @@ test.describe('Reagent inventory smoke flows', () => {
     await expect(page.locator('#page-inventory')).toHaveClass(/active/);
     await expect(page.locator('.inventory-card-focused')).toBeVisible();
 
-    const focusedButton = page.locator('.inventory-card-focused button').first();
+    const focusedButton = page.locator('.inventory-card-focused .btn.btn-secondary').filter({ hasText: '设置试剂信息' }).first();
     await expect(focusedButton).toBeVisible();
     await focusedButton.click();
 
@@ -446,6 +446,8 @@ test.describe('Reagent inventory smoke flows', () => {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/m');
+    await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
+    await expect(page.locator('#mobile-outbound-results')).toContainText('输入试剂名称后开始搜索');
 
     await page.locator('#mobile-outbound-search').fill(uniqueName);
     await expect(page.locator('#mobile-outbound-results')).toContainText(uniqueName);
@@ -470,5 +472,116 @@ test.describe('Reagent inventory smoke flows', () => {
     await page.locator('.mobile-tab[data-page="inventory"]').click();
     await page.locator('#mobile-inventory-search').fill(uniqueName);
     await expect(page.locator('#mobile-inventory-list')).toContainText(uniqueName);
+  });
+
+  test('mobile warning fold can expand and warning card can jump to inventory', async ({ page, request }) => {
+    const setup = await getSetupContext(request);
+    const uniqueName = uniqueValue('PW-Mobile-Warn');
+    const uniqueBarcode = uniqueValue('PW-MOBILE-WARN-BARCODE');
+
+    await createSeededReagentWithStock(request, {
+      instrumentId: setup.instrumentId,
+      operatorName: setup.operatorName,
+      name: uniqueName,
+      barcode: uniqueBarcode,
+      batchNo: 'PW-MOBILE-WARN-001',
+      quantity: 1,
+      expiryDate: '2026-04-12',
+      warningDays: 30,
+      warningStock: 5
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/m');
+    await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
+    await expect(page.locator('#mobile-warning-toggle-label')).toHaveText('展开');
+
+    await expect(page.locator('#mobile-warning-fold')).toHaveClass(/hidden/);
+    await page.locator('#mobile-warning-toggle').click();
+    await expect(page.locator('#mobile-warning-fold')).not.toHaveClass(/hidden/);
+    const warningCard = page.locator('#mobile-warning-list .mobile-warning-card').filter({ hasText: uniqueName }).first();
+    await expect(warningCard).toBeVisible();
+    await warningCard.click();
+
+    await expect(page.locator('#mobile-page-inventory')).toHaveClass(/active/);
+    await expect(page.locator(`#mobile-inventory-list .mobile-stock-card[data-reagent-id]`).filter({ hasText: uniqueName }).first()).toBeVisible();
+  });
+
+  test('mobile summary card can jump to zero-stock inventory list', async ({ page, request }) => {
+    const setup = await getSetupContext(request);
+    const uniqueName = uniqueValue('PW-Mobile-Empty');
+    const uniqueBarcode = uniqueValue('PW-MOBILE-EMPTY-BARCODE');
+    const reagent = await createSeededReagentWithStock(request, {
+      instrumentId: setup.instrumentId,
+      operatorName: setup.operatorName,
+      name: uniqueName,
+      barcode: uniqueBarcode,
+      batchNo: 'PW-MOBILE-EMPTY-001',
+      quantity: 1,
+      expiryDate: '2030-12-31',
+      packageToMinQty: 1
+    });
+
+    await stockOutReagent(request, {
+      operatorName: setup.operatorName,
+      reagentId: reagent.id,
+      quantity: 1,
+      rawBarcode: uniqueBarcode,
+      scannedBatchNo: 'PW-MOBILE-EMPTY-001',
+      scannedExpiryDate: '2030-12-31'
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/m');
+
+    const emptySummaryCard = page.locator('#mobile-summary-cards .mobile-summary-card').filter({ hasText: '零库存' }).first();
+    await expect(emptySummaryCard).toBeVisible();
+    await emptySummaryCard.click();
+
+    await expect(page.locator('#mobile-page-inventory')).toHaveClass(/active/);
+    await expect(page.locator('#mobile-inventory-status')).toHaveValue('empty');
+    await expect(page.locator('#mobile-inventory-list')).toContainText(uniqueName);
+  });
+
+  test('mobile inbound historical batch suggestion can autofill zero-stock batch and expiry', async ({ page, request }) => {
+    const setup = await getSetupContext(request);
+    const uniqueName = uniqueValue('PW-Mobile-Inbound-History');
+    const uniqueBarcode = uniqueValue('PW-MOBILE-INBOUND-HISTORY-BARCODE');
+    const reagent = await createSeededReagentWithStock(request, {
+      instrumentId: setup.instrumentId,
+      operatorName: setup.operatorName,
+      name: uniqueName,
+      barcode: uniqueBarcode,
+      batchNo: 'PW-MOBILE-HIS-001',
+      quantity: 1,
+      expiryDate: '2031-03-31',
+      packageToMinQty: 5
+    });
+
+    await stockOutReagent(request, {
+      operatorName: setup.operatorName,
+      reagentId: reagent.id,
+      quantity: 5,
+      rawBarcode: uniqueBarcode,
+      scannedBatchNo: 'PW-MOBILE-HIS-001',
+      scannedExpiryDate: '2031-03-31'
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/m');
+    await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
+    await page.locator('.mobile-tab[data-page="inbound"]').click();
+    await expect(page.locator('#mobile-page-inbound')).toHaveClass(/active/);
+
+    await page.locator('#mobile-inbound-search').fill(uniqueName);
+    await expect(page.locator('#mobile-inbound-results')).toContainText(uniqueName);
+    await page.locator('#mobile-inbound-results .mobile-result-card').first().click();
+
+    const batchSuggestion = page.locator('#mobile-inbound-batch-suggestions [data-batch-no="PW-MOBILE-HIS-001"]').first();
+    await expect(batchSuggestion).toBeVisible();
+    await batchSuggestion.click();
+
+    await expect(page.locator('#mobile-inbound-batch-no')).toHaveValue('PW-MOBILE-HIS-001');
+    await expect(page.locator('#mobile-inbound-expiry-date')).toHaveValue('2031-03-31');
   });
 });

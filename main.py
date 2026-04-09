@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 sys.path.insert(0, ".")
 
 from fastapi import FastAPI
@@ -21,7 +21,7 @@ finally:
 
 app = FastAPI(
     title="检验科试剂出入库管理系统",
-    description="科室内部试剂库存管理系统",
+    description="科室内部试剂库存、出入库与流水管理系统",
     version="1.0.0",
 )
 
@@ -63,3 +63,4 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

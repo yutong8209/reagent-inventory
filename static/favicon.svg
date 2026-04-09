@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="检验科试剂出入库管理系统图标">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#eef5ff"/>
+      <stop offset="100%" stop-color="#d8e8ff"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2f7cff"/>
+      <stop offset="100%" stop-color="#1f5fe0"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="18" fill="url(#bg)"/>
+  <path d="M24 14h16v4l-3.5 5.5v7.2l8.6 15.3A5 5 0 0 1 40.8 54H23.2a5 5 0 0 1-4.3-7.5l8.6-15.3v-7.2L24 18z" fill="url(#glass)"/>
+  <path d="M27.4 37.5h9.2a8 8 0 0 1 6.8 3.8l1.8 3.1a5 5 0 0 1-4.4 7.6H23.2a5 5 0 0 1-4.4-7.6l1.8-3.1a8 8 0 0 1 6.8-3.8z" fill="#f3c654"/>
+  <circle cx="41.5" cy="22.5" r="4.5" fill="#ffffff" opacity="0.85"/>
+  <path d="M41.5 19.5v6M38.5 22.5h6" stroke="#1f5fe0" stroke-width="1.8" stroke-linecap="round"/>
+</svg>
