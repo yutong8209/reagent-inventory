@@ -1330,23 +1330,37 @@ border-radius:18px;
 background:
 linear-gradient(180deg,rgba(255,255,255,.82),rgba(250,252,255,.68));
 box-shadow:0 12px 22px rgba(18,40,72,.06);
+justify-content:space-between;
+}
+
+.dashboard-task-copy{
+display:grid;
+grid-template-columns:minmax(0,1fr) auto;
+align-items:start;
+gap:12px;
+min-height:100%;
 }
 
 .dashboard-task-card .dashboard-task-label{
 display:block;
 font-size:13px;
 line-height:1.35;
-min-height:36px;
+min-height:34px;
+padding-top:1px;
 color:#66778d;
 }
 
 .dashboard-task-card .dashboard-task-value{
-display:block;
-margin-top:8px;
+display:flex;
+align-items:flex-end;
+justify-content:flex-end;
+min-width:36px;
+padding-left:10px;
 font-size:30px;
 font-weight:820;
 letter-spacing:-.03em;
 line-height:1;
+align-self:end;
 }
 
 .dashboard-warning-card{
@@ -1687,4 +1701,66 @@ word-break:break-word;
 .dashboard-warning-card .dashboard-warning-meta + .dashboard-warning-metrics,
 .dashboard-recent-item .dashboard-recent-meta + .dashboard-recent-meta{
 margin-top:4px;
+}
+
+/* Final tune: cleaner CN typography + aligned pending cards */
+
+:root{
+--font-ui:"MiSans","HarmonyOS Sans SC","Source Han Sans SC","PingFang SC","Segoe UI Variable","Microsoft YaHei UI","Noto Sans SC",sans-serif;
+--font-display:"MiSans","HarmonyOS Sans SC","Source Han Sans SC","PingFang SC","Segoe UI Variable","Microsoft YaHei UI",sans-serif;
+--font-number:"SF Pro Display","MiSans","Segoe UI Variable","Segoe UI","PingFang SC","Microsoft YaHei UI",sans-serif;
+}
+
+body{
+font-family:var(--font-ui);
+letter-spacing:0;
+}
+
+.header h1,
+.page h1,
+.page h2,
+.page h3,
+.page h4,
+.item-card-title,
+.outbound-preview-title,
+.catalog-group-title,
+.inventory-card-name,
+.inventory-overview-panel h2,
+.dashboard-warning-title,
+.inventory-result-header strong{
+font-family:var(--font-display);
+letter-spacing:0;
+}
+
+.dashboard-task-card{
+min-height:84px;
+padding:12px 14px;
+}
+
+.dashboard-task-copy{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:14px;
+min-height:auto;
+}
+
+.dashboard-task-card .dashboard-task-label{
+flex:1 1 auto;
+min-height:auto;
+padding-top:0;
+font-size:14px;
+line-height:1.4;
+color:#617489;
+}
+
+.dashboard-task-card .dashboard-task-value{
+flex:0 0 auto;
+display:block;
+min-width:24px;
+padding-left:0;
+margin-top:0;
+font-size:29px;
+line-height:1;
+text-align:right;
 }
