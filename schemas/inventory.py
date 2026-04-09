@@ -88,6 +88,12 @@ class DashboardOverviewResponse(BaseModel):
     recent_outbounds: List["TransactionListItem"] = Field(default_factory=list)
 
 
+class MobileOverviewResponse(BaseModel):
+    pending_tasks: DashboardPendingTasks
+    warning_reagents: List[DashboardWarningReagent] = Field(default_factory=list)
+    recent_outbounds: List["TransactionListItem"] = Field(default_factory=list)
+
+
 class ReagentCatalogItem(BaseModel):
     id: int
     instrument_id: int

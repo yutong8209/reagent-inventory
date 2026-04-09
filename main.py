@@ -2,6 +2,7 @@ import sys
 sys.path.insert(0, ".")
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -37,6 +38,16 @@ app.add_middleware(
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/m")
+def mobile_page():
+    return FileResponse("static/mobile.html")
+
+
+@app.get("/m/")
+def mobile_page_with_slash():
+    return FileResponse("static/mobile.html")
 
 # Include API routers
 app.include_router(barcode.router, prefix="/api", tags=["barcode"])

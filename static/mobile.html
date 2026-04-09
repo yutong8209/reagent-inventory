@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>试剂移动工作台</title>
+    <link rel="stylesheet" href="/css/mobile.css">
+</head>
+<body>
+    <div id="mobile-app" class="mobile-app">
+        <header class="mobile-header">
+            <div>
+                <p class="mobile-kicker">微信轻量工作台</p>
+                <h1>试剂出入库</h1>
+            </div>
+            <a class="mobile-desktop-link" href="/">桌面版</a>
+        </header>
+
+        <main class="mobile-main">
+            <section id="mobile-page-outbound" class="mobile-page active">
+                <section class="mobile-panel mobile-warning-panel">
+                    <button id="mobile-warning-toggle" class="mobile-warning-toggle" type="button" aria-expanded="false">
+                        <div>
+                            <p class="mobile-section-kicker">预警总览</p>
+                            <h2>重点预警</h2>
+                        </div>
+                        <div class="mobile-warning-toggle-side">
+                            <strong id="mobile-warning-count">0</strong>
+                            <span id="mobile-warning-toggle-label">展开</span>
+                        </div>
+                    </button>
+                    <div id="mobile-warning-fold" class="mobile-warning-fold hidden">
+                        <p class="mobile-fold-note">点击预警卡片可直接跳到对应试剂库存。</p>
+                        <div id="mobile-warning-list" class="mobile-card-list"></div>
+                    </div>
+                </section>
+
+                <section class="mobile-panel mobile-summary-panel">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>待处理摘要</h2>
+                            <p>点击卡片可直接进入对应试剂库存。</p>
+                        </div>
+                        <button id="mobile-refresh-btn" class="mobile-ghost-btn" type="button">刷新</button>
+                    </div>
+                    <div id="mobile-summary-cards" class="mobile-summary-cards"></div>
+                </section>
+
+                <section class="mobile-panel">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>快速出库</h2>
+                            <p>按试剂名或仪器名搜索，先选试剂再选批号。</p>
+                        </div>
+                    </div>
+                    <label class="mobile-field">
+                        <span>搜索试剂</span>
+                        <input id="mobile-outbound-search" class="mobile-input" type="search" placeholder="输入试剂名或仪器名">
+                    </label>
+                    <div id="mobile-outbound-results" class="mobile-card-list mobile-search-results"></div>
+                </section>
+
+                <section class="mobile-panel">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>最近出库</h2>
+                            <p>默认显示最新 5 条出库记录。</p>
+                        </div>
+                    </div>
+                    <div id="mobile-recent-list" class="mobile-card-list"></div>
+                </section>
+            </section>
+
+            <section id="mobile-page-inbound" class="mobile-page">
+                <section class="mobile-panel">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>快速入库</h2>
+                            <p>仅支持已有试剂快速补录批号和数量。</p>
+                        </div>
+                    </div>
+                    <label class="mobile-field">
+                        <span>搜索已有试剂</span>
+                        <input id="mobile-inbound-search" class="mobile-input" type="search" placeholder="输入试剂名或仪器名">
+                    </label>
+                    <div id="mobile-inbound-results" class="mobile-card-list mobile-search-results"></div>
+                </section>
+
+                <section id="mobile-inbound-form-panel" class="mobile-panel hidden">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>入库信息</h2>
+                            <p id="mobile-inbound-selected-meta">请选择试剂后补全入库信息。</p>
+                        </div>
+                        <button id="mobile-inbound-change-reagent" class="mobile-ghost-btn" type="button">更换试剂</button>
+                    </div>
+
+                    <div id="mobile-inbound-batch-suggestions" class="mobile-batch-list mobile-inbound-batch-list"></div>
+
+                    <label class="mobile-field">
+                        <span>批号</span>
+                        <input id="mobile-inbound-batch-no" class="mobile-input" type="text" placeholder="输入批号">
+                    </label>
+
+                    <label class="mobile-field">
+                        <span>有效期</span>
+                        <input id="mobile-inbound-expiry-date" class="mobile-input" type="date">
+                    </label>
+
+                    <label class="mobile-field">
+                        <span>入库量</span>
+                        <input id="mobile-inbound-quantity" class="mobile-input" type="number" min="1" value="1">
+                    </label>
+
+                    <label class="mobile-field">
+                        <span>入库单位</span>
+                        <select id="mobile-inbound-unit" class="mobile-select">
+                            <option value="package">包装单位</option>
+                            <option value="min">最小单位</option>
+                        </select>
+                    </label>
+
+                    <label class="mobile-field">
+                        <span>操作人</span>
+                        <select id="mobile-inbound-operator" class="mobile-select"></select>
+                    </label>
+
+                    <div id="mobile-inbound-relation" class="mobile-inline-note"></div>
+                    <button id="mobile-inbound-submit" class="mobile-primary-btn" type="button">确认入库</button>
+                </section>
+            </section>
+
+            <section id="mobile-page-inventory" class="mobile-page">
+                <section class="mobile-panel">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>库存</h2>
+                            <p>支持按状态筛选并查看各批号明细。</p>
+                        </div>
+                    </div>
+
+                    <label class="mobile-field">
+                        <span>关键词搜索</span>
+                        <input id="mobile-inventory-search" class="mobile-input" type="search" placeholder="输入试剂名称关键词">
+                    </label>
+
+                    <label class="mobile-field">
+                        <span>状态筛选</span>
+                        <select id="mobile-inventory-status" class="mobile-select">
+                            <option value="all">全部状态</option>
+                            <option value="expiring">近效期</option>
+                            <option value="low_or_empty">低库存 / 零库存</option>
+                            <option value="empty">零库存</option>
+                            <option value="expired">已过期</option>
+                        </select>
+                    </label>
+
+                    <label class="mobile-check">
+                        <input id="mobile-inventory-only-warnings" type="checkbox">
+                        <span>仅看预警</span>
+                    </label>
+
+                    <div id="mobile-inventory-list" class="mobile-card-list mobile-inventory-list"></div>
+                </section>
+            </section>
+        </main>
+
+        <nav class="mobile-tabbar">
+            <button class="mobile-tab active" data-page="outbound" type="button">出库</button>
+            <button class="mobile-tab" data-page="inbound" type="button">入库</button>
+            <button class="mobile-tab" data-page="inventory" type="button">库存</button>
+        </nav>
+    </div>
+
+    <div id="mobile-outbound-sheet" class="mobile-sheet hidden">
+        <div class="mobile-sheet-backdrop"></div>
+        <div class="mobile-sheet-panel">
+            <div class="mobile-sheet-handle"></div>
+            <div class="mobile-panel-header mobile-sheet-header">
+                <div>
+                    <h2>确认出库</h2>
+                    <p id="mobile-outbound-selected-meta">请选择批号并填写出库数量。</p>
+                </div>
+                <button id="mobile-outbound-close" class="mobile-ghost-btn" type="button">关闭</button>
+            </div>
+
+            <div id="mobile-outbound-batches" class="mobile-batch-list"></div>
+
+            <div class="mobile-sheet-form">
+                <label class="mobile-field">
+                    <span>出库数量</span>
+                    <input id="mobile-outbound-quantity" class="mobile-input" type="number" min="1" value="1">
+                </label>
+                <label class="mobile-field">
+                    <span>出库单位</span>
+                    <select id="mobile-outbound-unit" class="mobile-select">
+                        <option value="min">最小单位</option>
+                        <option value="package">包装单位</option>
+                    </select>
+                </label>
+                <label class="mobile-field">
+                    <span>操作人</span>
+                    <select id="mobile-outbound-operator" class="mobile-select"></select>
+                </label>
+            </div>
+
+            <div id="mobile-outbound-preview" class="mobile-preview-card hidden"></div>
+            <button id="mobile-outbound-submit" class="mobile-primary-btn" type="button">正式出库</button>
+        </div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/utils.js"></script>
+    <script src="/js/mobile.js"></script>
+</body>
+</html>

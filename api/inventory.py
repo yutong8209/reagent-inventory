@@ -4,9 +4,11 @@ from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
+import qrcode
+from qrcode.image.svg import SvgPathImage
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -18,6 +20,7 @@ from schemas import (
     DashboardOverviewResponse,
     DashboardPendingTasks,
     DashboardWarningReagent,
+    MobileOverviewResponse,
     InstrumentCatalogItem,
     InstrumentCreate,
     InstrumentInfo,
@@ -714,6 +717,36 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
         warning_reagents=_build_dashboard_warning_reagents(inventory_data),
         recent_outbounds=_query_recent_outbounds(db, limit=20),
     )
+
+
+@router.get("/mobile/overview", response_model=MobileOverviewResponse)
+def get_mobile_overview(db: Session = Depends(get_db)):
+    inventory_data = _query_inventory_data(db)
+    return MobileOverviewResponse(
+        pending_tasks=_build_dashboard_pending_tasks(inventory_data),
+        warning_reagents=_build_dashboard_warning_reagents(inventory_data)[:4],
+        recent_outbounds=_query_recent_outbounds(db, limit=5),
+    )
+
+
+@router.get("/mobile/qr")
+def get_mobile_qr(
+    target: str = Query(..., min_length=1),
+):
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=1,
+    )
+    qr.add_data(target)
+    qr.make(fit=True)
+
+    image = qr.make_image(image_factory=SvgPathImage)
+    buffer = BytesIO()
+    image.save(buffer)
+    svg = buffer.getvalue()
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 @router.get("/inventory/export")

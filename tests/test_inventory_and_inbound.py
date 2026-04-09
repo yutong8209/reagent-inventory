@@ -552,6 +552,77 @@ def test_dashboard_overview_returns_pending_tasks_warnings_and_recent_outbounds(
     assert payload["recent_outbounds"][0]["reagent_name"] == "DASH-EXPIRED"
 
 
+def test_mobile_overview_returns_compact_recent_outbounds(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="MOBILE-OVERVIEW",
+            match_mode="exact",
+            match_pattern="MOBILE-OVERVIEW",
+            raw_barcode_sample="MOBILE-OVERVIEW",
+            manufacturer="Maker M",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add(reagent)
+        db.flush()
+
+        batch = BatchStock(
+            reagent_id=reagent.id,
+            batch_no="MOBILE-BATCH-001",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 7),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        db.add(batch)
+        db.flush()
+
+        for index in range(6):
+            db.add(Transaction(
+                reagent_id=reagent.id,
+                batch_stock_id=batch.id,
+                type="OUT",
+                quantity=1,
+                operator="陈茽",
+                source="manual",
+                raw_barcode=f"MOBILE-OVERVIEW-{index}",
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=1,
+                remark=None,
+                created_at=datetime(2026, 4, 8, 8, index, 0),
+            ))
+        db.commit()
+
+    response = client.get("/api/mobile/overview")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["pending_tasks"]["expiring_reagent_count"] >= 1
+    assert len(payload["recent_outbounds"]) == 5
+    assert payload["recent_outbounds"][0]["reagent_name"] == "MOBILE-OVERVIEW"
+    assert len(payload["warning_reagents"]) <= 4
+
+
+def test_mobile_qr_returns_svg(tmp_path):
+    client, _ = build_client(tmp_path)
+
+    response = client.get("/api/mobile/qr", params={"target": "http://127.0.0.1:8000/m"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/svg+xml")
+    assert "<svg" in response.text
+
+
 def test_reagent_status_filter_and_restore(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     _, instrument_id = get_first_catalog_session(SessionLocal)

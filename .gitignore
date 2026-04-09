@@ -17,3 +17,8 @@ Thumbs.db
 node_modules/
 playwright-report/
 test-results/
+backups/
+server-test.err.log
+server-test.out.log
+server-autostart.err.log
+server-autostart.out.log

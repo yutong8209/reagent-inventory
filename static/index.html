@@ -28,11 +28,22 @@
                                 <h2>出库工作台</h2>
                                 <p class="dashboard-copy">首页直接处理试剂出库，并同时查看近期出库和预警事项。</p>
                             </div>
-                            <div class="dashboard-shortcuts">
-                                <button class="btn btn-secondary btn-small" onclick="app.navigate('inbound')">入库</button>
-                                <button class="btn btn-secondary btn-small" onclick="app.navigate('inventory')">库存</button>
-                                <button class="btn btn-secondary btn-small" onclick="app.navigate('reports')">流水及用量</button>
-                                <button class="btn btn-secondary btn-small" onclick="app.navigate('catalog')">资料设置</button>
+                            <div class="dashboard-header-side">
+                                <div class="dashboard-mobile-entry">
+                                    <div class="dashboard-mobile-copy">
+                                        <span class="dashboard-mobile-kicker">手机工作台</span>
+                                        <p>扫码进入手机页，适合现场快速出入库。</p>
+                                    </div>
+                                    <div class="dashboard-mobile-qr-wrap">
+                                        <img id="dashboard-mobile-qr" class="dashboard-mobile-qr" alt="手机工作台二维码">
+                                    </div>
+                                </div>
+                                <div class="dashboard-shortcuts">
+                                    <button class="btn btn-secondary btn-small" onclick="app.navigate('inbound')">入库</button>
+                                    <button class="btn btn-secondary btn-small" onclick="app.navigate('inventory')">库存</button>
+                                    <button class="btn btn-secondary btn-small" onclick="app.navigate('reports')">流水及用量</button>
+                                    <button class="btn btn-secondary btn-small" onclick="app.navigate('catalog')">资料设置</button>
+                                </div>
                             </div>
                         </div>
 

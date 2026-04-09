@@ -146,6 +146,12 @@ const API = {
         }
     },
 
+    mobile: {
+        overview() {
+            return API.request('/mobile/overview');
+        }
+    },
+
     // Inventory
     inventory: {
         get(instrumentId = null) {

@@ -3,10 +3,12 @@ const dashboardPage = {
     overview: null,
     isLoading: false,
     refreshTimer: null,
+    mobilePreferredOrigin: 'http://192.168.31.32:8000',
 
     async init() {
         if (!this.initialized) {
             this.bindEvents();
+            this.renderMobileQr();
             this.startAutoRefresh();
             this.initialized = true;
         }
@@ -21,6 +23,19 @@ const dashboardPage = {
         document.getElementById('dashboard-open-inventory-btn')?.addEventListener('click', () => {
             this.openInventory();
         });
+    },
+
+    renderMobileQr() {
+        const qrImage = document.getElementById('dashboard-mobile-qr');
+        if (!qrImage) {
+            return;
+        }
+        const currentOrigin = window.location.origin;
+        const targetOrigin = ['http://127.0.0.1:8000', 'http://localhost:8000'].includes(currentOrigin)
+            ? this.mobilePreferredOrigin
+            : currentOrigin;
+        const target = `${targetOrigin}/m`;
+        qrImage.src = `/api/mobile/qr?target=${encodeURIComponent(target)}`;
     },
 
     startAutoRefresh() {
