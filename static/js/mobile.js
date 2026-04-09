@@ -1,4 +1,4 @@
-const mobileApp = {
+﻿const mobileApp = {
   currentPage: 'outbound',
   overview: null,
   inventoryData: [],
@@ -34,38 +34,26 @@ const mobileApp = {
     document.querySelectorAll('.mobile-tab').forEach((button) => {
       button.addEventListener('click', () => this.switchPage(button.dataset.page));
     });
-
     document.getElementById('mobile-refresh-btn')?.addEventListener('click', async () => {
       await Promise.all([this.refreshOverview(), this.loadInventory()]);
     });
     document.getElementById('mobile-warning-toggle')?.addEventListener('click', () => this.toggleWarningFold());
-
-    document.getElementById('mobile-outbound-search')?.addEventListener('input', Utils.debounce((event) => {
-      this.searchOutboundReagents(event.target.value.trim());
-    }, 220));
-    document.getElementById('mobile-inbound-search')?.addEventListener('input', Utils.debounce((event) => {
-      this.searchInboundReagents(event.target.value.trim());
-    }, 220));
-
+    document.getElementById('mobile-outbound-search')?.addEventListener('input', Utils.debounce((event) => this.searchOutboundReagents(event.target.value.trim()), 220));
+    document.getElementById('mobile-inbound-search')?.addEventListener('input', Utils.debounce((event) => this.searchInboundReagents(event.target.value.trim()), 220));
     document.getElementById('mobile-inbound-batch-no')?.addEventListener('input', () => this.syncInboundBatchDetails(false));
     document.getElementById('mobile-inbound-change-reagent')?.addEventListener('click', () => this.resetInboundSelection());
     document.getElementById('mobile-inbound-batch-suggestions')?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-batch-no]');
-      if (!button) return;
-      this.selectInboundBatch(button.dataset.batchNo || '');
+      if (button) this.selectInboundBatch(button.dataset.batchNo || '');
     });
-
     document.getElementById('mobile-outbound-close')?.addEventListener('click', () => this.closeOutboundSheet());
     document.getElementById('mobile-outbound-sheet')?.addEventListener('click', (event) => {
-      if (event.target.classList.contains('mobile-sheet-backdrop')) {
-        this.closeOutboundSheet();
-      }
+      if (event.target.classList.contains('mobile-sheet-backdrop')) this.closeOutboundSheet();
     });
     document.getElementById('mobile-outbound-quantity')?.addEventListener('input', () => this.refreshOutboundPreview());
     document.getElementById('mobile-outbound-unit')?.addEventListener('change', () => this.refreshOutboundPreview());
     document.getElementById('mobile-outbound-submit')?.addEventListener('click', () => this.submitOutbound());
     document.getElementById('mobile-inbound-submit')?.addEventListener('click', () => this.submitInbound());
-
     document.getElementById('mobile-inventory-search')?.addEventListener('input', Utils.debounce((event) => {
       this.inventoryFilters.keyword = event.target.value.trim();
       this.renderInventory();
@@ -82,12 +70,8 @@ const mobileApp = {
 
   switchPage(page) {
     this.currentPage = page;
-    document.querySelectorAll('.mobile-page').forEach((section) => {
-      section.classList.toggle('active', section.id === `mobile-page-${page}`);
-    });
-    document.querySelectorAll('.mobile-tab').forEach((button) => {
-      button.classList.toggle('active', button.dataset.page === page);
-    });
+    document.querySelectorAll('.mobile-page').forEach((section) => section.classList.toggle('active', section.id === `mobile-page-${page}`));
+    document.querySelectorAll('.mobile-tab').forEach((button) => button.classList.toggle('active', button.dataset.page === page));
   },
 
   toggleWarningFold(forceExpanded) {
@@ -95,9 +79,7 @@ const mobileApp = {
     document.getElementById('mobile-warning-fold')?.classList.toggle('hidden', !this.isWarningFoldExpanded);
     document.getElementById('mobile-warning-toggle')?.setAttribute('aria-expanded', String(this.isWarningFoldExpanded));
     const label = document.getElementById('mobile-warning-toggle-label');
-    if (label) {
-      label.textContent = this.isWarningFoldExpanded ? '收起' : '展开';
-    }
+    if (label) label.textContent = this.isWarningFoldExpanded ? '收起' : '展开';
   },
 
   escapeHtml(value) {
@@ -115,13 +97,7 @@ const mobileApp = {
   },
 
   getStatusLabel(status) {
-    return {
-      normal: '正常',
-      expiring: '近效期',
-      low: '低库存',
-      empty: '零库存',
-      expired: '已过期'
-    }[status] || '正常';
+    return { normal: '正常', expiring: '近效期', low: '低库存', empty: '零库存', expired: '已过期' }[status] || '正常';
   },
 
   formatDays(days) {
@@ -133,9 +109,7 @@ const mobileApp = {
 
   showEmpty(containerId, message) {
     const container = document.getElementById(containerId);
-    if (container) {
-      container.innerHTML = `<div class="mobile-empty">${this.escapeHtml(message)}</div>`;
-    }
+    if (container) container.innerHTML = `<div class="mobile-empty">${this.escapeHtml(message)}</div>`;
   },
 
   async refreshOverview() {
@@ -154,13 +128,11 @@ const mobileApp = {
       if (warningCountEl) warningCountEl.textContent = '0';
       this.showEmpty('mobile-summary-cards', '暂无待处理摘要');
       this.showEmpty('mobile-warning-list', '暂无重点预警');
-      this.showEmpty('mobile-recent-list', '暂无最近出库');
+      this.showEmpty('mobile-recent-list', '暂无最近出库记录');
       return;
     }
-
     const warnings = this.overview.warning_reagents || [];
     if (warningCountEl) warningCountEl.textContent = String(warnings.length);
-
     const summaryCards = [
       { label: '近效期', value: summary.expiring_reagent_count, tone: 'warning', status: 'expiring' },
       { label: '低库存', value: summary.low_or_empty_reagent_count, tone: 'warning', status: 'low_or_empty' },
@@ -259,11 +231,9 @@ const mobileApp = {
     if (days !== null && days <= 30) return 'expiring';
     return 'normal';
   },
-
   async openOutboundSheet(reagentId) {
     const reagent = this.outboundResults.find((item) => item.reagent_id === reagentId) || this.inboundResults.find((item) => item.reagent_id === reagentId);
     if (!reagent) return;
-
     try {
       const batches = await API.outbound.getStock(reagentId);
       const availableBatches = batches.filter((item) => item.available_min_quantity > 0);
@@ -271,13 +241,10 @@ const mobileApp = {
         Utils.showToast('当前试剂没有可用库存批号', 'warning');
         return;
       }
-
       this.selectedOutboundReagent = { ...reagent, batches: availableBatches };
       const preferredBatch = availableBatches.find((item) => !item.is_expired) || availableBatches[0];
       this.selectedOutboundBatchId = preferredBatch.id;
-
-      document.getElementById('mobile-outbound-selected-meta').textContent =
-        `${reagent.work_group_name} / ${reagent.instrument_name} · 默认推荐最早有效批号`;
+      document.getElementById('mobile-outbound-selected-meta').textContent = `${reagent.work_group_name} / ${reagent.instrument_name} · 默认推荐最早有效批号`;
       document.getElementById('mobile-outbound-quantity').value = '1';
       document.getElementById('mobile-outbound-unit').innerHTML = `
         <option value="min">${this.escapeHtml(reagent.min_unit)}</option>
@@ -298,7 +265,6 @@ const mobileApp = {
       container.innerHTML = '';
       return;
     }
-
     container.innerHTML = this.selectedOutboundReagent.batches.map((batch) => `
       <label class="mobile-batch-card ${batch.id === this.selectedOutboundBatchId ? 'active' : ''}">
         <input type="radio" name="mobile-outbound-batch" ${batch.id === this.selectedOutboundBatchId ? 'checked' : ''} onchange="mobileApp.selectOutboundBatch(${batch.id})">
@@ -321,7 +287,6 @@ const mobileApp = {
     if (!this.selectedOutboundReagent || !this.selectedOutboundBatchId) return;
     const selectedBatch = this.selectedOutboundReagent.batches.find((item) => item.id === this.selectedOutboundBatchId);
     if (!selectedBatch) return;
-
     try {
       const quantity = this.normalizePositiveInteger(document.getElementById('mobile-outbound-quantity').value, 1);
       const outboundUnit = document.getElementById('mobile-outbound-unit').value || 'min';
@@ -361,33 +326,25 @@ const mobileApp = {
 
   async submitOutbound() {
     if (this.isSubmittingOutbound || !this.selectedOutboundReagent || !this.selectedOutboundBatchId) return;
-
     const batch = this.selectedOutboundReagent.batches.find((item) => item.id === this.selectedOutboundBatchId);
     const operator = Utils.getValidOperator(document.getElementById('mobile-outbound-operator').value);
     if (!batch || !operator) {
       Utils.showToast('请选择批号和操作人', 'warning');
       return;
     }
-
     this.isSubmittingOutbound = true;
     const submitButton = document.getElementById('mobile-outbound-submit');
     submitButton.disabled = true;
     submitButton.textContent = '提交中...';
-
     try {
       const quantity = this.normalizePositiveInteger(document.getElementById('mobile-outbound-quantity').value, 1);
       const outboundUnit = document.getElementById('mobile-outbound-unit').value || 'min';
       await API.outbound.stockOutBatch({
         operator,
         items: [{
-          source: 'manual',
-          reagent_id: this.selectedOutboundReagent.reagent_id,
-          quantity,
-          outbound_unit: outboundUnit,
-          deduction_mode: 'scanned_batch',
-          raw_barcode: `MOBILE::OUTBOUND::${this.selectedOutboundReagent.reagent_id}`,
-          scanned_batch_no: batch.batch_no,
-          scanned_expiry_date: batch.expiry_date
+          source: 'manual', reagent_id: this.selectedOutboundReagent.reagent_id, quantity, outbound_unit: outboundUnit,
+          deduction_mode: 'scanned_batch', raw_barcode: `MOBILE::OUTBOUND::${this.selectedOutboundReagent.reagent_id}`,
+          scanned_batch_no: batch.batch_no, scanned_expiry_date: batch.expiry_date
         }]
       });
       Utils.saveLastOperator(operator);
@@ -395,9 +352,7 @@ const mobileApp = {
       this.closeOutboundSheet();
       await Promise.all([this.refreshOverview(), this.loadInventory()]);
       const keyword = document.getElementById('mobile-outbound-search').value.trim();
-      if (keyword) {
-        await this.searchOutboundReagents(keyword);
-      }
+      if (keyword) await this.searchOutboundReagents(keyword);
     } catch (error) {
       Utils.showToast(`出库失败：${error.message}`, 'error');
     } finally {
@@ -406,7 +361,6 @@ const mobileApp = {
       this.isSubmittingOutbound = false;
     }
   },
-
   async searchInboundReagents(keyword) {
     if (!keyword) {
       this.inboundResults = [];
@@ -458,13 +412,11 @@ const mobileApp = {
   async selectInboundReagent(reagentId) {
     const reagent = this.inboundResults.find((item) => item.reagent_id === reagentId);
     if (!reagent) return;
-
     this.selectedInboundReagent = reagent;
     this.selectedInboundBatchNo = '';
     document.getElementById('mobile-inbound-form-panel').classList.remove('hidden');
     document.getElementById('mobile-inbound-results')?.classList.add('hidden');
-    document.getElementById('mobile-inbound-selected-meta').textContent =
-      `${reagent.reagent_name} · ${reagent.work_group_name} / ${reagent.instrument_name}`;
+    document.getElementById('mobile-inbound-selected-meta').textContent = `${reagent.reagent_name} · ${reagent.work_group_name} / ${reagent.instrument_name}`;
     document.getElementById('mobile-inbound-batch-no').value = '';
     document.getElementById('mobile-inbound-expiry-date').value = '';
     document.getElementById('mobile-inbound-quantity').value = '1';
@@ -473,8 +425,7 @@ const mobileApp = {
       <option value="min">${this.escapeHtml(reagent.min_unit)}</option>
     `;
     document.getElementById('mobile-inbound-unit').value = 'package';
-    document.getElementById('mobile-inbound-relation').textContent =
-      `包装关系：1${reagent.package_unit} = ${reagent.package_to_min_qty}${reagent.min_unit}`;
+    document.getElementById('mobile-inbound-relation').textContent = `包装关系：1${reagent.package_unit} = ${reagent.package_to_min_qty}${reagent.min_unit}`;
     await Utils.populateOperatorSelect('mobile-inbound-operator', { allowEmpty: false, defaultValue: Utils.getLastOperator() });
 
     const inventoryReagent = this.getInventoryReagentById(reagentId);
@@ -512,7 +463,6 @@ const mobileApp = {
       container.innerHTML = '';
       return;
     }
-
     container.innerHTML = this.inboundBatchSuggestions.map((batch) => `
       <button class="mobile-batch-card ${batch.batch_no === this.selectedInboundBatchNo ? 'active' : ''}" type="button" data-batch-no="${this.escapeHtml(batch.batch_no)}">
         <div>
@@ -527,9 +477,7 @@ const mobileApp = {
   selectInboundBatch(batchNo) {
     this.selectedInboundBatchNo = batchNo;
     const batchInput = document.getElementById('mobile-inbound-batch-no');
-    if (batchInput) {
-      batchInput.value = batchNo;
-    }
+    if (batchInput) batchInput.value = batchNo;
     this.syncInboundBatchDetails(true);
   },
 
@@ -537,16 +485,12 @@ const mobileApp = {
     const batchInput = document.getElementById('mobile-inbound-batch-no');
     const expiryInput = document.getElementById('mobile-inbound-expiry-date');
     const batchNo = batchInput?.value.trim() || '';
-
     this.selectedInboundBatchNo = batchNo;
     if (!batchNo) {
-      if (forceReplace && expiryInput) {
-        expiryInput.value = '';
-      }
+      if (forceReplace && expiryInput) expiryInput.value = '';
       this.renderInboundBatchSuggestions();
       return;
     }
-
     const matchedBatch = this.inboundBatchSuggestions.find((batch) => batch.batch_no === batchNo);
     if (matchedBatch && expiryInput && matchedBatch.expiry_date && (forceReplace || !expiryInput.value)) {
       expiryInput.value = matchedBatch.expiry_date;
@@ -556,33 +500,28 @@ const mobileApp = {
 
   async submitInbound() {
     if (this.isSubmittingInbound || !this.selectedInboundReagent) return;
-
     const batchNo = document.getElementById('mobile-inbound-batch-no').value.trim();
     const expiryDate = document.getElementById('mobile-inbound-expiry-date').value;
     const quantity = this.normalizePositiveInteger(document.getElementById('mobile-inbound-quantity').value, 1);
     const inboundUnit = document.getElementById('mobile-inbound-unit').value || 'package';
     const operator = Utils.getValidOperator(document.getElementById('mobile-inbound-operator').value);
-
     if (!batchNo || !expiryDate || !operator) {
       Utils.showToast('请填写批号、有效期和操作人', 'warning');
       return;
     }
-
     const ratio = Math.max(parseInt(this.selectedInboundReagent.package_to_min_qty, 10) || 1, 1);
     let submitQuantity = quantity;
     if (inboundUnit === 'min') {
       if (quantity % ratio !== 0) {
-        Utils.showToast(`按最小单位入库时，数量需是 ${ratio} 的整数倍`, 'warning');
+        Utils.showToast(`按最小单位入库时，数量需要是 ${ratio} 的整数倍`, 'warning');
         return;
       }
       submitQuantity = quantity / ratio;
     }
-
     this.isSubmittingInbound = true;
     const submitButton = document.getElementById('mobile-inbound-submit');
     submitButton.disabled = true;
     submitButton.textContent = '提交中...';
-
     try {
       await API.inbound.stockInBatch({
         operator,
@@ -631,13 +570,7 @@ const mobileApp = {
     this.inventoryData.forEach((group) => {
       (group.instruments || []).forEach((instrument) => {
         (instrument.reagents || []).forEach((reagent) => {
-          items.push({
-            ...reagent,
-            work_group_id: group.id,
-            work_group_name: group.name,
-            instrument_id: instrument.id,
-            instrument_name: instrument.name
-          });
+          items.push({ ...reagent, work_group_id: group.id, work_group_name: group.name, instrument_id: instrument.id, instrument_name: instrument.name });
         });
       });
     });
@@ -650,18 +583,14 @@ const mobileApp = {
 
   matchesInventoryFilter(item) {
     const keyword = this.inventoryFilters.keyword.toLowerCase();
-    if (keyword && !item.name.toLowerCase().includes(keyword)) {
-      return false;
-    }
+    if (keyword && !item.name.toLowerCase().includes(keyword)) return false;
     const status = this.inventoryFilters.status;
     if (status === 'low_or_empty') {
       if (!['low', 'empty'].includes(item.status_level)) return false;
     } else if (status !== 'all' && item.status_level !== status) {
       return false;
     }
-    if (this.inventoryFilters.onlyWarnings && item.status_level === 'normal') {
-      return false;
-    }
+    if (this.inventoryFilters.onlyWarnings && item.status_level === 'normal') return false;
     return true;
   },
 
@@ -675,12 +604,10 @@ const mobileApp = {
           || (left.nearest_expiry_days ?? 10 ** 9) - (right.nearest_expiry_days ?? 10 ** 9)
           || left.name.localeCompare(right.name, 'zh-CN');
       });
-
     if (!items.length) {
       container.innerHTML = '<div class="mobile-empty">当前没有符合条件的库存</div>';
       return;
     }
-
     container.innerHTML = items.map((item) => `
       <article class="mobile-stock-card ${item.status_level}" data-reagent-id="${item.id}" onclick="mobileApp.toggleInventoryCard(${item.id})">
         <div class="mobile-card-head">
@@ -706,11 +633,8 @@ const mobileApp = {
   },
 
   toggleInventoryCard(reagentId) {
-    if (this.expandedInventoryIds.has(reagentId)) {
-      this.expandedInventoryIds.delete(reagentId);
-    } else {
-      this.expandedInventoryIds.add(reagentId);
-    }
+    if (this.expandedInventoryIds.has(reagentId)) this.expandedInventoryIds.delete(reagentId);
+    else this.expandedInventoryIds.add(reagentId);
     this.renderInventory();
   },
 
@@ -732,7 +656,6 @@ const mobileApp = {
     document.getElementById('mobile-inventory-status').value = status;
     this.inventoryFilters.status = status;
     this.renderInventory();
-
     const firstCard = document.querySelector('.mobile-stock-card');
     if (!firstCard) return;
     const reagentId = Number(firstCard.dataset.reagentId || 0);
