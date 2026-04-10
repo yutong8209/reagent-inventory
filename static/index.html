@@ -6,7 +6,7 @@
     <title>检验科试剂出入库管理系统</title>
     <meta name="description" content="检验科试剂出入库、库存预警、流水及资料设置一体化管理系统。">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/main.css?v=20260410-8">
 </head>
 <body>
     <div id="app">
@@ -15,8 +15,8 @@
             <nav class="nav">
                 <a href="#" class="nav-link active" data-page="dashboard">首页</a>
                 <a href="#" class="nav-link" data-page="inbound">入库</a>
-                <a href="#" class="nav-link" data-page="inventory">库存</a>
                 <a href="#" class="nav-link" data-page="calibration">校准</a>
+                <a href="#" class="nav-link" data-page="inventory">库存</a>
                 <a href="#" class="nav-link" data-page="reports">流水及用量</a>
                 <a href="#" class="nav-link" data-page="catalog">资料设置</a>
             </nav>
@@ -290,11 +290,11 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="manual-create-package-unit">包装单位</label>
-                                    <input type="text" id="manual-create-package-unit" class="form-input" list="package-unit-options" value="盒" oninput="inboundPage.refreshManualCreateRelationPreview()">
+                                    <select id="manual-create-package-unit" class="form-select" onchange="inboundPage.refreshManualCreateRelationPreview()"><option value="盒">盒</option></select>
                                 </div>
                                 <div class="form-group">
                                     <label for="manual-create-min-unit">最小单位</label>
-                                    <input type="text" id="manual-create-min-unit" class="form-input" list="min-unit-options" value="瓶" oninput="inboundPage.refreshManualCreateRelationPreview()">
+                                    <select id="manual-create-min-unit" class="form-select" onchange="inboundPage.refreshManualCreateRelationPreview()"><option value="瓶">瓶</option></select>
                                 </div>
                                 <div class="form-group">
                                     <label for="manual-create-package-to-min-qty">包装关系</label>
@@ -327,7 +327,7 @@
 
                 <div id="inbound-confirm-modal" class="modal hidden"><div class="modal-content"><div class="modal-header"><h3>入库确认</h3><button class="modal-close" onclick="inboundPage.closeConfirmModal()">&times;</button></div><div class="modal-body"><div class="form-group"><label for="confirm-operator">操作人</label><select id="confirm-operator" class="form-select"></select></div><div id="confirm-summary" class="confirm-summary"></div><div id="confirm-items-list" class="confirm-list"></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="inboundPage.closeConfirmModal()">取消</button><button id="confirm-submit-btn" class="btn btn-primary" onclick="inboundPage.submitInbound()">正式入库</button></div></div></div>
 
-                <div id="new-reagent-modal" class="modal hidden"><div class="modal-content modal-wide"><div class="modal-header"><h3>扫码建档</h3><button class="modal-close" onclick="inboundPage.closeNewReagentModal()">&times;</button></div><div class="modal-body"><p>当前条码未识别到已有试剂，请补全档案信息后加入待入库列表。</p><div class="form-group"><label for="new-reagent-barcode">扫描条码</label><input type="text" id="new-reagent-barcode" class="form-input" readonly></div><div class="form-row"><div class="form-group"><label for="new-reagent-product-code">试剂编码</label><input type="text" id="new-reagent-product-code" class="form-input" placeholder="可自动识别，也可手工修正"></div><div class="form-group"><label for="new-reagent-production-date">生产日期</label><input type="date" id="new-reagent-production-date" class="form-input"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-work-group">工作组</label><select id="new-reagent-work-group" class="form-select" onchange="inboundPage.loadNewReagentInstruments()"><option value="">请选择工作组</option></select></div><div class="form-group"><label for="new-reagent-instrument">仪器</label><select id="new-reagent-instrument" class="form-select"><option value="">请选择仪器</option></select></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-name">试剂名称</label><input type="text" id="new-reagent-name" class="form-input" placeholder="输入试剂名称"></div><div class="form-group"><label for="new-reagent-manufacturer">厂家</label><input type="text" id="new-reagent-manufacturer" class="form-input" placeholder="可选"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-batch-no">批号</label><input type="text" id="new-reagent-batch-no" class="form-input" placeholder="输入批号"></div><div class="form-group"><label for="new-reagent-expiry-date">有效期</label><input type="date" id="new-reagent-expiry-date" class="form-input"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-package-unit">包装单位</label><input type="text" id="new-reagent-package-unit" class="form-input" list="package-unit-options" value="盒" oninput="inboundPage.refreshNewReagentRelationPreview()"></div><div class="form-group"><label for="new-reagent-min-unit">最小单位</label><input type="text" id="new-reagent-min-unit" class="form-input" list="min-unit-options" value="瓶" oninput="inboundPage.refreshNewReagentRelationPreview()"></div><div class="form-group"><label for="new-reagent-package-to-min-qty">包装关系</label><input type="number" id="new-reagent-package-to-min-qty" class="form-input" min="1" value="1" oninput="inboundPage.refreshNewReagentRelationPreview()"><div id="new-reagent-package-relation-preview" class="field-hint"></div></div><div class="form-group"><label for="new-reagent-quantity">入库量</label><input type="number" id="new-reagent-quantity" class="form-input" min="1" value="1"></div></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="inboundPage.closeNewReagentModal()">取消</button><button id="new-reagent-submit-btn" class="btn btn-primary" onclick="inboundPage.submitNewReagentFromScan()">保存并加入列表</button></div></div></div>
+                <div id="new-reagent-modal" class="modal hidden"><div class="modal-content modal-wide"><div class="modal-header"><h3>扫码建档</h3><button class="modal-close" onclick="inboundPage.closeNewReagentModal()">&times;</button></div><div class="modal-body"><p>当前条码未识别到已有试剂，请补全档案信息后加入待入库列表。</p><div class="form-group"><label for="new-reagent-barcode">扫描条码</label><input type="text" id="new-reagent-barcode" class="form-input" readonly></div><div class="form-row"><div class="form-group"><label for="new-reagent-product-code">试剂编码</label><input type="text" id="new-reagent-product-code" class="form-input" placeholder="可自动识别，也可手工修正"></div><div class="form-group"><label for="new-reagent-production-date">生产日期</label><input type="date" id="new-reagent-production-date" class="form-input"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-work-group">工作组</label><select id="new-reagent-work-group" class="form-select" onchange="inboundPage.loadNewReagentInstruments()"><option value="">请选择工作组</option></select></div><div class="form-group"><label for="new-reagent-instrument">仪器</label><select id="new-reagent-instrument" class="form-select"><option value="">请选择仪器</option></select></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-name">试剂名称</label><input type="text" id="new-reagent-name" class="form-input" placeholder="输入试剂名称"></div><div class="form-group"><label for="new-reagent-manufacturer">厂家</label><input type="text" id="new-reagent-manufacturer" class="form-input" placeholder="可选"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-batch-no">批号</label><input type="text" id="new-reagent-batch-no" class="form-input" placeholder="输入批号"></div><div class="form-group"><label for="new-reagent-expiry-date">有效期</label><input type="date" id="new-reagent-expiry-date" class="form-input"></div></div><div class="form-row"><div class="form-group"><label for="new-reagent-package-unit">包装单位</label><select id="new-reagent-package-unit" class="form-select" onchange="inboundPage.refreshNewReagentRelationPreview()"><option value="盒">盒</option></select></div><div class="form-group"><label for="new-reagent-min-unit">最小单位</label><select id="new-reagent-min-unit" class="form-select" onchange="inboundPage.refreshNewReagentRelationPreview()"><option value="瓶">瓶</option></select></div><div class="form-group"><label for="new-reagent-package-to-min-qty">包装关系</label><input type="number" id="new-reagent-package-to-min-qty" class="form-input" min="1" value="1" oninput="inboundPage.refreshNewReagentRelationPreview()"><div id="new-reagent-package-relation-preview" class="field-hint"></div></div><div class="form-group"><label for="new-reagent-quantity">入库量</label><input type="number" id="new-reagent-quantity" class="form-input" min="1" value="1"></div></div></div><div class="modal-footer"><button class="btn btn-secondary" onclick="inboundPage.closeNewReagentModal()">取消</button><button id="new-reagent-submit-btn" class="btn btn-primary" onclick="inboundPage.submitNewReagentFromScan()">保存并加入列表</button></div></div></div>
             </div>
 
             <div id="page-inventory" class="page">
@@ -473,17 +473,17 @@
                     <div class="reports-header">
                         <div>
                             <h2>校准</h2>
-                            <p class="dashboard-copy">扫描校准品条码后，记录新旧批号与校准结果。校准消耗会同步扣减库存并写入流水。</p>
+                            <p class="dashboard-copy">扫描校准品或自带校准品的试剂条码后，记录新旧批号与校准结果。校准消耗会同步扣减库存并写入流水。</p>
                         </div>
                     </div>
 
                     <div class="form-section">
                         <div class="form-group form-group-inline">
                             <label for="calibration-barcode">扫码校准</label>
-                            <input type="text" id="calibration-barcode" class="form-input" placeholder="扫描校准品条码后按回车" autocomplete="off">
-                            <button id="calibration-preview-btn" class="btn btn-primary">识别校准品</button>
+                            <input type="text" id="calibration-barcode" class="form-input" placeholder="扫描校准品或试剂条码后按回车" autocomplete="off">
+                            <button id="calibration-preview-btn" class="btn btn-primary">识别校准</button>
                         </div>
-                        <p class="hint">只接受校准品条码；默认会带出被校准试剂、最新批号和次新批号。</p>
+                        <p class="hint">独立校准品会自动匹配被校准试剂；普通试剂条码会按“当前扫码批号为新批号、上一批号为旧批号”带出默认值。</p>
                     </div>
 
                     <div id="calibration-form-panel" class="form-section hidden">
@@ -493,11 +493,11 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="calibration-calibrator-name">校准品</label>
+                                <label for="calibration-calibrator-name">校准来源</label>
                                 <input type="text" id="calibration-calibrator-name" class="form-input" readonly>
                             </div>
                             <div class="form-group">
-                                <label for="calibration-calibrator-batch">校准品批号</label>
+                                <label for="calibration-calibrator-batch">来源批号</label>
                                 <input type="text" id="calibration-calibrator-batch" class="form-input" readonly>
                             </div>
                         </div>
@@ -541,6 +541,42 @@
                             <h3>最近校准记录</h3>
                             <div id="calibration-record-meta" class="catalog-item-meta"></div>
                         </div>
+                        <div class="form-row calibration-record-filters">
+                            <div class="form-group">
+                                <label for="calibration-filter-work-group">工作组</label>
+                                <select id="calibration-filter-work-group" class="form-select compact-multi-select" multiple size="3"></select>
+                                <p class="field-hint">不选表示全部，可按 Ctrl 多选。</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-filter-instrument">仪器</label>
+                                <select id="calibration-filter-instrument" class="form-select compact-multi-select" multiple size="3"></select>
+                                <p class="field-hint">跟随工作组筛选，不选表示全部。</p>
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-filter-keyword">关键词</label>
+                                <input type="text" id="calibration-filter-keyword" class="form-input" placeholder="试剂、批号或操作人">
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-filter-source">校准来源</label>
+                                <select id="calibration-filter-source" class="form-select">
+                                    <option value="">全部来源</option>
+                                    <option value="calibrator">独立校准品</option>
+                                    <option value="reagent">试剂自带校准</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-filter-start-date">开始日期</label>
+                                <input type="date" id="calibration-filter-start-date" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-filter-end-date">结束日期</label>
+                                <input type="date" id="calibration-filter-end-date" class="form-input">
+                            </div>
+                        </div>
+                        <div class="button-group">
+                            <button id="calibration-record-search-btn" class="btn btn-secondary">查询校准</button>
+                            <button id="calibration-record-export-btn" class="btn btn-primary">导出校准 Excel</button>
+                        </div>
                         <div id="calibration-record-list" class="inventory-card-list"></div>
                     </div>
                 </div>
@@ -548,42 +584,56 @@
                 <div id="calibration-record-modal" class="modal hidden">
                     <div class="modal-content modal-wide">
                         <div class="modal-header">
-                            <h3>编辑校准记录</h3>
+                            <div class="calibration-modal-title">
+                                <h3>编辑校准记录</h3>
+                                <p>先确认校准主信息，再补录新旧批号各 5 次结果。</p>
+                            </div>
                             <button id="calibration-record-modal-close" class="modal-close">&times;</button>
                         </div>
                         <div class="modal-body">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="calibration-edit-target-reagent">被校准试剂</label>
-                                    <select id="calibration-edit-target-reagent" class="form-select"></select>
+                            <section class="calibration-edit-section calibration-edit-main">
+                                <div class="calibration-section-head">
+                                    <div>
+                                        <h4>校准主信息</h4>
+                                        <p>批号、用量和操作人会影响库存扣减与流水记录。</p>
+                                    </div>
                                 </div>
-                                <div class="form-group">
-                                    <label for="calibration-edit-result-unit">结果单位</label>
-                                    <input type="text" id="calibration-edit-result-unit" class="form-input">
+                                <div class="calibration-main-grid">
+                                    <div class="form-group">
+                                        <label for="calibration-edit-target-reagent">被校准试剂</label>
+                                        <select id="calibration-edit-target-reagent" class="form-select"></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="calibration-edit-result-unit">结果单位</label>
+                                        <input type="text" id="calibration-edit-result-unit" class="form-input">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="calibration-edit-old-batch">旧试剂批号</label>
+                                        <select id="calibration-edit-old-batch" class="form-select"></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="calibration-edit-new-batch">新试剂批号</label>
+                                        <select id="calibration-edit-new-batch" class="form-select"></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="calibration-edit-usage-times">校准用量</label>
+                                        <input type="number" id="calibration-edit-usage-times" class="form-input" min="1" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="calibration-edit-operator">操作人</label>
+                                        <select id="calibration-edit-operator" class="form-select"></select>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="calibration-edit-old-batch">旧试剂批号</label>
-                                    <select id="calibration-edit-old-batch" class="form-select"></select>
+                            </section>
+                            <section class="calibration-edit-section">
+                                <div class="calibration-section-head">
+                                    <div>
+                                        <h4>结果录入</h4>
+                                        <p>结果可先留空，后续从最近校准记录里继续补录。</p>
+                                    </div>
                                 </div>
-                                <div class="form-group">
-                                    <label for="calibration-edit-new-batch">新试剂批号</label>
-                                    <select id="calibration-edit-new-batch" class="form-select"></select>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label for="calibration-edit-usage-times">校准用量</label>
-                                    <input type="number" id="calibration-edit-usage-times" class="form-input" min="1" value="1">
-                                </div>
-                                <div class="form-group">
-                                    <label for="calibration-edit-operator">操作人</label>
-                                    <select id="calibration-edit-operator" class="form-select"></select>
-                                </div>
-                            </div>
-                            <div class="calibration-result-groups">
-                                <section class="calibration-result-group">
+                                <div class="calibration-result-groups">
+                                    <section class="calibration-result-group">
                                     <div class="calibration-result-group-head">
                                         <h4>旧批号结果</h4>
                                         <p>记录旧批号 5 次校准结果，未完成时可先留空。</p>
@@ -610,8 +660,8 @@
                                             <input type="text" id="calibration-edit-old-result-5" class="form-input" placeholder="输入结果">
                                         </div>
                                     </div>
-                                </section>
-                                <section class="calibration-result-group">
+                                    </section>
+                                    <section class="calibration-result-group">
                                     <div class="calibration-result-group-head">
                                         <h4>新批号结果</h4>
                                         <p>记录新批号 5 次校准结果，用于对照新旧批号差异。</p>
@@ -638,8 +688,9 @@
                                             <input type="text" id="calibration-edit-new-result-5" class="form-input" placeholder="输入结果">
                                         </div>
                                     </div>
-                                </section>
-                            </div>
+                                    </section>
+                                </div>
+                            </section>
                         </div>
                         <div class="modal-footer">
                             <button id="calibration-record-modal-cancel" class="btn btn-secondary">取消</button>
@@ -670,15 +721,13 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="reports-transactions-work-group">工作组</label>
-                                    <select id="reports-transactions-work-group" class="form-select">
-                                        <option value="">全部工作组</option>
-                                    </select>
+                                    <select id="reports-transactions-work-group" class="form-select compact-multi-select" multiple size="3"></select>
+                                    <p class="field-hint">不选表示全部，可按 Ctrl 多选。</p>
                                 </div>
                                 <div class="form-group">
                                     <label for="reports-transactions-instrument">仪器</label>
-                                    <select id="reports-transactions-instrument" class="form-select">
-                                        <option value="">全部仪器</option>
-                                    </select>
+                                    <select id="reports-transactions-instrument" class="form-select compact-multi-select" multiple size="3"></select>
+                                    <p class="field-hint">不选表示全部。</p>
                                 </div>
                                 <div class="form-group">
                                     <label for="reports-transactions-reagent-input">试剂</label>
@@ -696,12 +745,12 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="reports-transactions-type">流水类型</label>
-                                    <select id="reports-transactions-type" class="form-select">
-                                        <option value="">全部</option>
+                                    <select id="reports-transactions-type" class="form-select compact-multi-select" multiple size="3">
                                         <option value="IN">入库</option>
                                         <option value="OUT">出库</option>
                                         <option value="CALIBRATION">校准</option>
                                     </select>
+                                    <p class="field-hint">不选表示全部，可只选入库/出库。</p>
                                 </div>
                             </div>
                             <div class="form-row">
@@ -728,6 +777,7 @@
                                         <option value="30">30 条</option>
                                         <option value="50">50 条</option>
                                     </select>
+                                    <p class="field-hint">只影响页面列表，导出会导出当前筛选下全部流水。</p>
                                 </div>
                             </div>
                             <div class="button-group">
@@ -765,15 +815,13 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="reports-usage-work-group">工作组</label>
-                                    <select id="reports-usage-work-group" class="form-select">
-                                        <option value="">全部工作组</option>
-                                    </select>
+                                    <select id="reports-usage-work-group" class="form-select compact-multi-select" multiple size="3"></select>
+                                    <p class="field-hint">不选表示全部，可按 Ctrl 多选。</p>
                                 </div>
                                 <div class="form-group">
                                     <label for="reports-usage-instrument">仪器</label>
-                                    <select id="reports-usage-instrument" class="form-select">
-                                        <option value="">全部仪器</option>
-                                    </select>
+                                    <select id="reports-usage-instrument" class="form-select compact-multi-select" multiple size="3"></select>
+                                    <p class="field-hint">不选表示全部。</p>
                                 </div>
                                 <div class="form-group">
                                     <label for="reports-usage-reagent-input">试剂</label>
@@ -871,15 +919,15 @@
     <datalist id="package-unit-options"></datalist>
     <datalist id="min-unit-options"></datalist>
 
-    <script src="/js/utils.js"></script>
-    <script src="/js/api.js"></script>
-    <script src="/js/main.js"></script>
-    <script src="/js/pages/dashboard.js"></script>
-    <script src="/js/pages/inbound.js"></script>
-    <script src="/js/pages/outbound.js"></script>
-    <script src="/js/pages/inventory.js"></script>
-    <script src="/js/pages/calibration.js"></script>
-    <script src="/js/pages/reports.js"></script>
-    <script src="/js/pages/catalog.js"></script>
+    <script src="/js/utils.js?v=20260410-7"></script>
+    <script src="/js/api.js?v=20260410-7"></script>
+    <script src="/js/main.js?v=20260410-7"></script>
+    <script src="/js/pages/dashboard.js?v=20260410-7"></script>
+    <script src="/js/pages/inbound.js?v=20260410-9"></script>
+    <script src="/js/pages/outbound.js?v=20260410-7"></script>
+    <script src="/js/pages/inventory.js?v=20260410-7"></script>
+    <script src="/js/pages/calibration.js?v=20260410-7"></script>
+    <script src="/js/pages/reports.js?v=20260410-8"></script>
+    <script src="/js/pages/catalog.js?v=20260410-7"></script>
 </body>
 </html>

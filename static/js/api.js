@@ -159,8 +159,19 @@ const API = {
                 body: JSON.stringify({ barcode })
             });
         },
-        listRecords(limit = 20) {
-            return API.request(`/calibration/records?limit=${limit}`);
+        listRecords(params = { limit: 20 }) {
+            const normalizedParams = typeof params === 'number' ? { limit: params } : params;
+            const query = new URLSearchParams();
+            Object.entries(normalizedParams || {}).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/calibration/records${suffix}`);
+        },
+        exportRecords(params = {}) {
+            return API.download('/calibration/records/export', params, '校准记录.xlsx');
         },
         targetPreview(reagentId) {
             return API.request(`/calibration/target-preview?reagent_id=${reagentId}`);

@@ -157,6 +157,115 @@ const Utils = {
         setTimeout(() => toast.classList.add('hidden'), duration);
     },
 
+    escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    },
+
+    syncCheckboxSelect(selectId, placeholder = '全部') {
+        const select = document.getElementById(selectId);
+        if (!select) {
+            return;
+        }
+
+        select.classList.add('native-checkbox-select');
+        let widget = document.getElementById(`${selectId}-checkbox-ui`);
+        if (!widget) {
+            widget = document.createElement('div');
+            widget.id = `${selectId}-checkbox-ui`;
+            widget.className = 'checkbox-select';
+            widget.innerHTML = `
+                <button type="button" class="checkbox-select-trigger" aria-expanded="false">
+                    <span class="checkbox-select-label"></span>
+                    <span class="checkbox-select-caret">⌄</span>
+                </button>
+                <div class="checkbox-select-panel hidden"></div>
+            `;
+            select.insertAdjacentElement('afterend', widget);
+
+            widget.querySelector('.checkbox-select-trigger').addEventListener('click', () => {
+                const panel = widget.querySelector('.checkbox-select-panel');
+                const isOpening = panel.classList.contains('hidden');
+                document.querySelectorAll('.checkbox-select-panel').forEach((item) => item.classList.add('hidden'));
+                document.querySelectorAll('.checkbox-select-trigger').forEach((item) => item.setAttribute('aria-expanded', 'false'));
+                panel.classList.toggle('hidden', !isOpening);
+                widget.querySelector('.checkbox-select-trigger').setAttribute('aria-expanded', String(isOpening));
+            });
+
+            widget.addEventListener('change', (event) => {
+                const checkbox = event.target.closest('input[type="checkbox"][data-value]');
+                if (!checkbox) {
+                    return;
+                }
+                const option = [...select.options].find((item) => item.value === checkbox.dataset.value);
+                if (option) {
+                    option.selected = checkbox.checked;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                this.syncCheckboxSelect(selectId, placeholder);
+            });
+
+            widget.addEventListener('click', (event) => {
+                const action = event.target.closest('[data-checkbox-action]')?.dataset.checkboxAction;
+                if (!action) {
+                    return;
+                }
+                [...select.options].forEach((option) => {
+                    option.selected = action === 'all';
+                });
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                this.syncCheckboxSelect(selectId, placeholder);
+            });
+        }
+
+        if (!this.checkboxSelectCloseBound) {
+            document.addEventListener('click', (event) => {
+                if (event.target.closest('.checkbox-select')) {
+                    return;
+                }
+                document.querySelectorAll('.checkbox-select-panel').forEach((item) => item.classList.add('hidden'));
+                document.querySelectorAll('.checkbox-select-trigger').forEach((item) => item.setAttribute('aria-expanded', 'false'));
+            });
+            this.checkboxSelectCloseBound = true;
+        }
+
+        const options = [...select.options];
+        const selected = options.filter((option) => option.selected);
+        const label = widget.querySelector('.checkbox-select-label');
+        if (!selected.length) {
+            label.textContent = placeholder;
+        } else if (selected.length <= 2) {
+            label.textContent = selected.map((option) => option.textContent.trim()).join('、');
+        } else {
+            label.textContent = `${selected[0].textContent.trim()} 等 ${selected.length} 项`;
+        }
+
+        const panel = widget.querySelector('.checkbox-select-panel');
+        if (!options.length) {
+            panel.innerHTML = '<div class="checkbox-select-empty">暂无可选项</div>';
+            return;
+        }
+
+        panel.innerHTML = `
+            <div class="checkbox-select-tools">
+                <button type="button" data-checkbox-action="clear">清空</button>
+                <button type="button" data-checkbox-action="all">全选</button>
+            </div>
+            <div class="checkbox-select-options">
+                ${options.map((option) => `
+                    <label class="checkbox-select-option">
+                        <input type="checkbox" data-value="${this.escapeHtml(option.value)}" ${option.selected ? 'checked' : ''}>
+                        <span>${this.escapeHtml(option.textContent.trim())}</span>
+                    </label>
+                `).join('')}
+            </div>
+        `;
+    },
+
     validateRequired(fields) {
         const errors = [];
         Object.entries(fields).forEach(([name, value]) => {

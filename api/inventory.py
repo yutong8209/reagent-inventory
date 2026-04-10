@@ -95,6 +95,10 @@ def _normalize_name(value: str | None) -> str:
     return "".join(_clean_text(value).lower().split())
 
 
+def _is_calibrator_name(name: str | None) -> bool:
+    return _clean_text(name).endswith("校准品")
+
+
 def _safe_int(value: int | None, fallback: int) -> int:
     if value is None:
         return fallback
@@ -1097,19 +1101,26 @@ def update_reagent(reagent_id: int, data: ReagentUpdate, db: Session = Depends(g
     reagent.instrument_id = instrument.id
     reagent.name = name
     reagent.manufacturer = _clean_text(data.manufacturer) or None
-    reagent.is_calibrator = bool(data.is_calibrator)
+    reagent.is_calibrator = bool(data.is_calibrator) or _is_calibrator_name(name)
     reagent.calibration_result_unit = _clean_text(data.calibration_result_unit) or "nmmol/L"
-    if reagent.is_calibrator:
-        reagent.unit = "次"
-        reagent.package_unit = "次"
-        reagent.package_to_min_qty = 1
-    else:
-        reagent.unit = _clean_text(data.unit) or reagent.unit
-        reagent.package_unit = _clean_text(data.package_unit) or reagent.package_unit
-        reagent.package_to_min_qty = data.package_to_min_qty
+    reagent.unit = _clean_text(data.unit) or reagent.unit
+    reagent.package_unit = _clean_text(data.package_unit) or reagent.package_unit
+    reagent.package_to_min_qty = data.package_to_min_qty
     reagent.warning_days = _safe_int(data.warning_days, 30)
     reagent.warning_stock = _safe_int(data.warning_stock, 5)
     reagent.follow_instrument = bool(data.follow_instrument)
+    (
+        db.query(BatchStock)
+        .filter(BatchStock.reagent_id == reagent.id)
+        .update(
+            {
+                BatchStock.package_unit: reagent.package_unit,
+                BatchStock.min_unit: reagent.unit,
+                BatchStock.package_to_min_qty: reagent.package_to_min_qty,
+            },
+            synchronize_session=False,
+        )
+    )
     db.commit()
     db.refresh(reagent)
 

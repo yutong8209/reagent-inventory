@@ -22,6 +22,10 @@ const inboundPage = {
         }
 
         await Utils.loadOperators();
+        await Utils.loadUnitOptions();
+        this.defaultPackageUnit = Utils.getDefaultUnit('package', '盒');
+        this.defaultMinUnit = Utils.getDefaultUnit('min', '瓶');
+        this.populateUnitSelects();
         await Promise.all([
             Utils.populateOperatorSelect('scan-operator', { allowEmpty: true, emptyLabel: '可先选择默认操作人', defaultValue: Utils.getLastOperator() }),
             Utils.populateOperatorSelect('manual-operator', { allowEmpty: true, emptyLabel: '可先选择默认操作人', defaultValue: Utils.getLastOperator() }),
@@ -51,17 +55,17 @@ const inboundPage = {
         this.el('manual-search-keyword').addEventListener('input', Utils.debounce(() => {
             this.searchManualReagents();
         }, 250));
+        this.el('new-reagent-instrument')?.addEventListener('change', () => {
+            this.applyNewReagentInstrumentDefaults();
+        });
+        this.el('manual-create-instrument')?.addEventListener('change', () => {
+            this.applyManualCreateInstrumentDefaults();
+        });
 
-        ['inbound-confirm-modal', 'new-reagent-modal'].forEach((id) => {
-            this.el(id).addEventListener('click', (event) => {
-                if (event.target.id === id) {
-                    if (id === 'inbound-confirm-modal') {
-                        this.closeConfirmModal();
-                    } else {
-                        this.closeNewReagentModal();
-                    }
-                }
-            });
+        this.el('inbound-confirm-modal').addEventListener('click', (event) => {
+            if (event.target.id === 'inbound-confirm-modal') {
+                this.closeConfirmModal();
+            }
         });
     },
 
@@ -127,6 +131,83 @@ const inboundPage = {
 
     formatRelation(packageUnit, qty, minUnit) {
         return `1${this.normalizeText(packageUnit, this.defaultPackageUnit)} = ${this.normalizePositiveInteger(qty, 1)}${this.normalizeText(minUnit, this.defaultMinUnit)}`;
+    },
+
+    getUnitSelectOptions(scope, selectedValue = '', fallback = '') {
+        const normalizedSelected = this.normalizeText(selectedValue, fallback);
+        const options = Utils.getUnitOptions(scope);
+        const fallbackNames = scope === 'package'
+            ? ['盒', '瓶', '支', '袋', '箱', '套']
+            : ['瓶', '支', '次', '人份', '测试', 'ml', '片'];
+        const optionNames = new Set(options.map((item) => item.name));
+        const values = [];
+        if (normalizedSelected && !optionNames.has(normalizedSelected)) {
+            values.push({ name: normalizedSelected, suffix: '当前值' });
+        }
+        options.forEach((item) => values.push({ name: item.name, suffix: '' }));
+        if (!options.length) {
+            fallbackNames.forEach((name) => {
+                if (!values.some((item) => item.name === name)) {
+                    values.push({ name, suffix: '' });
+                }
+            });
+        }
+
+        return values.map((item) => `
+            <option value="${this.escapeHtml(item.name)}" ${item.name === normalizedSelected ? 'selected' : ''}>
+                ${this.escapeHtml(item.name)}${item.suffix ? `（${item.suffix}）` : ''}
+            </option>
+        `).join('');
+    },
+
+    populateUnitSelect(selectId, scope, selectedValue = '', fallback = '') {
+        const select = this.el(selectId);
+        if (!select) return;
+        const current = this.normalizeText(selectedValue || select.value, fallback);
+        select.innerHTML = this.getUnitSelectOptions(scope, current, fallback);
+        if (current) {
+            select.value = current;
+        }
+    },
+
+    populateUnitSelects() {
+        this.populateUnitSelect('manual-create-package-unit', 'package', '', this.defaultPackageUnit);
+        this.populateUnitSelect('manual-create-min-unit', 'min', '', this.defaultMinUnit);
+        this.populateUnitSelect('new-reagent-package-unit', 'package', '', this.defaultPackageUnit);
+        this.populateUnitSelect('new-reagent-min-unit', 'min', '', this.defaultMinUnit);
+    },
+
+    isSelectedInstrumentX8(selectId) {
+        const select = this.el(selectId);
+        const selectedText = select?.selectedOptions?.[0]?.textContent || '';
+        return /X8/i.test(selectedText);
+    },
+
+    applyX8UnitDefaults(packageSelectId, minSelectId, ratioInputId, refreshCallback) {
+        this.populateUnitSelect(packageSelectId, 'package', '盒', this.defaultPackageUnit);
+        this.populateUnitSelect(minSelectId, 'min', '盒', this.defaultMinUnit);
+        this.el(ratioInputId).value = '1';
+        refreshCallback.call(this);
+    },
+
+    applyNewReagentInstrumentDefaults() {
+        if (!this.isSelectedInstrumentX8('new-reagent-instrument')) return;
+        this.applyX8UnitDefaults(
+            'new-reagent-package-unit',
+            'new-reagent-min-unit',
+            'new-reagent-package-to-min-qty',
+            this.refreshNewReagentRelationPreview
+        );
+    },
+
+    applyManualCreateInstrumentDefaults() {
+        if (!this.isSelectedInstrumentX8('manual-create-instrument')) return;
+        this.applyX8UnitDefaults(
+            'manual-create-package-unit',
+            'manual-create-min-unit',
+            'manual-create-package-to-min-qty',
+            this.refreshManualCreateRelationPreview
+        );
     },
 
     refreshRelationPreview(previewId, packageUnitId, minUnitId, qtyId) {
@@ -234,6 +315,7 @@ const inboundPage = {
 
     async loadManualCreateInstruments() {
         await this.loadInstrumentsForSelect('manual-create-instrument', this.el('manual-create-work-group').value, '请选择仪器');
+        this.applyManualCreateInstrumentDefaults();
     },
 
     async searchManualReagents() {
@@ -466,8 +548,8 @@ const inboundPage = {
         this.el('new-reagent-manufacturer').value = '';
         this.el('new-reagent-batch-no').value = this.normalizeText(result.extracted_batch_no);
         this.el('new-reagent-expiry-date').value = this.normalizeDate(result.extracted_expiry_date);
-        this.el('new-reagent-package-unit').value = this.defaultPackageUnit;
-        this.el('new-reagent-min-unit').value = this.defaultMinUnit;
+        this.populateUnitSelect('new-reagent-package-unit', 'package', this.defaultPackageUnit, this.defaultPackageUnit);
+        this.populateUnitSelect('new-reagent-min-unit', 'min', this.defaultMinUnit, this.defaultMinUnit);
         this.el('new-reagent-package-to-min-qty').value = '1';
         this.el('new-reagent-quantity').value = '1';
         const groups = await API.inventory.getWorkGroups().catch(() => []);
@@ -483,6 +565,7 @@ const inboundPage = {
                 '请选择仪器',
                 result.instrument_id ? String(result.instrument_id) : ''
             );
+            this.applyNewReagentInstrumentDefaults();
         }
     },
 
@@ -496,6 +579,7 @@ const inboundPage = {
 
     async loadNewReagentInstruments() {
         await this.loadInstrumentsForSelect('new-reagent-instrument', this.el('new-reagent-work-group').value, '请选择仪器');
+        this.applyNewReagentInstrumentDefaults();
     },
 
     async submitNewReagentFromScan() {
@@ -588,10 +672,10 @@ const inboundPage = {
             const relationText = this.formatRelation(item.packageUnit, item.packageToMinQty, item.minUnit);
             const packageControl = locked
                 ? `<div class="item-field"><span>包装单位</span><strong>${this.escapeHtml(item.packageUnit)}</strong></div>`
-                : `<label class="item-field"><span>包装单位</span><input type="text" class="form-input" list="package-unit-options" value="${this.escapeHtml(item.packageUnit)}" onchange="inboundPage.updateScanField(${item.id}, 'packageUnit', this.value)"></label>`;
+                : `<label class="item-field"><span>包装单位</span><select class="form-select" onchange="inboundPage.updateScanField(${item.id}, 'packageUnit', this.value)">${this.getUnitSelectOptions('package', item.packageUnit, this.defaultPackageUnit)}</select></label>`;
             const minControl = locked
                 ? `<div class="item-field"><span>最小单位</span><strong>${this.escapeHtml(item.minUnit)}</strong></div>`
-                : `<label class="item-field"><span>最小单位</span><input type="text" class="form-input" list="min-unit-options" value="${this.escapeHtml(item.minUnit)}" onchange="inboundPage.updateScanField(${item.id}, 'minUnit', this.value)"></label>`;
+                : `<label class="item-field"><span>最小单位</span><select class="form-select" onchange="inboundPage.updateScanField(${item.id}, 'minUnit', this.value)">${this.getUnitSelectOptions('min', item.minUnit, this.defaultMinUnit)}</select></label>`;
             const relationControl = locked
                 ? `<div class="item-field"><span>包装关系</span><strong>${this.escapeHtml(relationText)}</strong></div>`
                 : `<label class="item-field"><span>包装关系</span><input type="number" min="1" class="form-input" value="${item.packageToMinQty}" onchange="inboundPage.updateScanField(${item.id}, 'packageToMinQty', this.value)"><small class="field-hint">${this.escapeHtml(relationText)}</small></label>`;
@@ -746,8 +830,8 @@ const inboundPage = {
         }
         this.el('manual-create-reagent-name').value = '';
         this.el('manual-create-manufacturer').value = '';
-        this.el('manual-create-package-unit').value = this.defaultPackageUnit;
-        this.el('manual-create-min-unit').value = this.defaultMinUnit;
+        this.populateUnitSelect('manual-create-package-unit', 'package', this.defaultPackageUnit, this.defaultPackageUnit);
+        this.populateUnitSelect('manual-create-min-unit', 'min', this.defaultMinUnit, this.defaultMinUnit);
         this.el('manual-create-package-to-min-qty').value = '1';
         this.refreshManualCreateRelationPreview();
         if (clearOperator) {
@@ -804,8 +888,8 @@ const inboundPage = {
             this.el('manual-create-instrument').value = String(item.instrumentId);
             this.el('manual-create-reagent-name').value = item.reagentName;
             this.el('manual-create-manufacturer').value = item.manufacturer || '';
-            this.el('manual-create-package-unit').value = item.packageUnit;
-            this.el('manual-create-min-unit').value = item.minUnit;
+            this.populateUnitSelect('manual-create-package-unit', 'package', item.packageUnit, this.defaultPackageUnit);
+            this.populateUnitSelect('manual-create-min-unit', 'min', item.minUnit, this.defaultMinUnit);
             this.el('manual-create-package-to-min-qty').value = String(item.packageToMinQty);
             this.refreshManualCreateRelationPreview();
         } else {

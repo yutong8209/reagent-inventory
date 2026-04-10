@@ -23,7 +23,8 @@ router = APIRouter()
 MANUAL_MATCH_PREFIX = "MANUAL::"
 DEFAULT_PACKAGE_UNIT = "盒"
 DEFAULT_MIN_UNIT = "瓶"
-DEFAULT_CALIBRATOR_UNIT = "次"
+DEFAULT_CALIBRATOR_PACKAGE_UNIT = "盒"
+DEFAULT_CALIBRATOR_MIN_UNIT = "次"
 
 
 def _normalize_manual_key(value: str) -> str:
@@ -126,8 +127,8 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
         match_pattern=_build_manual_match_pattern(instrument.id, reagent_name),
         raw_barcode_sample="MANUAL",
         manufacturer=_clean_text(item.manufacturer) or None,
-        unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(item.min_unit) or DEFAULT_MIN_UNIT),
-        package_unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(item.package_unit) or DEFAULT_PACKAGE_UNIT),
+        unit=DEFAULT_CALIBRATOR_MIN_UNIT if is_calibrator else (_clean_text(item.min_unit) or DEFAULT_MIN_UNIT),
+        package_unit=DEFAULT_CALIBRATOR_PACKAGE_UNIT if is_calibrator else (_clean_text(item.package_unit) or DEFAULT_PACKAGE_UNIT),
         package_to_min_qty=1 if is_calibrator else _resolve_package_to_min_qty(item),
         warning_days=warning_days,
         warning_stock=warning_stock,
@@ -232,30 +233,20 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
             if reagent.is_archived:
                 reagent.is_archived = False
 
-            if item.reagent_id is not None:
+            if item.reagent_id is not None or reagent.is_calibrator:
                 package_unit = _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
                 min_unit = _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
                 package_to_min_qty = reagent.package_to_min_qty or 1
             else:
-                if reagent.is_calibrator:
-                    package_unit = DEFAULT_CALIBRATOR_UNIT
-                    min_unit = DEFAULT_CALIBRATOR_UNIT
-                    package_to_min_qty = 1
-                else:
-                    package_unit = _clean_text(item.package_unit) or _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
-                    min_unit = _clean_text(item.min_unit) or _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
-                    package_to_min_qty = _resolve_package_to_min_qty(item, reagent)
+                package_unit = _clean_text(item.package_unit) or _clean_text(reagent.package_unit) or DEFAULT_PACKAGE_UNIT
+                min_unit = _clean_text(item.min_unit) or _clean_text(reagent.unit) or DEFAULT_MIN_UNIT
+                package_to_min_qty = _resolve_package_to_min_qty(item, reagent)
 
             if item.source == "manual" and item.reagent_id is None:
                 reagent.manufacturer = _clean_text(item.manufacturer) or reagent.manufacturer
-                if reagent.is_calibrator:
-                    reagent.package_unit = DEFAULT_CALIBRATOR_UNIT
-                    reagent.unit = DEFAULT_CALIBRATOR_UNIT
-                    reagent.package_to_min_qty = 1
-                else:
-                    reagent.package_unit = package_unit
-                    reagent.unit = min_unit
-                    reagent.package_to_min_qty = package_to_min_qty
+                reagent.package_unit = package_unit
+                reagent.unit = min_unit
+                reagent.package_to_min_qty = package_to_min_qty
 
             warning = _build_inbound_warning(reagent, item.expiry_date)
             batch_stock = _upsert_batch_stock(
@@ -399,8 +390,8 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
         match_pattern=match_pattern,
         raw_barcode_sample=_clean_text(data.raw_barcode_sample) or None,
         manufacturer=_clean_text(data.manufacturer) or None,
-        unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(data.unit) or DEFAULT_MIN_UNIT),
-        package_unit=DEFAULT_CALIBRATOR_UNIT if is_calibrator else (_clean_text(data.package_unit) or DEFAULT_PACKAGE_UNIT),
+        unit=DEFAULT_CALIBRATOR_MIN_UNIT if is_calibrator else (_clean_text(data.unit) or DEFAULT_MIN_UNIT),
+        package_unit=DEFAULT_CALIBRATOR_PACKAGE_UNIT if is_calibrator else (_clean_text(data.package_unit) or DEFAULT_PACKAGE_UNIT),
         package_to_min_qty=1 if is_calibrator else (data.package_to_min_qty or 1),
         warning_days=data.warning_days,
         warning_stock=data.warning_stock,

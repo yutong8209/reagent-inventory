@@ -121,6 +121,25 @@ const reportsPage = {
         return this.scopes[scope];
     },
 
+    getSelectedValues(selectId) {
+        const select = document.getElementById(selectId);
+        if (!select) {
+            return [];
+        }
+        return [...select.selectedOptions].map((option) => option.value).filter(Boolean);
+    },
+
+    selectValues(selectId, values) {
+        const select = document.getElementById(selectId);
+        if (!select) {
+            return;
+        }
+        const valueSet = new Set((values || []).map(String));
+        [...select.options].forEach((option) => {
+            option.selected = valueSet.has(option.value);
+        });
+    },
+
     formatDateInput(dateValue) {
         const year = dateValue.getFullYear();
         const month = `${dateValue.getMonth() + 1}`.padStart(2, '0');
@@ -180,6 +199,7 @@ const reportsPage = {
         this.workGroups = await API.inventory.getWorkGroups();
         this.populateWorkGroups('transactions');
         this.populateWorkGroups('usage');
+        Utils.syncCheckboxSelect('reports-transactions-type', '全部类型');
         await this.loadInstruments('transactions');
         await this.loadInstruments('usage');
         await this.loadReagents('transactions');
@@ -188,30 +208,25 @@ const reportsPage = {
 
     populateWorkGroups(scope) {
         const select = document.getElementById(`reports-${scope}-work-group`);
-        const currentValue = select.value;
-        select.innerHTML = ['<option value="">全部工作组</option>'].concat(
-            this.workGroups.map((group) => `<option value="${group.id}">${group.name}</option>`)
-        ).join('');
-        if ([...select.options].some((option) => option.value === currentValue)) {
-            select.value = currentValue;
-        }
+        const currentValues = this.getSelectedValues(`reports-${scope}-work-group`);
+        select.innerHTML = this.workGroups.map((group) => `<option value="${group.id}">${group.name}</option>`).join('');
+        this.selectValues(`reports-${scope}-work-group`, currentValues);
+        Utils.syncCheckboxSelect(`reports-${scope}-work-group`, '全部工作组');
     },
 
     async loadInstruments(scope) {
-        const workGroupId = document.getElementById(`reports-${scope}-work-group`).value || null;
-        const instruments = await API.inventory.getInstruments(workGroupId);
-        const select = document.getElementById(`reports-${scope}-instrument`);
-        const currentValue = select.value;
-
-        select.innerHTML = ['<option value="">全部仪器</option>'].concat(
-            instruments.map((instrument) => `<option value="${instrument.id}">${instrument.name}</option>`)
-        ).join('');
-
-        if ([...select.options].some((option) => option.value === currentValue)) {
-            select.value = currentValue;
-        } else {
-            select.value = '';
+        const workGroupIds = this.getSelectedValues(`reports-${scope}-work-group`);
+        let instruments = await API.inventory.getInstruments(null);
+        if (workGroupIds.length) {
+            const workGroupSet = new Set(workGroupIds.map(String));
+            instruments = instruments.filter((instrument) => workGroupSet.has(String(instrument.work_group_id)));
         }
+        const select = document.getElementById(`reports-${scope}-instrument`);
+        const currentValues = this.getSelectedValues(`reports-${scope}-instrument`);
+
+        select.innerHTML = instruments.map((instrument) => `<option value="${instrument.id}">${instrument.name}</option>`).join('');
+        this.selectValues(`reports-${scope}-instrument`, currentValues);
+        Utils.syncCheckboxSelect(`reports-${scope}-instrument`, '全部仪器');
     },
 
     formatReagentLabel(reagent) {
@@ -378,11 +393,11 @@ const reportsPage = {
     },
 
     async loadReagents(scope) {
-        const workGroupId = document.getElementById(`reports-${scope}-work-group`).value || null;
-        const instrumentId = document.getElementById(`reports-${scope}-instrument`).value || null;
+        const workGroupIds = this.getSelectedValues(`reports-${scope}-work-group`);
+        const instrumentIds = this.getSelectedValues(`reports-${scope}-instrument`);
         const reagents = await API.reports.listReagents({
-            work_group_id: workGroupId,
-            instrument_id: instrumentId
+            work_group_ids: workGroupIds.join(','),
+            instrument_ids: instrumentIds.join(',')
         });
 
         const state = this.getScopeState(scope);
@@ -421,22 +436,25 @@ const reportsPage = {
         return true;
     },
 
-    getTransactionParams() {
-        return {
-            work_group_id: document.getElementById('reports-transactions-work-group').value || null,
-            instrument_id: document.getElementById('reports-transactions-instrument').value || null,
+    getTransactionParams(includeLimit = true) {
+        const params = {
+            work_group_ids: this.getSelectedValues('reports-transactions-work-group').join(','),
+            instrument_ids: this.getSelectedValues('reports-transactions-instrument').join(','),
             reagent_id: this.getScopeState('transactions').selectedReagentId || null,
-            type: document.getElementById('reports-transactions-type').value || null,
+            types: this.getSelectedValues('reports-transactions-type').join(','),
             start_date: document.getElementById('reports-transactions-start-date').value || null,
             end_date: document.getElementById('reports-transactions-end-date').value || null,
-            limit: document.getElementById('reports-transactions-limit').value || 20
         };
+        if (includeLimit) {
+            params.limit = document.getElementById('reports-transactions-limit').value || 20;
+        }
+        return params;
     },
 
     getUsageParams() {
         return {
-            work_group_id: document.getElementById('reports-usage-work-group').value || null,
-            instrument_id: document.getElementById('reports-usage-instrument').value || null,
+            work_group_ids: this.getSelectedValues('reports-usage-work-group').join(','),
+            instrument_ids: this.getSelectedValues('reports-usage-instrument').join(','),
             reagent_id: this.getScopeState('usage').selectedReagentId || null,
             start_date: document.getElementById('reports-usage-start-date').value || null,
             end_date: document.getElementById('reports-usage-end-date').value || null
@@ -474,7 +492,7 @@ const reportsPage = {
             return;
         }
         try {
-            await API.reports.exportTransactions(this.getTransactionParams());
+            await API.reports.exportTransactions(this.getTransactionParams(false));
         } catch (error) {
             console.error('Failed to export transactions:', error);
             Utils.showToast('导出流水失败', 'error');

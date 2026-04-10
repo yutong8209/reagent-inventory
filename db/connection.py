@@ -166,9 +166,15 @@ def ensure_schema():
                 text(
                     """
                     UPDATE reagents
-                    SET package_unit = '次',
-                        unit = '次',
-                        package_to_min_qty = 1
+                    SET package_unit = CASE
+                            WHEN NULLIF(TRIM(package_unit), '') IS NULL OR package_unit = '次' THEN '盒'
+                            ELSE package_unit
+                        END,
+                        unit = CASE
+                            WHEN NULLIF(TRIM(unit), '') IS NULL THEN '次'
+                            ELSE unit
+                        END,
+                        package_to_min_qty = COALESCE(NULLIF(package_to_min_qty, 0), 1)
                     WHERE is_calibrator = 1
                     """
                 )
@@ -187,9 +193,32 @@ def ensure_schema():
                 text(
                     """
                     UPDATE batch_stocks
-                    SET package_unit = '次',
-                        min_unit = '次',
-                        package_to_min_qty = 1
+                    SET package_unit = COALESCE(
+                            (
+                                SELECT CASE
+                                    WHEN NULLIF(TRIM(batch_stocks.package_unit), '') IS NULL
+                                        OR batch_stocks.package_unit = '次'
+                                    THEN reagents.package_unit
+                                    ELSE batch_stocks.package_unit
+                                END
+                                FROM reagents
+                                WHERE reagents.id = batch_stocks.reagent_id
+                            ),
+                            '盒'
+                        ),
+                        min_unit = COALESCE(
+                            (
+                                SELECT CASE
+                                    WHEN NULLIF(TRIM(batch_stocks.min_unit), '') IS NULL
+                                    THEN reagents.unit
+                                    ELSE batch_stocks.min_unit
+                                END
+                                FROM reagents
+                                WHERE reagents.id = batch_stocks.reagent_id
+                            ),
+                            '次'
+                        ),
+                        package_to_min_qty = COALESCE(NULLIF(package_to_min_qty, 0), 1)
                     WHERE reagent_id IN (
                         SELECT id
                         FROM reagents

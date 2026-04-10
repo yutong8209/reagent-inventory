@@ -65,23 +65,21 @@ class BarcodeParser:
             self._log_parse(barcode, "prefix", None)
             candidates = [self._build_candidate(reagent) for reagent in prefix_matches[:5]]
             generic_batch_no, generic_rule = self._extract_batch_no_from_instrument_rules(barcode)
+            inferred_instrument = (
+                generic_rule.instrument
+                if generic_rule and generic_rule.instrument
+                else self._infer_instrument_from_product_family(product_code)
+            )
+            inferred_work_group = inferred_instrument.work_group if inferred_instrument else None
             return BarcodeParseResult(
                 raw_barcode=barcode,
                 match_type="prefix",
                 reagent_id=None,
                 reagent_name=None,
-                instrument_id=generic_rule.instrument.id if generic_rule and generic_rule.instrument else None,
-                instrument_name=generic_rule.instrument.name if generic_rule and generic_rule.instrument else None,
-                work_group_id=(
-                    generic_rule.instrument.work_group.id
-                    if generic_rule and generic_rule.instrument and generic_rule.instrument.work_group
-                    else None
-                ),
-                work_group_name=(
-                    generic_rule.instrument.work_group.name
-                    if generic_rule and generic_rule.instrument and generic_rule.instrument.work_group
-                    else None
-                ),
+                instrument_id=inferred_instrument.id if inferred_instrument else None,
+                instrument_name=inferred_instrument.name if inferred_instrument else None,
+                work_group_id=inferred_work_group.id if inferred_work_group else None,
+                work_group_name=inferred_work_group.name if inferred_work_group else None,
                 extracted_product_code=product_code,
                 extracted_production_date=production_date,
                 extracted_batch_no=generic_batch_no or self._extract_batch_no(barcode),
@@ -93,7 +91,11 @@ class BarcodeParser:
 
         self._log_parse(barcode, "none", None)
         generic_batch_no, generic_rule = self._extract_batch_no_from_instrument_rules(barcode)
-        generic_instrument = generic_rule.instrument if generic_rule else None
+        generic_instrument = (
+            generic_rule.instrument
+            if generic_rule
+            else self._infer_instrument_from_product_family(product_code)
+        )
         generic_work_group = generic_instrument.work_group if generic_instrument else None
         return BarcodeParseResult(
             raw_barcode=barcode,
@@ -219,7 +221,18 @@ class BarcodeParser:
         return None
 
     def _extract_production_date(self, barcode: str) -> Optional[date]:
-        for ai_match in re.finditer(r"11(\d{6})", barcode):
+        product_code = self._extract_product_code(barcode)
+        if product_code:
+            product_prefix = f"01{product_code}"
+            product_index = barcode.find(product_prefix)
+            if product_index >= 0:
+                ai_start = product_index + len(product_prefix)
+                if barcode[ai_start:ai_start + 2] == "11":
+                    parsed_date = self._parse_ai_date(barcode[ai_start + 2:ai_start + 8])
+                    if parsed_date:
+                        return parsed_date
+
+        for ai_match in re.finditer(r"(?=11(\d{6}))", barcode):
             parsed_date = self._parse_ai_date(ai_match.group(1))
             if parsed_date:
                 return parsed_date
@@ -396,9 +409,20 @@ class BarcodeParser:
         return extracted or None
 
     def _extract_batch_no(self, barcode: str) -> Optional[str]:
-        ai_match = re.search(r"10([A-Z0-9]+)$", barcode)
-        if ai_match:
-            return ai_match.group(1)
+        expiry_matches = list(re.finditer(r"17\d{6}", barcode))
+        for expiry_match in reversed(expiry_matches):
+            lot_anchor = barcode.find("10", expiry_match.end())
+            if lot_anchor < 0:
+                continue
+            lot = barcode[lot_anchor + 2 :].strip()
+            if lot:
+                return lot
+
+        lot_anchor = barcode.rfind("10")
+        if lot_anchor >= 0:
+            lot = barcode[lot_anchor + 2 :].strip()
+            if lot:
+                return lot
 
         patterns = [
             r"[A-Z]{2,}\d{4,}",
@@ -411,6 +435,80 @@ class BarcodeParser:
                 return match.group(0)
 
         return None
+
+    def _infer_instrument_from_product_family(self, product_code: str | None):
+        current_product = self._normalize_product_family_code(product_code)
+        if not current_product:
+            return None
+
+        scores: dict[int, dict[str, object]] = {}
+        reagents = (
+            self.db.query(Reagent)
+            .filter(Reagent.instrument_id.isnot(None))
+            .all()
+        )
+        for reagent in reagents:
+            if not reagent.instrument:
+                continue
+            for known_product in self._known_product_family_codes(reagent):
+                common_length = self._common_prefix_length(current_product, known_product)
+                if common_length < 10:
+                    continue
+                score = scores.setdefault(
+                    reagent.instrument_id,
+                    {
+                        "instrument": reagent.instrument,
+                        "max_prefix": 0,
+                        "count": 0,
+                    },
+                )
+                score["max_prefix"] = max(int(score["max_prefix"]), common_length)
+                score["count"] = int(score["count"]) + 1
+
+        if not scores:
+            return None
+
+        ranked = sorted(
+            scores.values(),
+            key=lambda item: (int(item["max_prefix"]), int(item["count"])),
+            reverse=True,
+        )
+        best = ranked[0]
+        if len(ranked) > 1 and int(best["max_prefix"]) == int(ranked[1]["max_prefix"]):
+            return None
+        return best["instrument"]
+
+    def _known_product_family_codes(self, reagent: Reagent) -> set[str]:
+        codes = set()
+        match_pattern = self._normalize_rule_value(reagent.match_pattern)
+        if match_pattern:
+            if match_pattern.startswith("01") and len(match_pattern) >= 10:
+                codes.add(match_pattern[:16] if len(match_pattern) >= 16 else match_pattern)
+            else:
+                normalized = self._normalize_product_family_code(match_pattern)
+                if normalized:
+                    codes.add(normalized)
+
+        raw_product = self._extract_product_code(self._normalize_rule_value(reagent.raw_barcode_sample))
+        normalized_raw_product = self._normalize_product_family_code(raw_product)
+        if normalized_raw_product:
+            codes.add(normalized_raw_product)
+        return codes
+
+    def _normalize_product_family_code(self, product_code: str | None) -> str | None:
+        cleaned = self._normalize_rule_value(product_code)
+        if not cleaned:
+            return None
+        if cleaned.startswith("01"):
+            return cleaned[:16] if len(cleaned) >= 16 else cleaned
+        return f"01{cleaned}"[:16]
+
+    def _common_prefix_length(self, left: str, right: str) -> int:
+        index = 0
+        max_length = min(len(left), len(right))
+        while index < max_length and left[index] == right[index]:
+            index += 1
+        return index
 
     def _infer_batch_position(
         self,

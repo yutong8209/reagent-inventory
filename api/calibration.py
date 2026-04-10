@@ -1,11 +1,18 @@
 import json
-from datetime import date
+from datetime import date, datetime, time, timedelta
+from io import BytesIO
+from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from sqlalchemy import or_
+from sqlalchemy.orm import Session, aliased
 
 from db import get_db
-from models import BatchStock, CalibrationRecord, Operator, Reagent, Transaction
+from models import BatchStock, CalibrationRecord, Instrument, Operator, Reagent, Transaction, WorkGroup
 from schemas import (
     CalibrationBatchCandidate,
     CalibrationRecordCreate,
@@ -30,6 +37,37 @@ def _normalize_name(value: str | None) -> str:
 
 def _safe_ratio(value: int | None) -> int:
     return value if value and value > 0 else 1
+
+
+def _parse_int_filter(*values: object) -> set[int]:
+    parsed: set[int] = set()
+    for value in values:
+        if value is None:
+            continue
+        for part in str(value).split(","):
+            cleaned = part.strip()
+            if cleaned.isdigit():
+                parsed.add(int(cleaned))
+    return parsed
+
+
+def _normalize_date_range(start_date: date | None, end_date: date | None) -> tuple[date, date]:
+    today = date.today()
+    normalized_end = end_date or today
+    normalized_start = start_date or (normalized_end - timedelta(days=29))
+    if normalized_start > normalized_end:
+        normalized_start, normalized_end = normalized_end, normalized_start
+    return normalized_start, normalized_end
+
+
+def _build_datetime_range(start_date: date | None, end_date: date | None) -> tuple[datetime | None, datetime | None]:
+    if start_date is None and end_date is None:
+        return None, None
+
+    normalized_start, normalized_end = _normalize_date_range(start_date, end_date)
+    start_dt = datetime.combine(normalized_start, time.min)
+    end_dt = datetime.combine(normalized_end + timedelta(days=1), time.min)
+    return start_dt, end_dt
 
 
 def _days_until(target: date) -> int:
@@ -133,6 +171,23 @@ def _resolve_default_batch_values(candidates: list[CalibrationBatchCandidate]) -
     return old_batch_no, new_batch_no
 
 
+def _resolve_scanned_reagent_batch_values(
+    candidates: list[CalibrationBatchCandidate],
+    scanned_batch_no: str | None,
+) -> tuple[str | None, str | None]:
+    cleaned_scanned_batch = _clean_text(scanned_batch_no)
+    if not candidates or not cleaned_scanned_batch:
+        return _resolve_default_batch_values(candidates)
+
+    for index, candidate in enumerate(candidates):
+        if candidate.batch_no != cleaned_scanned_batch:
+            continue
+        old_batch_no = candidates[index + 1].batch_no if index + 1 < len(candidates) else None
+        return old_batch_no, candidate.batch_no
+
+    return _resolve_default_batch_values(candidates)
+
+
 def _build_target_preview_payload(target: Reagent, db: Session) -> CalibrationTargetPreviewResponse:
     batch_candidates = _load_target_batch_candidates(db, target.id)
     default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
@@ -179,10 +234,15 @@ def _match_calibrator_batch(
 def _serialize_record(record: CalibrationRecord, db: Session) -> CalibrationRecordItem:
     calibrator = record.calibrator_reagent
     target = record.target_reagent
-    target_candidates = [_serialize_target_candidate(item) for item in _build_target_candidates(db, calibrator)]
+    if calibrator.is_calibrator:
+        target_candidates = [_serialize_target_candidate(item) for item in _build_target_candidates(db, calibrator)]
+    else:
+        target_candidates = [_serialize_target_candidate(target)]
     batch_candidates = _load_target_batch_candidates(db, target.id)
+    calibration_source = "calibrator" if calibrator.is_calibrator else "reagent"
     return CalibrationRecordItem(
         id=record.id,
+        calibration_source=calibration_source,
         calibrator_reagent_id=record.calibrator_reagent_id,
         calibrator_name=calibrator.name,
         calibrator_batch_stock_id=record.calibrator_batch_stock_id,
@@ -212,6 +272,212 @@ def _serialize_record(record: CalibrationRecord, db: Session) -> CalibrationReco
     )
 
 
+def _build_calibration_record_query(
+    db: Session,
+    *,
+    work_group_ids: object | None = None,
+    instrument_ids: object | None = None,
+    keyword: str | None = None,
+    source: str | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+):
+    source_reagent = aliased(Reagent)
+    target_reagent = aliased(Reagent)
+    source_batch = aliased(BatchStock)
+    target_instrument = aliased(Instrument)
+    target_work_group = aliased(WorkGroup)
+
+    query = (
+        db.query(CalibrationRecord)
+        .join(source_reagent, CalibrationRecord.calibrator_reagent_id == source_reagent.id)
+        .join(source_batch, CalibrationRecord.calibrator_batch_stock_id == source_batch.id)
+        .join(target_reagent, CalibrationRecord.target_reagent_id == target_reagent.id)
+        .join(target_instrument, target_reagent.instrument_id == target_instrument.id)
+        .join(target_work_group, target_instrument.work_group_id == target_work_group.id)
+    )
+
+    work_group_filter = _parse_int_filter(work_group_ids)
+    instrument_filter = _parse_int_filter(instrument_ids)
+    if work_group_filter:
+        query = query.filter(target_work_group.id.in_(work_group_filter))
+    if instrument_filter:
+        query = query.filter(target_instrument.id.in_(instrument_filter))
+
+    normalized_source = _clean_text(source).lower()
+    if normalized_source == "calibrator":
+        query = query.filter(source_reagent.is_calibrator.is_(True))
+    elif normalized_source == "reagent":
+        query = query.filter(source_reagent.is_calibrator.is_(False))
+
+    cleaned_keyword = _clean_text(keyword)
+    if cleaned_keyword:
+        like_pattern = f"%{cleaned_keyword}%"
+        query = query.filter(
+            or_(
+                source_reagent.name.ilike(like_pattern),
+                target_reagent.name.ilike(like_pattern),
+                source_batch.batch_no.ilike(like_pattern),
+                CalibrationRecord.target_old_batch_no.ilike(like_pattern),
+                CalibrationRecord.target_new_batch_no.ilike(like_pattern),
+                CalibrationRecord.operator.ilike(like_pattern),
+            )
+        )
+
+    start_dt, end_dt = _build_datetime_range(start_date, end_date)
+    if start_dt is not None:
+        query = query.filter(CalibrationRecord.created_at >= start_dt)
+    if end_dt is not None:
+        query = query.filter(CalibrationRecord.created_at < end_dt)
+
+    return query
+
+
+def _calibration_source_label(record: CalibrationRecord) -> str:
+    calibrator = record.calibrator_reagent
+    return "独立校准品" if calibrator and calibrator.is_calibrator else "试剂自带校准"
+
+
+def _calibration_filename(start_date: date | None, end_date: date | None) -> str:
+    normalized_start, normalized_end = _normalize_date_range(start_date, end_date)
+    return f"校准记录_{normalized_start.isoformat()}_{normalized_end.isoformat()}.xlsx"
+
+
+def _excel_response(buffer: BytesIO, filename: str) -> StreamingResponse:
+    quoted_filename = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quoted_filename}",
+    }
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+def _style_calibration_export_sheet(worksheet):
+    header_fill = PatternFill(fill_type="solid", fgColor="DDEFEA")
+    group_fill = PatternFill(fill_type="solid", fgColor="F8FCFF")
+    header_font = Font(bold=True, color="17304F")
+    thin = Side(style="thin", color="BFD8CF")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    widths = [20, 18, 24, 14, 18, 22, 24, 12, 12, 12, 12, 12, 12, 14]
+
+    for cell in worksheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border
+
+    for row_index, row in enumerate(worksheet.iter_rows(min_row=2), start=2):
+        for cell in row:
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.border = border
+            if row_index % 2 == 0:
+                cell.fill = group_fill
+
+    for index, width in enumerate(widths, start=1):
+        worksheet.column_dimensions[worksheet.cell(row=1, column=index).column_letter].width = width
+
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    worksheet.page_margins.left = 0.25
+    worksheet.page_margins.right = 0.25
+    worksheet.page_margins.top = 0.5
+    worksheet.page_margins.bottom = 0.5
+    worksheet.page_setup.orientation = "landscape"
+    worksheet.page_setup.fitToWidth = 1
+    worksheet.page_setup.fitToHeight = 0
+    worksheet.sheet_properties.pageSetUpPr.fitToPage = True
+
+
+def _format_calibration_result(value: str | None, unit: str) -> str:
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return ""
+    if any(char.isalpha() for char in cleaned) or "/" in cleaned:
+        return cleaned
+    return f"{cleaned}{unit}"
+
+
+def _build_calibration_export_workbook(records: list[CalibrationRecord], start_date: date | None, end_date: date | None) -> BytesIO:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "校准记录"
+    sheet.append(
+        [
+            "记录时间",
+            "被校准试剂",
+            "工作组 / 仪器",
+            "校准来源",
+            "校准品批号",
+            "校准来源试剂",
+            "新旧批号",
+            "结果1",
+            "结果2",
+            "结果3",
+            "结果4",
+            "结果5",
+            "校准用量",
+            "操作人",
+        ]
+    )
+
+    for record in records:
+        start_row = sheet.max_row + 1
+        target = record.target_reagent
+        calibrator = record.calibrator_reagent
+        batch = record.calibrator_batch_stock
+        instrument = target.instrument if target else None
+        work_group = instrument.work_group if instrument else None
+        unit = _clean_text(record.result_unit) or "nmmol/L"
+        shared = [
+            record.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            target.name if target else "-",
+            f"{work_group.name if work_group else '-'}\n{instrument.name if instrument else '-'}",
+            _calibration_source_label(record),
+            batch.batch_no if batch else "-",
+            calibrator.name if calibrator else "-",
+        ]
+        usage_text = f"{record.usage_times}{batch.min_unit if batch and batch.min_unit else '次'}"
+        sheet.append(
+            shared
+            + [
+                f"旧批号: {record.target_old_batch_no or '-'}",
+                _format_calibration_result(record.old_result_1, unit),
+                _format_calibration_result(record.old_result_2, unit),
+                _format_calibration_result(record.old_result_3, unit),
+                _format_calibration_result(record.old_result_4, unit),
+                _format_calibration_result(record.old_result_5, unit),
+                usage_text,
+                record.operator,
+            ]
+        )
+        sheet.append(
+            shared
+            + [
+                f"新批号: {record.target_new_batch_no or '-'}",
+                _format_calibration_result(record.new_result_1, unit),
+                _format_calibration_result(record.new_result_2, unit),
+                _format_calibration_result(record.new_result_3, unit),
+                _format_calibration_result(record.new_result_4, unit),
+                _format_calibration_result(record.new_result_5, unit),
+                usage_text,
+                record.operator,
+            ]
+        )
+        for column in range(1, 7):
+            sheet.merge_cells(start_row=start_row, start_column=column, end_row=start_row + 1, end_column=column)
+        for column in range(13, 15):
+            sheet.merge_cells(start_row=start_row, start_column=column, end_row=start_row + 1, end_column=column)
+
+    _style_calibration_export_sheet(sheet)
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
 def _calibration_transaction_remark(
     *,
     target_reagent_id: int,
@@ -234,46 +500,106 @@ def _calibration_transaction_remark(
     )
 
 
+def _create_linked_outbound_transaction(
+    *,
+    source_reagent: Reagent,
+    source_batch: BatchStock,
+    operator: str,
+    raw_barcode: str | None,
+    calibration_record_id: int,
+    db: Session,
+):
+    package_to_min_qty = _safe_ratio(source_batch.package_to_min_qty)
+    available_min_quantity = _batch_total_min_units(source_batch)
+    if available_min_quantity < package_to_min_qty:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{source_reagent.name} 当前批号库存不足，不能同时出库 1{source_batch.package_unit or '盒'}",
+        )
+
+    _set_batch_total_min_units(source_batch, available_min_quantity - package_to_min_qty)
+    db.add(
+        Transaction(
+            reagent_id=source_reagent.id,
+            batch_stock_id=source_batch.id,
+            type="OUT",
+            quantity=package_to_min_qty,
+            operator=operator,
+            source="scan",
+            raw_barcode=_clean_text(raw_barcode) or f"CAL-OUT::{source_reagent.id}",
+            package_unit=source_batch.package_unit,
+            min_unit=source_batch.min_unit,
+            package_to_min_qty=package_to_min_qty,
+            remark=json.dumps(
+                {
+                    "from_calibration": True,
+                    "calibration_record_id": calibration_record_id,
+                    "outbound_unit": "package",
+                    "requested_quantity": 1,
+                    "requested_min_quantity": package_to_min_qty,
+                    "deduction_mode": "scanned_batch",
+                    "scanned_batch_no": source_batch.batch_no,
+                    "scanned_expiry_date": source_batch.expiry_date.isoformat()
+                    if source_batch.expiry_date
+                    else None,
+                    "deducted_min_quantity": package_to_min_qty,
+                },
+                ensure_ascii=False,
+            ),
+        )
+    )
+
+
 @router.post("/calibration/scan-preview", response_model=CalibrationScanPreviewResponse)
 def calibration_scan_preview(payload: dict, db: Session = Depends(get_db)):
     barcode = _clean_text(payload.get("barcode"))
     if not barcode:
-        raise HTTPException(status_code=400, detail="请先扫描校准品条码")
+        raise HTTPException(status_code=400, detail="请先扫描校准条码")
 
     parser = BarcodeParser(db)
     parsed = parser.parse(barcode)
     if not parsed.reagent_id:
-        raise HTTPException(status_code=404, detail="当前条码未匹配到校准品试剂档案")
+        raise HTTPException(status_code=404, detail="当前条码未匹配到试剂档案，不能进入校准流程")
 
-    calibrator = db.query(Reagent).filter(Reagent.id == parsed.reagent_id).first()
-    if not calibrator or calibrator.is_archived:
-        raise HTTPException(status_code=404, detail="校准品试剂不存在或已归档")
-    if not calibrator.is_calibrator:
-        raise HTTPException(status_code=400, detail="当前条码对应的不是校准品，不能进入校准流程")
+    scanned_reagent = db.query(Reagent).filter(Reagent.id == parsed.reagent_id).first()
+    if not scanned_reagent or scanned_reagent.is_archived:
+        raise HTTPException(status_code=404, detail="当前扫码试剂不存在或已归档")
 
-    calibrator_batch = _match_calibrator_batch(
+    scanned_batch = _match_calibrator_batch(
         db,
-        calibrator_id=calibrator.id,
+        calibrator_id=scanned_reagent.id,
         batch_no=parsed.extracted_batch_no,
         expiry_date=parsed.extracted_expiry_date,
     )
-    if not calibrator_batch:
-        raise HTTPException(status_code=404, detail="未找到当前扫码校准品批号对应的库存批次")
+    if not scanned_batch:
+        raise HTTPException(status_code=404, detail="未找到当前扫码批号对应的库存批次")
 
-    target_candidates = _build_target_candidates(db, calibrator)
+    if scanned_reagent.is_calibrator:
+        calibration_source = "calibrator"
+        target_candidates = _build_target_candidates(db, scanned_reagent)
+        target = target_candidates[0] if target_candidates else None
+        batch_candidates = _load_target_batch_candidates(db, target.id) if target else []
+        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
+    else:
+        calibration_source = "reagent"
+        target_candidates = [scanned_reagent]
+        target = scanned_reagent
+        batch_candidates = _load_target_batch_candidates(db, scanned_reagent.id)
+        default_old_batch_no, default_new_batch_no = _resolve_scanned_reagent_batch_values(
+            batch_candidates,
+            scanned_batch.batch_no,
+        )
     target_options = [_serialize_target_candidate(item) for item in target_candidates]
-    target = target_candidates[0] if target_candidates else None
-    batch_candidates = _load_target_batch_candidates(db, target.id) if target else []
-    default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
 
     return CalibrationScanPreviewResponse(
-        calibrator_reagent_id=calibrator.id,
-        calibrator_name=calibrator.name,
-        calibrator_batch_stock_id=calibrator_batch.id,
-        calibrator_batch_no=calibrator_batch.batch_no,
-        calibrator_expiry_date=calibrator_batch.expiry_date.isoformat() if calibrator_batch.expiry_date else None,
-        calibrator_available_min_quantity=_batch_total_min_units(calibrator_batch),
-        calibrator_min_unit=_clean_text(calibrator_batch.min_unit) or "次",
+        calibration_source=calibration_source,
+        calibrator_reagent_id=scanned_reagent.id,
+        calibrator_name=scanned_reagent.name,
+        calibrator_batch_stock_id=scanned_batch.id,
+        calibrator_batch_no=scanned_batch.batch_no,
+        calibrator_expiry_date=scanned_batch.expiry_date.isoformat() if scanned_batch.expiry_date else None,
+        calibrator_available_min_quantity=_batch_total_min_units(scanned_batch),
+        calibrator_min_unit=_clean_text(scanned_batch.min_unit) or "次",
         target_reagent_id=target.id if target else None,
         target_reagent_name=target.name if target else None,
         target_options=target_options,
@@ -282,7 +608,7 @@ def calibration_scan_preview(payload: dict, db: Session = Depends(get_db)):
         default_old_batch_no=default_old_batch_no,
         default_new_batch_no=default_new_batch_no,
         default_usage_times=1,
-        result_unit=_clean_text(target.calibration_result_unit) if target else "nmmol/L",
+        result_unit=(_clean_text(target.calibration_result_unit) or "nmmol/L") if target else "nmmol/L",
         raw_barcode=barcode,
     )
 
@@ -296,14 +622,58 @@ def calibration_target_preview(reagent_id: int = Query(..., ge=1), db: Session =
 
 
 @router.get("/calibration/records", response_model=list[CalibrationRecordItem])
-def list_calibration_records(limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)):
+def list_calibration_records(
+    work_group_ids: Optional[str] = Query(None),
+    instrument_ids: Optional[str] = Query(None),
+    keyword: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
     records = (
-        db.query(CalibrationRecord)
+        _build_calibration_record_query(
+            db,
+            work_group_ids=work_group_ids,
+            instrument_ids=instrument_ids,
+            keyword=keyword,
+            source=source,
+            start_date=start_date,
+            end_date=end_date,
+        )
         .order_by(CalibrationRecord.created_at.desc(), CalibrationRecord.id.desc())
         .limit(limit)
         .all()
     )
     return [_serialize_record(record, db) for record in records]
+
+
+@router.get("/calibration/records/export")
+def export_calibration_records(
+    work_group_ids: Optional[str] = Query(None),
+    instrument_ids: Optional[str] = Query(None),
+    keyword: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+):
+    records = (
+        _build_calibration_record_query(
+            db,
+            work_group_ids=work_group_ids,
+            instrument_ids=instrument_ids,
+            keyword=keyword,
+            source=source,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        .order_by(CalibrationRecord.created_at.desc(), CalibrationRecord.id.desc())
+        .all()
+    )
+    buffer = _build_calibration_export_workbook(records, start_date, end_date)
+    return _excel_response(buffer, _calibration_filename(start_date, end_date))
 
 
 @router.get("/calibration/records/{record_id}", response_model=CalibrationRecordItem)
@@ -318,22 +688,27 @@ def get_calibration_record(record_id: int, db: Session = Depends(get_db)):
 def create_calibration_record(data: CalibrationRecordCreate, db: Session = Depends(get_db)):
     operator = _require_operator(data.operator, db)
     calibrator = db.query(Reagent).filter(Reagent.id == data.calibrator_reagent_id).first()
-    if not calibrator or calibrator.is_archived or not calibrator.is_calibrator:
-        raise HTTPException(status_code=400, detail="校准品试剂不存在或不是校准品")
+    if not calibrator or calibrator.is_archived:
+        raise HTTPException(status_code=400, detail="校准来源试剂不存在或已归档")
 
     target = db.query(Reagent).filter(Reagent.id == data.target_reagent_id).first()
     if not target or target.is_archived or target.is_calibrator:
         raise HTTPException(status_code=400, detail="被校准试剂不存在，或当前选择的是校准品")
 
+    if not calibrator.is_calibrator and calibrator.id != target.id:
+        raise HTTPException(status_code=400, detail="普通试剂扫码校准时，被校准试剂必须是当前扫码试剂")
+
     calibrator_batch = db.query(BatchStock).filter(BatchStock.id == data.calibrator_batch_stock_id).first()
     if not calibrator_batch or calibrator_batch.reagent_id != calibrator.id:
-        raise HTTPException(status_code=400, detail="校准品批号不存在或与校准品不匹配")
+        raise HTTPException(status_code=400, detail="校准来源批号不存在或与扫码试剂不匹配")
 
-    available_min_quantity = _batch_total_min_units(calibrator_batch)
-    if available_min_quantity < data.usage_times:
-        raise HTTPException(status_code=400, detail="校准品库存不足，不能完成本次校准")
+    should_deduct_calibration_source = calibrator.is_calibrator
+    if should_deduct_calibration_source:
+        available_min_quantity = _batch_total_min_units(calibrator_batch)
+        if available_min_quantity < data.usage_times:
+            raise HTTPException(status_code=400, detail="校准品库存不足，不能完成本次校准")
 
-    _set_batch_total_min_units(calibrator_batch, available_min_quantity - data.usage_times)
+        _set_batch_total_min_units(calibrator_batch, available_min_quantity - data.usage_times)
 
     transaction = Transaction(
         reagent_id=calibrator.id,
@@ -381,6 +756,18 @@ def create_calibration_record(data: CalibrationRecordCreate, db: Session = Depen
         new_result_5=_clean_text(data.new_result_5) or None,
     )
     db.add(record)
+    db.flush()
+
+    if (not calibrator.is_calibrator) and data.auto_outbound_package:
+        _create_linked_outbound_transaction(
+            source_reagent=calibrator,
+            source_batch=calibrator_batch,
+            operator=operator,
+            raw_barcode=data.raw_barcode,
+            calibration_record_id=record.id,
+            db=db,
+        )
+
     db.commit()
     db.refresh(record)
     return _serialize_record(record, db)
@@ -393,22 +780,26 @@ def update_calibration_record(record_id: int, data: CalibrationRecordUpdate, db:
         raise HTTPException(status_code=404, detail="校准记录不存在")
 
     operator = _require_operator(data.operator, db)
+    calibrator = record.calibrator_reagent
     target = db.query(Reagent).filter(Reagent.id == data.target_reagent_id).first()
     if not target or target.is_archived or target.is_calibrator:
         raise HTTPException(status_code=400, detail="被校准试剂不存在，或当前选择的是校准品")
+    if calibrator and not calibrator.is_calibrator and calibrator.id != target.id:
+        raise HTTPException(status_code=400, detail="普通试剂扫码校准时，被校准试剂必须是当前扫码试剂")
 
     calibrator_batch = db.query(BatchStock).filter(BatchStock.id == record.calibrator_batch_stock_id).first()
     if not calibrator_batch:
         raise HTTPException(status_code=400, detail="校准品批次不存在，无法编辑本次校准")
 
     delta_usage = data.usage_times - record.usage_times
-    if delta_usage > 0:
-        available_min_quantity = _batch_total_min_units(calibrator_batch)
-        if available_min_quantity < delta_usage:
-            raise HTTPException(status_code=400, detail="校准品库存不足，不能增加本次校准用量")
-        _set_batch_total_min_units(calibrator_batch, available_min_quantity - delta_usage)
-    elif delta_usage < 0:
-        _set_batch_total_min_units(calibrator_batch, _batch_total_min_units(calibrator_batch) + abs(delta_usage))
+    if calibrator and calibrator.is_calibrator:
+        if delta_usage > 0:
+            available_min_quantity = _batch_total_min_units(calibrator_batch)
+            if available_min_quantity < delta_usage:
+                raise HTTPException(status_code=400, detail="校准品库存不足，不能增加本次校准用量")
+            _set_batch_total_min_units(calibrator_batch, available_min_quantity - delta_usage)
+        elif delta_usage < 0:
+            _set_batch_total_min_units(calibrator_batch, _batch_total_min_units(calibrator_batch) + abs(delta_usage))
 
     record.target_reagent_id = target.id
     record.target_old_batch_no = _clean_text(data.target_old_batch_no) or None

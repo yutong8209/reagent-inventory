@@ -178,6 +178,72 @@ def test_existing_reagent_inbound_reuses_archive_package_info(tmp_path):
     assert item["package_to_min_qty"] == 8
 
 
+def test_unknown_barcode_infers_instrument_from_product_family(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+
+    with SessionLocal() as db:
+        work_group = WorkGroup(name="条码推断组")
+        dxi = Instrument(name="DXI800化学发光仪", model="DXI800", work_group=work_group)
+        maglumi = Instrument(name="MAGLUMI X8", model="X8", work_group=work_group)
+        db.add_all([work_group, dxi, maglumi])
+        db.flush()
+
+        db.add_all([
+            Reagent(
+                instrument_id=dxi.id,
+                name="TT4",
+                match_mode="prefix",
+                match_pattern="0115099590225742",
+                raw_barcode_sample="0115099590225742112507311726073110538759",
+                unit="瓶",
+                package_unit="盒",
+                package_to_min_qty=1,
+                warning_days=30,
+                warning_stock=5,
+            ),
+            Reagent(
+                instrument_id=dxi.id,
+                name="FER",
+                match_mode="prefix",
+                match_pattern="0115099590575052",
+                raw_barcode_sample="0115099590575052112506301726063010538639",
+                unit="瓶",
+                package_unit="盒",
+                package_to_min_qty=1,
+                warning_days=30,
+                warning_stock=5,
+            ),
+            Reagent(
+                instrument_id=maglumi.id,
+                name="HbsAg",
+                match_mode="prefix",
+                match_pattern="0106947145508814",
+                raw_barcode_sample="0106947145508814112511201727052010123250711240130210009M",
+                unit="瓶",
+                package_unit="盒",
+                package_to_min_qty=1,
+                warning_days=30,
+                warning_stock=5,
+            ),
+        ])
+        db.commit()
+        dxi_id = dxi.id
+        work_group_id = work_group.id
+
+    response = client.post(
+        "/api/barcode/parse",
+        json={"barcode": "0115099590227210112509301726093010538990"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["match_type"] == "none"
+    assert payload["reagent_id"] is None
+    assert payload["work_group_id"] == work_group_id
+    assert payload["instrument_id"] == dxi_id
+    assert payload["extracted_batch_no"] == "538990"
+    assert payload["extracted_expiry_date"] == "2026-09-30"
+
+
 def test_reset_reagent_data_keeps_catalog_and_operators(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     work_group_id, instrument_id = get_first_catalog_session(SessionLocal)

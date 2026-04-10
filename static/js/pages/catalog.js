@@ -260,6 +260,23 @@ const catalogPage = {
             });
     },
 
+    getUnitSelectOptions(scope, selectedValue = '') {
+        const normalizedSelected = this.normalizeText(selectedValue);
+        const options = Utils.getUnitOptions(scope);
+        const optionNames = new Set(options.map((item) => item.name));
+        const values = [];
+        if (normalizedSelected && !optionNames.has(normalizedSelected)) {
+            values.push({ name: normalizedSelected, suffix: '当前值' });
+        }
+        options.forEach((item) => values.push({ name: item.name, suffix: '' }));
+
+        return values.map((item) => `
+            <option value="${this.escapeHtml(item.name)}" ${item.name === normalizedSelected ? 'selected' : ''}>
+                ${this.escapeHtml(item.name)}${item.suffix ? `（${item.suffix}）` : ''}
+            </option>
+        `).join('');
+    },
+
     getWorkGroupOptions(selectedValue = '') {
         return ['<option value="">请选择工作组</option>'].concat(
             this.catalog.map((group) => (
@@ -519,11 +536,15 @@ const catalogPage = {
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="catalog-reagent-package-unit">包装单位</label>
-                                <input type="text" id="catalog-reagent-package-unit" class="form-input" list="package-unit-options" value="${this.escapeHtml(packageValue)}" oninput="catalogPage.refreshReagentRelationPreview()">
+                                <select id="catalog-reagent-package-unit" class="form-select" onchange="catalogPage.refreshReagentRelationPreview()">
+                                    ${this.getUnitSelectOptions('package', packageValue)}
+                                </select>
                             </div>
                             <div class="form-group">
                                 <label for="catalog-reagent-min-unit">最小单位</label>
-                                <input type="text" id="catalog-reagent-min-unit" class="form-input" list="min-unit-options" value="${this.escapeHtml(minValue)}" oninput="catalogPage.refreshReagentRelationPreview()">
+                                <select id="catalog-reagent-min-unit" class="form-select" onchange="catalogPage.refreshReagentRelationPreview()">
+                                    ${this.getUnitSelectOptions('min', minValue)}
+                                </select>
                             </div>
                             <div class="form-group">
                                 <label for="catalog-reagent-package-to-min-qty">包装关系</label>
@@ -928,10 +949,13 @@ const catalogPage = {
         }
 
         await API.reagents.update(selected.id, payload);
-        Utils.showToast('试剂档案已更新', 'success');
+        Utils.showToast('试剂档案已更新，库存批次单位已同步', 'success');
         await Promise.all([this.loadCatalog(), this.loadReagents()]);
         this.ensureSelections();
         this.render();
+        if (typeof inventoryPage !== 'undefined' && inventoryPage.initialized) {
+            inventoryPage.loadInventory();
+        }
     },
 
     async restoreSelectedReagent() {

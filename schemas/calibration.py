@@ -35,6 +35,7 @@ class CalibrationTargetPreviewResponse(BaseModel):
 
 
 class CalibrationScanPreviewResponse(BaseModel):
+    calibration_source: str = "calibrator"
     calibrator_reagent_id: int
     calibrator_name: str
     calibrator_batch_stock_id: int
@@ -64,6 +65,7 @@ class CalibrationRecordCreate(BaseModel):
     result_unit: str = "nmmol/L"
     operator: str
     raw_barcode: Optional[str] = None
+    auto_outbound_package: bool = False
     old_result_1: Optional[str] = None
     old_result_2: Optional[str] = None
     old_result_3: Optional[str] = None
@@ -97,6 +99,7 @@ class CalibrationRecordUpdate(BaseModel):
 
 class CalibrationRecordItem(BaseModel):
     id: int
+    calibration_source: str = "calibrator"
     calibrator_reagent_id: int
     calibrator_name: str
     calibrator_batch_stock_id: int

@@ -82,7 +82,7 @@ def seed_tt4_calibration_case(SessionLocal):
             raw_barcode_sample="CAL-TT4-001",
             manufacturer="Maker Cal",
             unit="次",
-            package_unit="次",
+            package_unit="盒",
             package_to_min_qty=1,
             warning_days=30,
             warning_stock=5,
@@ -121,7 +121,7 @@ def seed_tt4_calibration_case(SessionLocal):
             expiry_date=date(2026, 12, 31),
             quantity=5,
             loose_min_quantity=0,
-            package_unit="次",
+            package_unit="盒",
             min_unit="次",
             package_to_min_qty=1,
         )
@@ -153,7 +153,7 @@ def test_create_reagent_name_with_calibrator_suffix_defaults_to_calibrator(tmp_p
     assert response.status_code == 201
     payload = response.json()
     assert payload["is_calibrator"] is True
-    assert payload["package_unit"] == "次"
+    assert payload["package_unit"] == "盒"
     assert payload["unit"] == "次"
     assert payload["package_to_min_qty"] == 1
     assert payload["calibration_result_unit"] == "nmmol/L"
@@ -174,7 +174,7 @@ def test_calibration_scan_preview_matches_target_and_history_batches(tmp_path):
     assert [item["batch_no"] for item in payload["new_batch_candidates"]] == ["TT4-NEW", "TT4-OLD"]
 
 
-def test_calibration_scan_preview_rejects_non_calibrator(tmp_path):
+def test_calibration_scan_preview_requires_scanned_reagent_batch(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     _, instrument_id = first_catalog_ids(SessionLocal)
 
@@ -197,8 +197,124 @@ def test_calibration_scan_preview_rejects_non_calibrator(tmp_path):
         db.commit()
 
     response = client.post("/api/calibration/scan-preview", json={"barcode": "TT4-ONLY"})
-    assert response.status_code == 400
-    assert "不是校准品" in response.json()["detail"]
+    assert response.status_code == 404
+    assert "库存批次" in response.json()["detail"]
+
+
+def test_regular_reagent_scan_preview_uses_current_batch_and_previous_batch(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = first_catalog_ids(SessionLocal)
+    barcode = "0101234567890123112501011726033110X8NEW"
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="X8-TSH",
+            match_mode="exact",
+            match_pattern=barcode,
+            raw_barcode_sample=barcode,
+            manufacturer="Maker X8",
+            unit="盒",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+            calibration_result_unit="nmmol/L",
+        )
+        db.add(reagent)
+        db.flush()
+        old_batch = BatchStock(
+            reagent_id=reagent.id,
+            batch_no="X8OLD",
+            expiry_date=date(2026, 1, 31),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="盒",
+            package_to_min_qty=1,
+            created_at=datetime(2026, 1, 1, 8, 0, 0),
+        )
+        new_batch = BatchStock(
+            reagent_id=reagent.id,
+            batch_no="X8NEW",
+            expiry_date=date(2026, 3, 31),
+            quantity=3,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="盒",
+            package_to_min_qty=1,
+            created_at=datetime(2026, 2, 1, 8, 0, 0),
+        )
+        db.add_all([old_batch, new_batch])
+        db.commit()
+        reagent_id = reagent.id
+        new_batch_id = new_batch.id
+
+    response = client.post("/api/calibration/scan-preview", json={"barcode": barcode})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["calibration_source"] == "reagent"
+    assert payload["calibrator_reagent_id"] == reagent_id
+    assert payload["target_reagent_id"] == reagent_id
+    assert payload["calibrator_batch_stock_id"] == new_batch_id
+    assert payload["calibrator_batch_no"] == "X8NEW"
+    assert payload["default_new_batch_no"] == "X8NEW"
+    assert payload["default_old_batch_no"] == "X8OLD"
+    assert [item["batch_no"] for item in payload["new_batch_candidates"]] == ["X8NEW", "X8OLD"]
+
+    create_response = client.post(
+        "/api/calibration/records",
+        json={
+            "calibrator_reagent_id": reagent_id,
+            "calibrator_batch_stock_id": new_batch_id,
+            "target_reagent_id": reagent_id,
+            "target_old_batch_no": "X8OLD",
+            "target_new_batch_no": "X8NEW",
+            "usage_times": 1,
+            "result_unit": "nmmol/L",
+            "operator": "陈茹",
+            "raw_barcode": barcode,
+        },
+    )
+    assert create_response.status_code == 201
+    record_payload = create_response.json()
+    assert record_payload["calibration_source"] == "reagent"
+    assert record_payload["target_reagent_name"] == "X8-TSH"
+
+    with SessionLocal() as db:
+        new_batch = db.query(BatchStock).filter(BatchStock.id == new_batch_id).first()
+        assert new_batch.quantity == 3
+        transaction = db.query(Transaction).filter(Transaction.type == "CALIBRATION").first()
+        assert transaction is not None
+        assert transaction.reagent_id == reagent_id
+        assert transaction.batch_stock_id == new_batch_id
+
+    outbound_response = client.post(
+        "/api/calibration/records",
+        json={
+            "calibrator_reagent_id": reagent_id,
+            "calibrator_batch_stock_id": new_batch_id,
+            "target_reagent_id": reagent_id,
+            "target_old_batch_no": "X8OLD",
+            "target_new_batch_no": "X8NEW",
+            "usage_times": 1,
+            "result_unit": "nmmol/L",
+            "operator": "陈茹",
+            "raw_barcode": barcode,
+            "auto_outbound_package": True,
+        },
+    )
+    assert outbound_response.status_code == 201
+
+    with SessionLocal() as db:
+        new_batch = db.query(BatchStock).filter(BatchStock.id == new_batch_id).first()
+        assert new_batch.quantity == 2
+        out_transaction = db.query(Transaction).filter(Transaction.type == "OUT").first()
+        assert out_transaction is not None
+        assert out_transaction.reagent_id == reagent_id
+        assert out_transaction.batch_stock_id == new_batch_id
+        assert out_transaction.quantity == 1
 
 
 def test_create_calibration_record_deducts_stock_and_generates_transaction(tmp_path):
@@ -281,3 +397,74 @@ def test_update_calibration_record_can_adjust_usage_and_results(tmp_path):
         assert calibrator_batch.quantity == 3
         transaction = db.query(Transaction).filter(Transaction.type == "CALIBRATION").first()
         assert transaction.quantity == 2
+
+
+def test_update_reagent_units_syncs_existing_batches(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    ids = seed_tt4_calibration_case(SessionLocal)
+
+    response = client.put(
+        f"/api/reagents/{ids['target_id']}",
+        json={
+            "instrument_id": ids["instrument_id"],
+            "name": "TT4",
+            "manufacturer": "Maker TT4",
+            "package_unit": "pack",
+            "unit": "test",
+            "package_to_min_qty": 10,
+            "warning_days": 30,
+            "warning_stock": 5,
+            "follow_instrument": False,
+            "is_calibrator": False,
+            "calibration_result_unit": "nmmol/L",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["package_unit"] == "pack"
+    assert payload["unit"] == "test"
+    assert payload["package_to_min_qty"] == 10
+
+    with SessionLocal() as db:
+        batches = db.query(BatchStock).filter(BatchStock.reagent_id == ids["target_id"]).all()
+        assert batches
+        assert {batch.package_unit for batch in batches} == {"pack"}
+        assert {batch.min_unit for batch in batches} == {"test"}
+        assert {batch.package_to_min_qty for batch in batches} == {10}
+
+
+def test_update_calibrator_units_keeps_manual_package_unit(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    ids = seed_tt4_calibration_case(SessionLocal)
+
+    response = client.put(
+        f"/api/reagents/{ids['calibrator_id']}",
+        json={
+            "instrument_id": ids["instrument_id"],
+            "name": "TT4校准品",
+            "manufacturer": "Maker Cal",
+            "package_unit": "盒",
+            "unit": "次",
+            "package_to_min_qty": 1,
+            "warning_days": 30,
+            "warning_stock": 5,
+            "follow_instrument": False,
+            "is_calibrator": True,
+            "calibration_result_unit": "nmmol/L",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["is_calibrator"] is True
+    assert payload["package_unit"] == "盒"
+    assert payload["unit"] == "次"
+    assert payload["package_to_min_qty"] == 1
+
+    with SessionLocal() as db:
+        batches = db.query(BatchStock).filter(BatchStock.reagent_id == ids["calibrator_id"]).all()
+        assert batches
+        assert {batch.package_unit for batch in batches} == {"盒"}
+        assert {batch.min_unit for batch in batches} == {"次"}
+        assert {batch.package_to_min_qty for batch in batches} == {1}

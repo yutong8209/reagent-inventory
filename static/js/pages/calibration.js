@@ -1,6 +1,8 @@
 const calibrationPage = {
     initialized: false,
     operators: [],
+    workGroups: [],
+    instruments: [],
     preview: null,
     recentRecords: [],
     editRecordId: null,
@@ -11,7 +13,11 @@ const calibrationPage = {
             this.initialized = true;
         }
         await this.loadOperators();
+        await this.loadFilterSelectors();
         await this.loadRecentRecords();
+        window.setTimeout(() => {
+            document.getElementById('calibration-barcode')?.focus();
+        }, 0);
     },
 
     bindEvents() {
@@ -33,6 +39,11 @@ const calibrationPage = {
         document.getElementById('calibration-edit-target-reagent')?.addEventListener('change', (event) => {
             this.loadEditTargetPreview(event.target.value);
         });
+        document.getElementById('calibration-filter-work-group')?.addEventListener('change', async () => {
+            await this.loadFilterInstruments();
+        });
+        document.getElementById('calibration-record-search-btn')?.addEventListener('click', () => this.loadRecentRecords());
+        document.getElementById('calibration-record-export-btn')?.addEventListener('click', () => this.exportRecords());
 
         const modal = document.getElementById('calibration-record-modal');
         modal?.addEventListener('click', (event) => {
@@ -61,9 +72,103 @@ const calibrationPage = {
         document.getElementById('calibration-edit-operator').innerHTML = options;
     },
 
+    getSelectedValues(selectId) {
+        const select = document.getElementById(selectId);
+        if (!select) {
+            return [];
+        }
+        return [...select.selectedOptions].map((option) => option.value).filter(Boolean);
+    },
+
+    selectValues(selectId, values) {
+        const select = document.getElementById(selectId);
+        if (!select) {
+            return;
+        }
+        const valueSet = new Set((values || []).map(String));
+        [...select.options].forEach((option) => {
+            option.selected = valueSet.has(option.value);
+        });
+    },
+
+    async loadFilterSelectors() {
+        this.workGroups = await API.inventory.getWorkGroups();
+        const workGroupSelect = document.getElementById('calibration-filter-work-group');
+        if (workGroupSelect) {
+            const selected = this.getSelectedValues('calibration-filter-work-group');
+            workGroupSelect.innerHTML = this.workGroups
+                .map((group) => `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`)
+                .join('');
+            this.selectValues('calibration-filter-work-group', selected);
+            Utils.syncCheckboxSelect('calibration-filter-work-group', '全部工作组');
+        }
+        await this.loadFilterInstruments();
+    },
+
+    async loadFilterInstruments() {
+        const selectedGroups = this.getSelectedValues('calibration-filter-work-group');
+        const selectedInstruments = this.getSelectedValues('calibration-filter-instrument');
+        let instruments = await API.inventory.getInstruments(null);
+        if (selectedGroups.length) {
+            const selectedGroupSet = new Set(selectedGroups.map(String));
+            instruments = instruments.filter((instrument) => selectedGroupSet.has(String(instrument.work_group_id)));
+        }
+        this.instruments = instruments;
+
+        const instrumentSelect = document.getElementById('calibration-filter-instrument');
+        if (!instrumentSelect) {
+            return;
+        }
+        instrumentSelect.innerHTML = instruments
+            .map((instrument) => `<option value="${instrument.id}">${this.escapeHtml(instrument.name)}</option>`)
+            .join('');
+        this.selectValues('calibration-filter-instrument', selectedInstruments);
+        Utils.syncCheckboxSelect('calibration-filter-instrument', '全部仪器');
+    },
+
+    getRecordFilterParams(includeLimit = true) {
+        const params = {
+            work_group_ids: this.getSelectedValues('calibration-filter-work-group').join(','),
+            instrument_ids: this.getSelectedValues('calibration-filter-instrument').join(','),
+            keyword: document.getElementById('calibration-filter-keyword')?.value.trim() || '',
+            source: document.getElementById('calibration-filter-source')?.value || '',
+            start_date: document.getElementById('calibration-filter-start-date')?.value || '',
+            end_date: document.getElementById('calibration-filter-end-date')?.value || '',
+        };
+        if (includeLimit) {
+            params.limit = 50;
+        }
+        return params;
+    },
+
+    validateRecordFilterDates() {
+        const startDate = document.getElementById('calibration-filter-start-date')?.value || '';
+        const endDate = document.getElementById('calibration-filter-end-date')?.value || '';
+        if (startDate && endDate && startDate > endDate) {
+            Utils.showToast('开始日期不能晚于结束日期', 'warning');
+            return false;
+        }
+        return true;
+    },
+
     async loadRecentRecords() {
-        this.recentRecords = await API.calibration.listRecords(20);
+        if (!this.validateRecordFilterDates()) {
+            return;
+        }
+        this.recentRecords = await API.calibration.listRecords(this.getRecordFilterParams(true));
         this.renderRecentRecords();
+    },
+
+    async exportRecords() {
+        if (!this.validateRecordFilterDates()) {
+            return;
+        }
+        try {
+            await API.calibration.exportRecords(this.getRecordFilterParams(false));
+            Utils.showToast('校准记录 Excel 已开始下载', 'success');
+        } catch (error) {
+            Utils.showToast(error.message || '导出校准记录失败', 'error');
+        }
     },
 
     renderRecentRecords() {
@@ -86,7 +191,7 @@ const calibrationPage = {
                             <span class="inventory-inline-meta">被校准 ${this.escapeHtml(record.target_reagent_name)}</span>
                         </div>
                         <div class="inventory-key-metrics compact">
-                            <div class="inventory-key-metric compact"><span>校准品批号</span><strong>${this.escapeHtml(record.calibrator_batch_no)}</strong></div>
+                            <div class="inventory-key-metric compact"><span>来源批号</span><strong>${this.escapeHtml(record.calibrator_batch_no)}</strong></div>
                             <div class="inventory-key-metric compact"><span>旧批号</span><strong>${this.escapeHtml(record.target_old_batch_no || '未填')}</strong></div>
                             <div class="inventory-key-metric compact"><span>新批号</span><strong>${this.escapeHtml(record.target_new_batch_no || '未填')}</strong></div>
                             <div class="inventory-key-metric compact"><span>校准用量</span><strong>${record.usage_times}</strong></div>
@@ -104,16 +209,16 @@ const calibrationPage = {
     async scanPreview() {
         const barcode = document.getElementById('calibration-barcode').value.trim();
         if (!barcode) {
-            return Utils.showToast('请先扫描校准品条码', 'warning');
+            return Utils.showToast('请先扫描校准条码', 'warning');
         }
 
         try {
             const preview = await API.calibration.scanPreview(barcode);
             this.preview = preview;
             this.applyPreview(preview);
-            Utils.showToast('已识别校准品，可继续填写本次校准信息', 'success');
+            Utils.showToast('已识别校准来源，可继续填写本次校准信息', 'success');
         } catch (error) {
-            Utils.showToast(error.message || '校准品识别失败', 'error');
+            Utils.showToast(error.message || '校准条码识别失败', 'error');
         }
     },
 
@@ -121,7 +226,8 @@ const calibrationPage = {
         document.getElementById('calibration-form-panel').classList.remove('hidden');
         document.getElementById('calibration-calibrator-name').value = preview.calibrator_name || '';
         document.getElementById('calibration-calibrator-batch').value = preview.calibrator_batch_no || '';
-        document.getElementById('calibration-preview-meta').textContent = `当前校准品可用库存 ${preview.calibrator_available_min_quantity} ${preview.calibrator_min_unit || '次'}`;
+        const sourceLabel = preview.calibration_source === 'reagent' ? '当前扫码试剂' : '当前校准品';
+        document.getElementById('calibration-preview-meta').textContent = `${sourceLabel}可用库存 ${preview.calibrator_available_min_quantity} ${preview.calibrator_min_unit || '次'}`;
         document.getElementById('calibration-usage-times').value = String(preview.default_usage_times || 1);
 
         const targetSelect = document.getElementById('calibration-target-reagent');
@@ -172,7 +278,7 @@ const calibrationPage = {
 
     async saveCalibration() {
         if (!this.preview) {
-            return Utils.showToast('请先扫描校准品', 'warning');
+            return Utils.showToast('请先扫描校准条码', 'warning');
         }
 
         const payload = {
@@ -185,15 +291,27 @@ const calibrationPage = {
             result_unit: document.getElementById('calibration-result-unit').value || 'nmmol/L',
             operator: document.getElementById('calibration-operator').value || '',
             raw_barcode: this.preview.raw_barcode,
+            auto_outbound_package: false,
         };
 
         if (!payload.target_reagent_id || !payload.operator) {
             return Utils.showToast('请先确认被校准试剂和操作人', 'warning');
         }
 
+        if (this.preview.calibration_source === 'reagent') {
+            const packageUnit = '盒';
+            payload.auto_outbound_package = window.confirm(
+                `是否同时出库 1${packageUnit}该试剂？\n\n` +
+                `试剂：${this.preview.calibrator_name || ''}\n` +
+                `批号：${this.preview.calibrator_batch_no || ''}\n` +
+                `操作人：${payload.operator}\n\n` +
+                '确认后会保存本次校准记录，并同步生成一条出库流水。'
+            );
+        }
+
         try {
             await API.calibration.createRecord(payload);
-            Utils.showToast('校准记录已保存', 'success');
+            Utils.showToast(payload.auto_outbound_package ? '校准记录已保存，并已同步出库 1 盒' : '校准记录已保存', 'success');
             document.getElementById('calibration-barcode').value = '';
             document.getElementById('calibration-form-panel').classList.add('hidden');
             this.preview = null;
