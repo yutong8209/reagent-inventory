@@ -134,6 +134,7 @@ def seed_tt4_calibration_case(SessionLocal):
             "target_id": target.id,
             "calibrator_id": calibrator.id,
             "calibrator_batch_id": calibrator_batch.id,
+            "target_new_batch_id": new_batch.id,
         }
 
 
@@ -172,6 +173,73 @@ def test_calibration_scan_preview_matches_target_and_history_batches(tmp_path):
     assert payload["default_new_batch_no"] == "TT4-NEW"
     assert payload["default_old_batch_no"] == "TT4-OLD"
     assert [item["batch_no"] for item in payload["new_batch_candidates"]] == ["TT4-NEW", "TT4-OLD"]
+
+
+def test_mobile_calibration_preview_prefers_matching_calibrator_stock(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    ids = seed_tt4_calibration_case(SessionLocal)
+
+    response = client.get(
+        "/api/calibration/mobile/preview",
+        params={"target_reagent_id": ids["target_id"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["calibration_source"] == "calibrator"
+    assert payload["calibrator_reagent_id"] == ids["calibrator_id"]
+    assert payload["calibrator_batch_stock_id"] == ids["calibrator_batch_id"]
+    assert payload["target_reagent_id"] == ids["target_id"]
+    assert payload["default_new_batch_no"] == "TT4-NEW"
+    assert payload["default_old_batch_no"] == "TT4-OLD"
+    assert payload["raw_barcode"] == f"MOBILE::CALIBRATION::{ids['target_id']}"
+
+
+def test_mobile_calibration_preview_falls_back_to_target_reagent_stock(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    ids = seed_tt4_calibration_case(SessionLocal)
+    with SessionLocal() as db:
+        batch = db.query(BatchStock).filter(BatchStock.id == ids["calibrator_batch_id"]).first()
+        batch.quantity = 0
+        batch.loose_min_quantity = 0
+        db.commit()
+
+    response = client.get(
+        "/api/calibration/mobile/preview",
+        params={"target_reagent_id": ids["target_id"]},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["calibration_source"] == "reagent"
+    assert payload["calibrator_reagent_id"] == ids["target_id"]
+    assert payload["calibrator_batch_stock_id"] == ids["target_new_batch_id"]
+    assert payload["calibrator_batch_no"] == "TT4-NEW"
+    assert payload["default_new_batch_no"] == "TT4-NEW"
+    assert payload["default_old_batch_no"] == "TT4-OLD"
+
+
+def test_mobile_calibration_preview_requires_available_target_stock_for_fallback(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    ids = seed_tt4_calibration_case(SessionLocal)
+    with SessionLocal() as db:
+        batches = (
+            db.query(BatchStock)
+            .filter(BatchStock.reagent_id.in_([ids["target_id"], ids["calibrator_id"]]))
+            .all()
+        )
+        for batch in batches:
+            batch.quantity = 0
+            batch.loose_min_quantity = 0
+        db.commit()
+
+    response = client.get(
+        "/api/calibration/mobile/preview",
+        params={"target_reagent_id": ids["target_id"]},
+    )
+
+    assert response.status_code == 404
+    assert "可用库存批号" in response.json()["detail"]
 
 
 def test_calibration_scan_preview_requires_scanned_reagent_batch(tmp_path):

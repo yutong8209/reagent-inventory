@@ -39,6 +39,9 @@ const calibrationPage = {
         document.getElementById('calibration-edit-target-reagent')?.addEventListener('change', (event) => {
             this.loadEditTargetPreview(event.target.value);
         });
+        document.getElementById('calibration-edit-result-unit')?.addEventListener('input', (event) => {
+            this.syncEditResultUnitNotes(event.target.value);
+        });
         document.getElementById('calibration-filter-work-group')?.addEventListener('change', async () => {
             await this.loadFilterInstruments();
         });
@@ -343,6 +346,7 @@ const calibrationPage = {
             </option>
         `).join('');
         document.getElementById('calibration-edit-result-unit').value = record.result_unit || 'nmmol/L';
+        this.syncEditResultUnitNotes(record.result_unit || 'nmmol/L');
         document.getElementById('calibration-edit-usage-times').value = String(record.usage_times || 1);
         document.getElementById('calibration-edit-operator').value = record.operator || '';
         this.populateBatchSelect('calibration-edit-old-batch', record.old_batch_candidates || [], record.target_old_batch_no);
@@ -359,8 +363,18 @@ const calibrationPage = {
         }
         const payload = await API.calibration.targetPreview(targetReagentId);
         document.getElementById('calibration-edit-result-unit').value = payload.result_unit || 'nmmol/L';
+        this.syncEditResultUnitNotes(payload.result_unit || 'nmmol/L');
         this.populateBatchSelect('calibration-edit-old-batch', payload.old_batch_candidates || [], payload.default_old_batch_no);
         this.populateBatchSelect('calibration-edit-new-batch', payload.new_batch_candidates || [], payload.default_new_batch_no);
+    },
+
+    syncEditResultUnitNotes(unitValue) {
+        const unit = String(unitValue ?? '').trim() || '-';
+        const text = `录入单位：${unit}`;
+        const oldNote = document.getElementById('calibration-edit-old-result-unit-note');
+        const newNote = document.getElementById('calibration-edit-new-result-unit-note');
+        if (oldNote) oldNote.textContent = text;
+        if (newNote) newNote.textContent = text;
     },
 
     closeRecordModal() {

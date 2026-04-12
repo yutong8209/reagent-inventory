@@ -2238,11 +2238,33 @@ font-weight:800;
 color:#17304f;
 }
 
+.calibration-result-head-main{
+display:flex;
+align-items:center;
+justify-content:space-between;
+gap:12px;
+}
+
 .calibration-result-group-head p{
 margin:0;
 font-size:12px;
 color:#6b7f95;
 line-height:1.5;
+}
+
+.calibration-result-unit-note{
+display:inline-flex;
+align-items:center;
+justify-content:center;
+min-height:28px;
+padding:0 10px;
+border-radius:999px;
+background:rgba(239,245,252,.92);
+font-size:12px;
+font-weight:700;
+color:#4d6783;
+box-shadow:inset 0 1px 0 rgba(255,255,255,.72);
+white-space:nowrap;
 }
 
 .calibration-result-grid{
@@ -2289,6 +2311,12 @@ padding-bottom:18px;
   }
 
   .calibration-result-group-head{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .calibration-result-head-main{
+    width:100%;
     flex-direction:column;
     align-items:flex-start;
   }

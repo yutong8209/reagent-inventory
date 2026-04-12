@@ -27,7 +27,18 @@ function uniqueValue(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
-async function createExactReagent(request, { instrumentId, name, barcode, packageToMinQty = 1, warningDays = 30, warningStock = 5 }) {
+async function createExactReagent(request, {
+  instrumentId,
+  name,
+  barcode,
+  packageToMinQty = 1,
+  warningDays = 30,
+  warningStock = 5,
+  unit = '瓶',
+  packageUnit = '盒',
+  isCalibrator = false,
+  calibrationResultUnit = 'nmmol/L'
+}) {
   const response = await request.post('/api/reagents', {
     data: {
       instrument_id: Number(instrumentId),
@@ -35,18 +46,31 @@ async function createExactReagent(request, { instrumentId, name, barcode, packag
       match_mode: 'exact',
       match_pattern: barcode,
       manufacturer: 'Playwright',
-      unit: '瓶',
-      package_unit: '盒',
+      unit,
+      package_unit: packageUnit,
       package_to_min_qty: packageToMinQty,
       warning_days: warningDays,
-      warning_stock: warningStock
+      warning_stock: warningStock,
+      is_calibrator: isCalibrator,
+      calibration_result_unit: calibrationResultUnit
     }
   });
   expect(response.ok()).toBeTruthy();
   return response.json();
 }
 
-async function stockInReagent(request, { operatorName, reagentId, reagentName, batchNo, quantity, expiryDate, rawBarcode, packageToMinQty = 1 }) {
+async function stockInReagent(request, {
+  operatorName,
+  reagentId,
+  reagentName,
+  batchNo,
+  quantity,
+  expiryDate,
+  rawBarcode,
+  packageToMinQty = 1,
+  unit = '瓶',
+  packageUnit = '盒'
+}) {
   const response = await request.post('/api/inbound/batch', {
     data: {
       operator: operatorName,
@@ -57,8 +81,8 @@ async function stockInReagent(request, { operatorName, reagentId, reagentName, b
         batch_no: batchNo,
         expiry_date: expiryDate,
         quantity,
-        package_unit: '盒',
-        min_unit: '瓶',
+        package_unit: packageUnit,
+        min_unit: unit,
         package_to_min_qty: packageToMinQty,
         raw_barcode: rawBarcode
       }]
@@ -417,9 +441,11 @@ test.describe('Reagent inventory smoke flows', () => {
     await page.goto('/m');
 
     await expect(page.locator('.mobile-header h1')).toHaveText('试剂出入库');
-    await expect(page.locator('.mobile-tab')).toHaveCount(3);
+    await expect(page.locator('.mobile-tab')).toHaveCount(4);
     await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
     await expect(page.locator('#mobile-page-outbound')).toHaveClass(/active/);
+    await page.locator('.mobile-tab[data-page="calibration"]').click();
+    await expect(page.locator('#mobile-page-calibration')).toHaveClass(/active/);
   });
 
   test('mobile outbound and inbound quick flows work for existing reagent', async ({ page, request }) => {
@@ -472,6 +498,140 @@ test.describe('Reagent inventory smoke flows', () => {
     await page.locator('.mobile-tab[data-page="inventory"]').click();
     await page.locator('#mobile-inventory-search').fill(uniqueName);
     await expect(page.locator('#mobile-inventory-list')).toContainText(uniqueName);
+  });
+
+  test('mobile calibration can save with matching calibrator and edit recent record', async ({ page, request }) => {
+    const setup = await getSetupContext(request);
+    const uniqueName = uniqueValue('PW-Mobile-Cal');
+    const targetBarcode = uniqueValue('PW-MOBILE-CAL-TARGET');
+    const calibratorBarcode = uniqueValue('PW-MOBILE-CAL-SOURCE');
+    const target = await createExactReagent(request, {
+      instrumentId: setup.instrumentId,
+      name: uniqueName,
+      barcode: targetBarcode
+    });
+    await stockInReagent(request, {
+      operatorName: setup.operatorName,
+      reagentId: target.id,
+      reagentName: uniqueName,
+      batchNo: 'PW-MCAL-OLD',
+      quantity: 1,
+      expiryDate: '2030-01-31',
+      rawBarcode: `${targetBarcode}-OLD`
+    });
+    await stockInReagent(request, {
+      operatorName: setup.operatorName,
+      reagentId: target.id,
+      reagentName: uniqueName,
+      batchNo: 'PW-MCAL-NEW',
+      quantity: 2,
+      expiryDate: '2031-01-31',
+      rawBarcode: `${targetBarcode}-NEW`
+    });
+    const calibrator = await createExactReagent(request, {
+      instrumentId: setup.instrumentId,
+      name: `${uniqueName}校准品`,
+      barcode: calibratorBarcode,
+      unit: '次',
+      isCalibrator: true
+    });
+    await stockInReagent(request, {
+      operatorName: setup.operatorName,
+      reagentId: calibrator.id,
+      reagentName: `${uniqueName}校准品`,
+      batchNo: 'PW-MCAL-SOURCE',
+      quantity: 3,
+      expiryDate: '2032-01-31',
+      rawBarcode: calibratorBarcode,
+      unit: '次'
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/m');
+    await page.locator('.mobile-tab[data-page="calibration"]').click();
+    await expect(page.locator('#mobile-page-calibration')).toHaveClass(/active/);
+    await page.locator('#mobile-calibration-search').fill(uniqueName);
+    await expect(page.locator('#mobile-calibration-results')).toContainText(uniqueName);
+    const calibrationResult = page.locator('#mobile-page-calibration #mobile-calibration-results .mobile-result-card').filter({ hasText: uniqueName }).first();
+    await expect(calibrationResult).toBeVisible();
+    await calibrationResult.click();
+
+    await expect(page.locator('#mobile-calibration-sheet')).not.toHaveClass(/hidden/);
+    await expect(page.locator('#mobile-calibration-source-card')).toContainText('独立校准品');
+    await page.locator('#mobile-calibration-operator').selectOption({ label: setup.operatorName });
+    await page.locator('#mobile-calibration-old-result-1').fill('12.1');
+    await page.locator('#mobile-calibration-new-result-1').fill('12.8');
+    await page.locator('#mobile-calibration-submit').click();
+
+    await expect(page.locator('#mobile-calibration-sheet')).toHaveClass(/hidden/);
+    const recordCard = page.locator('#mobile-calibration-records .mobile-recent-card').filter({ hasText: uniqueName }).first();
+    await expect(recordCard).toBeVisible();
+    await recordCard.click();
+    await expect(page.locator('#mobile-calibration-sheet')).not.toHaveClass(/hidden/);
+    await page.locator('#mobile-calibration-old-result-2').fill('12.2');
+    await page.locator('#mobile-calibration-submit').click();
+    await expect(page.locator('#mobile-calibration-sheet')).toHaveClass(/hidden/);
+
+    const recordsResponse = await request.get('/api/calibration/records', { params: { keyword: uniqueName, limit: 1 } });
+    expect(recordsResponse.ok()).toBeTruthy();
+    const records = await recordsResponse.json();
+    expect(records[0].old_result_2).toBe('12.2');
+  });
+
+  test('mobile calibration fallback can save and sync outbound package', async ({ page, request }) => {
+    const setup = await getSetupContext(request);
+    const uniqueName = uniqueValue('PW-Mobile-Cal-Fallback');
+    const targetBarcode = uniqueValue('PW-MOBILE-CAL-FALLBACK');
+    const target = await createExactReagent(request, {
+      instrumentId: setup.instrumentId,
+      name: uniqueName,
+      barcode: targetBarcode,
+      packageToMinQty: 1
+    });
+    await stockInReagent(request, {
+      operatorName: setup.operatorName,
+      reagentId: target.id,
+      reagentName: uniqueName,
+      batchNo: 'PW-MCAL-FALLBACK-OLD',
+      quantity: 1,
+      expiryDate: '2030-02-28',
+      rawBarcode: `${targetBarcode}-OLD`
+    });
+    await stockInReagent(request, {
+      operatorName: setup.operatorName,
+      reagentId: target.id,
+      reagentName: uniqueName,
+      batchNo: 'PW-MCAL-FALLBACK-NEW',
+      quantity: 2,
+      expiryDate: '2031-02-28',
+      rawBarcode: `${targetBarcode}-NEW`
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/m');
+    await page.locator('.mobile-tab[data-page="calibration"]').click();
+    await expect(page.locator('#mobile-page-calibration')).toHaveClass(/active/);
+    await page.locator('#mobile-calibration-search').fill(uniqueName);
+    await expect(page.locator('#mobile-calibration-results')).toContainText(uniqueName);
+    const calibrationResult = page.locator('#mobile-page-calibration #mobile-calibration-results .mobile-result-card').filter({ hasText: uniqueName }).first();
+    await expect(calibrationResult).toBeVisible();
+    await calibrationResult.click();
+
+    await expect(page.locator('#mobile-calibration-sheet')).not.toHaveClass(/hidden/);
+    await expect(page.locator('#mobile-calibration-source-card')).toContainText('试剂自带校准');
+    await page.locator('#mobile-calibration-operator').selectOption({ label: setup.operatorName });
+    await page.locator('#mobile-calibration-new-result-1').fill('8.8');
+    await page.locator('#mobile-calibration-submit').click();
+    await expect(page.locator('#mobile-calibration-fallback-confirm')).not.toHaveClass(/hidden/);
+    await page.locator('#mobile-calibration-save-outbound').click();
+    await expect(page.locator('#mobile-calibration-sheet')).toHaveClass(/hidden/);
+    await expect(page.locator('#mobile-calibration-records')).toContainText(uniqueName);
+
+    const stockResponse = await request.get(`/api/stock/${target.id}`);
+    expect(stockResponse.ok()).toBeTruthy();
+    const stock = await stockResponse.json();
+    const newBatch = stock.find((item) => item.batch_no === 'PW-MCAL-FALLBACK-NEW');
+    expect(newBatch.available_min_quantity).toBe(1);
   });
 
   test('mobile warning fold can expand and warning card can jump to inventory', async ({ page, request }) => {

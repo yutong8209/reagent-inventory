@@ -129,6 +129,28 @@ def _load_target_batch_candidates(db: Session, reagent_id: int) -> list[Calibrat
     return [_serialize_batch_candidate(batch) for batch in batches]
 
 
+def _load_available_batches(
+    db: Session,
+    reagent_id: int,
+    *,
+    newest_first: bool = False,
+) -> list[BatchStock]:
+    order_by = (
+        (BatchStock.expiry_date.desc(), BatchStock.created_at.desc(), BatchStock.id.desc())
+        if newest_first
+        else (BatchStock.expiry_date.asc(), BatchStock.created_at.asc(), BatchStock.id.asc())
+    )
+    return (
+        db.query(BatchStock)
+        .filter(
+            BatchStock.reagent_id == reagent_id,
+            or_(BatchStock.quantity > 0, BatchStock.loose_min_quantity > 0),
+        )
+        .order_by(*order_by)
+        .all()
+    )
+
+
 def _build_target_candidates(db: Session, calibrator: Reagent) -> list[Reagent]:
     target_base_name = _normalize_name(_strip_calibrator_suffix(calibrator.name))
     query = (
@@ -610,6 +632,75 @@ def calibration_scan_preview(payload: dict, db: Session = Depends(get_db)):
         default_usage_times=1,
         result_unit=(_clean_text(target.calibration_result_unit) or "nmmol/L") if target else "nmmol/L",
         raw_barcode=barcode,
+    )
+
+
+@router.get("/calibration/mobile/preview", response_model=CalibrationScanPreviewResponse)
+def mobile_calibration_preview(target_reagent_id: int = Query(..., ge=1), db: Session = Depends(get_db)):
+    target = db.query(Reagent).filter(Reagent.id == target_reagent_id).first()
+    if not target or target.is_archived or target.is_calibrator:
+        raise HTTPException(status_code=404, detail="被校准试剂不存在")
+
+    target_name = _normalize_name(target.name)
+    calibrators = (
+        db.query(Reagent)
+        .filter(
+            Reagent.instrument_id == target.instrument_id,
+            Reagent.is_archived.is_(False),
+            Reagent.is_calibrator.is_(True),
+        )
+        .order_by(Reagent.name.asc(), Reagent.id.asc())
+        .all()
+    )
+    matched_source: Reagent | None = None
+    matched_batch: BatchStock | None = None
+    for candidate in calibrators:
+        if _normalize_name(_strip_calibrator_suffix(candidate.name)) != target_name:
+            continue
+        available_batches = _load_available_batches(db, candidate.id)
+        if not available_batches:
+            continue
+        matched_source = candidate
+        matched_batch = available_batches[0]
+        break
+
+    calibration_source = "calibrator"
+    if not matched_source or not matched_batch:
+        available_target_batches = _load_available_batches(db, target.id, newest_first=True)
+        if not available_target_batches:
+            raise HTTPException(status_code=404, detail="当前试剂没有可用库存批号，不能进入校准流程")
+        calibration_source = "reagent"
+        matched_source = target
+        matched_batch = available_target_batches[0]
+
+    batch_candidates = _load_target_batch_candidates(db, target.id)
+    if calibration_source == "reagent":
+        default_old_batch_no, default_new_batch_no = _resolve_scanned_reagent_batch_values(
+            batch_candidates,
+            matched_batch.batch_no,
+        )
+    else:
+        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
+
+    return CalibrationScanPreviewResponse(
+        calibration_source=calibration_source,
+        calibrator_reagent_id=matched_source.id,
+        calibrator_name=matched_source.name,
+        calibrator_batch_stock_id=matched_batch.id,
+        calibrator_batch_no=matched_batch.batch_no,
+        calibrator_expiry_date=matched_batch.expiry_date.isoformat() if matched_batch.expiry_date else None,
+        calibrator_available_min_quantity=_batch_total_min_units(matched_batch),
+        calibrator_min_unit=_clean_text(matched_batch.min_unit) or "次",
+        target_reagent_id=target.id,
+        target_reagent_name=target.name,
+        target_options=[_serialize_target_candidate(target)],
+        old_batch_candidates=batch_candidates,
+        new_batch_candidates=batch_candidates,
+        default_old_batch_no=default_old_batch_no,
+        default_new_batch_no=default_new_batch_no,
+        default_usage_times=1,
+        result_unit=_clean_text(target.calibration_result_unit) or "nmmol/L",
+        raw_barcode=f"MOBILE::CALIBRATION::{target.id}",
     )
 
 

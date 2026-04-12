@@ -131,6 +131,33 @@
                 </section>
             </section>
 
+            <section id="mobile-page-calibration" class="mobile-page">
+                <section class="mobile-panel">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>快速校准</h2>
+                            <p>搜索被校准试剂，自动判断使用独立校准品或试剂自带校准。</p>
+                        </div>
+                    </div>
+                    <label class="mobile-field">
+                        <span>搜索被校准试剂</span>
+                        <input id="mobile-calibration-search" class="mobile-input" type="search" placeholder="输入试剂名或仪器名">
+                    </label>
+                    <div id="mobile-calibration-results" class="mobile-card-list mobile-search-results"></div>
+                </section>
+
+                <section class="mobile-panel">
+                    <div class="mobile-panel-header">
+                        <div>
+                            <h2>最近校准</h2>
+                            <p>点击记录可继续补录或修改结果。</p>
+                        </div>
+                        <button id="mobile-calibration-refresh" class="mobile-ghost-btn" type="button">刷新</button>
+                    </div>
+                    <div id="mobile-calibration-records" class="mobile-card-list"></div>
+                </section>
+            </section>
+
             <section id="mobile-page-inventory" class="mobile-page">
                 <section class="mobile-panel">
                     <div class="mobile-panel-header">
@@ -169,6 +196,7 @@
         <nav class="mobile-tabbar">
             <button class="mobile-tab active" data-page="outbound" type="button">出库</button>
             <button class="mobile-tab" data-page="inbound" type="button">入库</button>
+            <button class="mobile-tab" data-page="calibration" type="button">校准</button>
             <button class="mobile-tab" data-page="inventory" type="button">库存</button>
         </nav>
     </div>
@@ -207,6 +235,95 @@
 
             <div id="mobile-outbound-preview" class="mobile-preview-card hidden"></div>
             <button id="mobile-outbound-submit" class="mobile-primary-btn" type="button">正式出库</button>
+        </div>
+    </div>
+
+    <div id="mobile-calibration-sheet" class="mobile-sheet hidden">
+        <div class="mobile-sheet-backdrop"></div>
+        <div class="mobile-sheet-panel mobile-calibration-sheet-panel">
+            <div class="mobile-sheet-handle"></div>
+            <div class="mobile-panel-header mobile-sheet-header">
+                <div>
+                    <h2 id="mobile-calibration-sheet-title">本次校准</h2>
+                    <p id="mobile-calibration-selected-meta">请选择被校准试剂。</p>
+                </div>
+                <button id="mobile-calibration-close" class="mobile-ghost-btn" type="button">关闭</button>
+            </div>
+
+            <div id="mobile-calibration-source-card" class="mobile-preview-card"></div>
+
+            <div class="mobile-sheet-form mobile-calibration-form">
+                <label class="mobile-field">
+                    <span>被校准试剂</span>
+                    <select id="mobile-calibration-target" class="mobile-select"></select>
+                </label>
+                <label class="mobile-field">
+                    <span>结果单位</span>
+                    <input id="mobile-calibration-result-unit" class="mobile-input" type="text">
+                </label>
+                <label class="mobile-field">
+                    <span>旧试剂批号</span>
+                    <select id="mobile-calibration-old-batch" class="mobile-select"></select>
+                </label>
+                <label class="mobile-field">
+                    <span>新试剂批号</span>
+                    <select id="mobile-calibration-new-batch" class="mobile-select"></select>
+                </label>
+                <label class="mobile-field">
+                    <span>校准用量</span>
+                    <input id="mobile-calibration-usage-times" class="mobile-input" type="number" min="1" value="1">
+                </label>
+                <label class="mobile-field">
+                    <span>操作人</span>
+                    <select id="mobile-calibration-operator" class="mobile-select"></select>
+                </label>
+            </div>
+
+            <div id="mobile-calibration-result-grid" class="mobile-calibration-result-grid">
+                <section class="mobile-calibration-result-group">
+                    <div class="mobile-result-group-head">
+                        <div class="mobile-result-group-title">
+                            <h3>旧批号结果</h3>
+                            <span id="mobile-calibration-old-result-unit-note" class="mobile-result-unit-note">录入单位：-</span>
+                        </div>
+                        <p>可在第 1 格粘贴 5 个结果自动拆分。</p>
+                    </div>
+                    <div class="mobile-result-input-grid">
+                        <label class="mobile-field"><span>第 1 次</span><input id="mobile-calibration-old-result-1" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="101" data-result-group="old" data-result-index="1"></label>
+                        <label class="mobile-field"><span>第 2 次</span><input id="mobile-calibration-old-result-2" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="102" data-result-group="old" data-result-index="2"></label>
+                        <label class="mobile-field"><span>第 3 次</span><input id="mobile-calibration-old-result-3" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="103" data-result-group="old" data-result-index="3"></label>
+                        <label class="mobile-field"><span>第 4 次</span><input id="mobile-calibration-old-result-4" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="104" data-result-group="old" data-result-index="4"></label>
+                        <label class="mobile-field"><span>第 5 次</span><input id="mobile-calibration-old-result-5" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="105" data-result-group="old" data-result-index="5"></label>
+                    </div>
+                </section>
+                <section class="mobile-calibration-result-group">
+                    <div class="mobile-result-group-head">
+                        <div class="mobile-result-group-title">
+                            <h3>新批号结果</h3>
+                            <span id="mobile-calibration-new-result-unit-note" class="mobile-result-unit-note">录入单位：-</span>
+                        </div>
+                        <p>输入后会自动跳到下一格。</p>
+                    </div>
+                    <div class="mobile-result-input-grid">
+                        <label class="mobile-field"><span>第 1 次</span><input id="mobile-calibration-new-result-1" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="106" data-result-group="new" data-result-index="1"></label>
+                        <label class="mobile-field"><span>第 2 次</span><input id="mobile-calibration-new-result-2" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="107" data-result-group="new" data-result-index="2"></label>
+                        <label class="mobile-field"><span>第 3 次</span><input id="mobile-calibration-new-result-3" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="108" data-result-group="new" data-result-index="3"></label>
+                        <label class="mobile-field"><span>第 4 次</span><input id="mobile-calibration-new-result-4" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="109" data-result-group="new" data-result-index="4"></label>
+                        <label class="mobile-field"><span>第 5 次</span><input id="mobile-calibration-new-result-5" class="mobile-input mobile-result-input" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" autocapitalize="off" spellcheck="false" tabindex="110" data-result-group="new" data-result-index="5"></label>
+                    </div>
+                </section>
+            </div>
+
+            <div id="mobile-calibration-fallback-confirm" class="mobile-confirm-card hidden">
+                <h3>是否同步出库？</h3>
+                <p>当前没有独立校准品，将使用试剂自带校准。可只保存校准记录，也可同步出库 1 个包装单位。</p>
+                <div class="mobile-confirm-actions">
+                    <button id="mobile-calibration-save-only" class="mobile-ghost-btn" type="button">仅保存校准</button>
+                    <button id="mobile-calibration-save-outbound" class="mobile-primary-btn compact" type="button">保存并同步出库</button>
+                </div>
+            </div>
+
+            <button id="mobile-calibration-submit" class="mobile-primary-btn" type="button">保存本次校准</button>
         </div>
     </div>
 

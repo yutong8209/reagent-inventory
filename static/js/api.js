@@ -176,6 +176,9 @@ const API = {
         targetPreview(reagentId) {
             return API.request(`/calibration/target-preview?reagent_id=${reagentId}`);
         },
+        mobilePreview(targetReagentId) {
+            return API.request(`/calibration/mobile/preview?target_reagent_id=${targetReagentId}`);
+        },
         getRecord(id) {
             return API.request(`/calibration/records/${id}`);
         },

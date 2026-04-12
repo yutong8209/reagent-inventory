@@ -1,0 +1,61 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - heading "检验科试剂出入库管理系统" [level=1] [ref=e4]
+    - navigation [ref=e5]:
+      - link "首页" [ref=e6] [cursor=pointer]:
+        - /url: "#"
+      - link "入库" [ref=e7] [cursor=pointer]:
+        - /url: "#"
+      - link "校准" [ref=e8] [cursor=pointer]:
+        - /url: "#"
+      - link "库存" [ref=e9] [cursor=pointer]:
+        - /url: "#"
+      - link "流水及用量" [ref=e10] [cursor=pointer]:
+        - /url: "#"
+      - link "资料设置" [ref=e11] [cursor=pointer]:
+        - /url: "#"
+  - main [ref=e12]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]:
+            - heading "出库工作台" [level=2] [ref=e18]
+            - paragraph [ref=e19]: 首页直接处理试剂出库，并同时查看近期出库和预警事项。
+          - generic [ref=e20]:
+            - generic [ref=e21]:
+              - generic [ref=e22]:
+                - generic [ref=e23]: 手机工作台
+                - paragraph [ref=e24]: 扫码进入手机页，适合现场快速出入库。
+              - img "手机工作台二维码" [ref=e26]
+            - generic [ref=e27]:
+              - button "入库" [ref=e28] [cursor=pointer]
+              - button "库存" [ref=e29] [cursor=pointer]
+              - button "校准" [ref=e30] [cursor=pointer]
+              - button "流水及用量" [ref=e31] [cursor=pointer]
+              - button "资料设置" [ref=e32] [cursor=pointer]
+        - generic [ref=e34]:
+          - button "扫码出库" [ref=e35] [cursor=pointer]
+          - button "手工出库" [ref=e36] [cursor=pointer]
+        - generic [ref=e38]:
+          - generic [ref=e39]:
+            - generic [ref=e40]: 扫码输入
+            - textbox "扫码输入" [active] [ref=e41]:
+              - /placeholder: 扫描试剂条码后按回车
+            - button "识别" [ref=e42] [cursor=pointer]
+          - paragraph [ref=e43]: 识别后会先预览当前试剂和可扣减批次，再决定是否加入待出库列表。
+      - complementary [ref=e44]:
+        - generic [ref=e46]:
+          - generic [ref=e47]:
+            - heading "待处理事项" [level=3] [ref=e48]
+            - paragraph [ref=e49]: 优先关注过期、低库存和零库存未归档试剂。
+          - generic [ref=e50]:
+            - button "去库存查看" [ref=e51] [cursor=pointer]
+            - button "刷新" [ref=e52] [cursor=pointer]
+        - generic [ref=e55]:
+          - heading "重点预警" [level=3] [ref=e56]
+          - paragraph [ref=e57]: 最多展示 6 个最需要先处理的试剂。
+        - generic [ref=e60]:
+          - generic [ref=e61]:
+            - heading "最近出库" [level=3] [ref=e62]
+            - paragraph [ref=e63]: 默认显示最新 20 条出库流水。
+          - button "去流水查看" [ref=e64] [cursor=pointer]

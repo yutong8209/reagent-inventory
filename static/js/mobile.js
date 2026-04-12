@@ -4,29 +4,38 @@
   inventoryData: [],
   outboundResults: [],
   inboundResults: [],
+  calibrationResults: [],
+  calibrationRecords: [],
   selectedOutboundReagent: null,
   selectedOutboundBatchId: null,
   selectedInboundReagent: null,
   selectedInboundBatchNo: '',
+  selectedCalibrationPreview: null,
+  selectedCalibrationRecordId: null,
+  calibrationMode: 'create',
   inboundBatchSuggestions: [],
   inventoryFilters: { keyword: '', status: 'all', onlyWarnings: false },
   expandedInventoryIds: new Set(),
   isWarningFoldExpanded: false,
   isSubmittingOutbound: false,
   isSubmittingInbound: false,
+  isSubmittingCalibration: false,
 
   async init() {
     this.bindEvents();
+    this.showEmpty('mobile-outbound-results', '输入试剂名称后开始搜索');
+    this.showEmpty('mobile-inbound-results', '输入试剂名称后开始搜索');
+    this.showEmpty('mobile-calibration-results', '输入试剂名称后开始搜索');
     await Utils.loadOperators();
     await Promise.all([
       Utils.populateOperatorSelect('mobile-outbound-operator', { allowEmpty: false, defaultValue: Utils.getLastOperator() }),
       Utils.populateOperatorSelect('mobile-inbound-operator', { allowEmpty: false, defaultValue: Utils.getLastOperator() }),
+      Utils.populateOperatorSelect('mobile-calibration-operator', { allowEmpty: false, defaultValue: Utils.getLastOperator() }),
       this.refreshOverview(),
-      this.loadInventory()
+      this.loadInventory(),
+      this.loadCalibrationRecords()
     ]);
-    this.showEmpty('mobile-outbound-results', '输入试剂名称后开始搜索');
-    this.showEmpty('mobile-inbound-results', '输入试剂名称后开始搜索');
-    this.switchPage('outbound');
+    this.switchPage(this.currentPage || 'outbound');
     this.toggleWarningFold(false);
   },
 
@@ -40,6 +49,8 @@
     document.getElementById('mobile-warning-toggle')?.addEventListener('click', () => this.toggleWarningFold());
     document.getElementById('mobile-outbound-search')?.addEventListener('input', Utils.debounce((event) => this.searchOutboundReagents(event.target.value.trim()), 220));
     document.getElementById('mobile-inbound-search')?.addEventListener('input', Utils.debounce((event) => this.searchInboundReagents(event.target.value.trim()), 220));
+    document.getElementById('mobile-calibration-search')?.addEventListener('input', Utils.debounce((event) => this.searchCalibrationReagents(event.target.value.trim()), 220));
+    document.getElementById('mobile-calibration-refresh')?.addEventListener('click', () => this.loadCalibrationRecords());
     document.getElementById('mobile-inbound-batch-no')?.addEventListener('input', () => this.syncInboundBatchDetails(false));
     document.getElementById('mobile-inbound-change-reagent')?.addEventListener('click', () => this.resetInboundSelection());
     document.getElementById('mobile-inbound-batch-suggestions')?.addEventListener('click', (event) => {
@@ -54,6 +65,16 @@
     document.getElementById('mobile-outbound-unit')?.addEventListener('change', () => this.refreshOutboundPreview());
     document.getElementById('mobile-outbound-submit')?.addEventListener('click', () => this.submitOutbound());
     document.getElementById('mobile-inbound-submit')?.addEventListener('click', () => this.submitInbound());
+    document.getElementById('mobile-calibration-close')?.addEventListener('click', () => this.closeCalibrationSheet());
+    document.getElementById('mobile-calibration-sheet')?.addEventListener('click', (event) => {
+      if (event.target.classList.contains('mobile-sheet-backdrop')) this.closeCalibrationSheet();
+    });
+    document.getElementById('mobile-calibration-submit')?.addEventListener('click', () => this.handleCalibrationSubmit());
+    document.getElementById('mobile-calibration-save-only')?.addEventListener('click', () => this.submitCalibration(false));
+    document.getElementById('mobile-calibration-save-outbound')?.addEventListener('click', () => this.submitCalibration(true));
+    document.getElementById('mobile-calibration-result-unit')?.addEventListener('input', () => this.syncCalibrationResultUnitNotes());
+    document.getElementById('mobile-calibration-result-grid')?.addEventListener('paste', (event) => this.handleCalibrationResultPaste(event));
+    document.getElementById('mobile-calibration-result-grid')?.addEventListener('keydown', (event) => this.handleCalibrationResultKeydown(event));
     document.getElementById('mobile-inventory-search')?.addEventListener('input', Utils.debounce((event) => {
       this.inventoryFilters.keyword = event.target.value.trim();
       this.renderInventory();
@@ -554,6 +575,293 @@
       submitButton.textContent = '确认入库';
       this.isSubmittingInbound = false;
     }
+  },
+
+  async searchCalibrationReagents(keyword) {
+    if (!keyword) {
+      this.calibrationResults = [];
+      this.showEmpty('mobile-calibration-results', '输入试剂名称后开始搜索');
+      return;
+    }
+    try {
+      const reagents = await API.reagents.list({ keyword, status: 'active' });
+      this.calibrationResults = reagents
+        .filter((item) => !item.is_calibrator)
+        .map((item) => ({
+          reagent_id: item.id,
+          reagent_name: item.name,
+          instrument_id: item.instrument_id,
+          instrument_name: item.instrument_name,
+          work_group_id: item.work_group_id,
+          work_group_name: item.work_group_name,
+          manufacturer: item.manufacturer || '',
+          result_unit: item.calibration_result_unit || 'nmmol/L',
+          min_unit: item.unit,
+          package_unit: item.package_unit
+        }));
+      this.renderCalibrationResults();
+    } catch (error) {
+      Utils.showToast(`校准试剂搜索失败：${error.message}`, 'error');
+    }
+  },
+
+  renderCalibrationResults() {
+    const container = document.getElementById('mobile-calibration-results');
+    if (!this.calibrationResults.length) {
+      container.innerHTML = '<div class="mobile-empty">没有找到可校准的试剂</div>';
+      return;
+    }
+    container.innerHTML = this.calibrationResults.map((item) => `
+      <article class="mobile-result-card" onclick="mobileApp.openCalibrationForReagent(${item.reagent_id})">
+        <div class="mobile-card-title">${this.escapeHtml(item.reagent_name)}</div>
+        <div class="mobile-card-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
+        <div class="mobile-card-metrics">
+          <span>结果单位 ${this.escapeHtml(item.result_unit)}</span>
+          <span>最小单位 ${this.escapeHtml(item.min_unit || '-')}</span>
+          <span>${this.escapeHtml(item.manufacturer || '未填厂家')}</span>
+        </div>
+      </article>
+    `).join('');
+  },
+
+  async openCalibrationForReagent(reagentId) {
+    try {
+      const preview = await API.calibration.mobilePreview(reagentId);
+      this.openCalibrationSheet(preview, 'create');
+    } catch (error) {
+      Utils.showToast(`校准预览失败：${error.message}`, 'error');
+    }
+  },
+
+  async loadCalibrationRecords() {
+    try {
+      this.calibrationRecords = await API.calibration.listRecords({ limit: 10 });
+      this.renderCalibrationRecords();
+    } catch (error) {
+      this.showEmpty('mobile-calibration-records', `校准记录加载失败：${error.message}`);
+    }
+  },
+
+  renderCalibrationRecords() {
+    const container = document.getElementById('mobile-calibration-records');
+    if (!this.calibrationRecords.length) {
+      this.showEmpty('mobile-calibration-records', '暂无校准记录');
+      return;
+    }
+    container.innerHTML = this.calibrationRecords.map((record) => `
+      <article class="mobile-recent-card" onclick="mobileApp.openCalibrationRecord(${record.id})">
+        <div class="mobile-card-head">
+          <div>
+            <div class="mobile-card-title">${this.escapeHtml(record.target_reagent_name)}</div>
+            <div class="mobile-card-meta">${this.escapeHtml(Utils.formatDateTime(record.created_at))} / ${this.escapeHtml(record.operator || '-')}</div>
+          </div>
+          <span class="mobile-status mobile-status-normal">${record.calibration_source === 'reagent' ? '自带校准' : '校准品'}</span>
+        </div>
+        <div class="mobile-card-meta">来源 ${this.escapeHtml(record.calibrator_name)} · 批号 ${this.escapeHtml(record.calibrator_batch_no || '-')}</div>
+        <div class="mobile-card-metrics">
+          <span>旧批号 ${this.escapeHtml(record.target_old_batch_no || '未填')}</span>
+          <span>新批号 ${this.escapeHtml(record.target_new_batch_no || '未填')}</span>
+          <span>用量 ${record.usage_times}${this.escapeHtml(record.result_unit ? ` / ${record.result_unit}` : '')}</span>
+        </div>
+      </article>
+    `).join('');
+  },
+
+  async openCalibrationRecord(recordId) {
+    try {
+      const record = await API.calibration.getRecord(recordId);
+      this.openCalibrationSheet(record, 'edit');
+    } catch (error) {
+      Utils.showToast(`校准记录打开失败：${error.message}`, 'error');
+    }
+  },
+
+  openCalibrationSheet(data, mode = 'create') {
+    this.calibrationMode = mode;
+    this.selectedCalibrationPreview = data;
+    this.selectedCalibrationRecordId = mode === 'edit' ? data.id : null;
+    document.getElementById('mobile-calibration-sheet-title').textContent = mode === 'edit' ? '补录校准记录' : '本次校准';
+    document.getElementById('mobile-calibration-selected-meta').textContent =
+      `${data.target_reagent_name || ''} · ${data.calibration_source === 'reagent' ? '试剂自带校准' : '独立校准品'}`;
+    this.renderCalibrationSource(data);
+    this.populateCalibrationTargetSelect(data);
+    this.populateCalibrationBatchSelect('mobile-calibration-old-batch', data.old_batch_candidates || [], data.target_old_batch_no || data.default_old_batch_no);
+    this.populateCalibrationBatchSelect('mobile-calibration-new-batch', data.new_batch_candidates || [], data.target_new_batch_no || data.default_new_batch_no);
+    document.getElementById('mobile-calibration-result-unit').value = data.result_unit || 'nmmol/L';
+    this.syncCalibrationResultUnitNotes(data.result_unit || 'nmmol/L');
+    document.getElementById('mobile-calibration-usage-times').value = String(data.usage_times || data.default_usage_times || 1);
+    this.fillCalibrationResults(data);
+    document.getElementById('mobile-calibration-fallback-confirm')?.classList.add('hidden');
+    document.getElementById('mobile-calibration-submit').classList.toggle('hidden', false);
+    document.getElementById('mobile-calibration-submit').textContent = mode === 'edit' ? '保存校准记录' : '保存本次校准';
+    Utils.populateOperatorSelect('mobile-calibration-operator', {
+      allowEmpty: false,
+      defaultValue: data.operator || Utils.getLastOperator()
+    });
+    document.getElementById('mobile-calibration-sheet').classList.remove('hidden');
+    requestAnimationFrame(() => document.getElementById('mobile-calibration-usage-times')?.focus());
+  },
+
+  renderCalibrationSource(data) {
+    const card = document.getElementById('mobile-calibration-source-card');
+    const sourceLabel = data.calibration_source === 'reagent' ? '试剂自带校准' : '独立校准品';
+    card.innerHTML = `
+      <div><strong>${this.escapeHtml(sourceLabel)}</strong></div>
+      <div>来源 ${this.escapeHtml(data.calibrator_name || '-')}</div>
+      <div>来源批号 ${this.escapeHtml(data.calibrator_batch_no || '-')} · 库存 ${data.calibrator_available_min_quantity ?? '-'}${this.escapeHtml(data.calibrator_min_unit || '')}</div>
+    `;
+  },
+
+  populateCalibrationTargetSelect(data) {
+    const select = document.getElementById('mobile-calibration-target');
+    const options = data.target_options?.length ? data.target_options : [{
+      reagent_id: data.target_reagent_id,
+      reagent_name: data.target_reagent_name
+    }];
+    select.innerHTML = options.map((item) => `
+      <option value="${item.reagent_id}" ${String(item.reagent_id) === String(data.target_reagent_id) ? 'selected' : ''}>${this.escapeHtml(item.reagent_name)}</option>
+    `).join('');
+    select.disabled = true;
+  },
+
+  populateCalibrationBatchSelect(selectId, candidates, selectedValue) {
+    const select = document.getElementById(selectId);
+    const normalizedSelected = selectedValue || '';
+    const hasSelected = !normalizedSelected || candidates.some((item) => item.batch_no === normalizedSelected);
+    select.innerHTML = [
+      '<option value="">未填</option>',
+      ...(!hasSelected ? [`<option value="${this.escapeHtml(normalizedSelected)}">${this.escapeHtml(normalizedSelected)}</option>`] : []),
+      ...candidates.map((item) => `
+        <option value="${this.escapeHtml(item.batch_no)}">${this.escapeHtml(item.batch_no)} · ${this.escapeHtml(item.expiry_date || '-')}</option>
+      `)
+    ].join('');
+    select.value = normalizedSelected;
+  },
+
+  fillCalibrationResults(data) {
+    for (let i = 1; i <= 5; i += 1) {
+      document.getElementById(`mobile-calibration-old-result-${i}`).value = data[`old_result_${i}`] || '';
+      document.getElementById(`mobile-calibration-new-result-${i}`).value = data[`new_result_${i}`] || '';
+    }
+  },
+
+  syncCalibrationResultUnitNotes(unitValue) {
+    const unit = String(unitValue ?? document.getElementById('mobile-calibration-result-unit')?.value ?? '').trim() || '-';
+    const text = `录入单位：${unit}`;
+    document.getElementById('mobile-calibration-old-result-unit-note').textContent = text;
+    document.getElementById('mobile-calibration-new-result-unit-note').textContent = text;
+  },
+
+  handleCalibrationResultPaste(event) {
+    const input = event.target.closest('.mobile-result-input');
+    if (!input || input.dataset.resultIndex !== '1') return;
+    const text = event.clipboardData?.getData('text') || '';
+    const values = text.split(/[\s,;，；]+/).map((item) => item.trim()).filter(Boolean);
+    if (values.length < 2) return;
+    event.preventDefault();
+    const group = input.dataset.resultGroup;
+    values.slice(0, 5).forEach((value, index) => {
+      const target = document.getElementById(`mobile-calibration-${group}-result-${index + 1}`);
+      if (target) target.value = value;
+    });
+    document.getElementById(`mobile-calibration-${group}-result-${Math.min(values.length, 5)}`)?.focus();
+  },
+
+  handleCalibrationResultKeydown(event) {
+    const input = event.target.closest('.mobile-result-input');
+    if (!input || event.key !== 'Enter') return;
+    event.preventDefault();
+    this.focusNextCalibrationResult(input);
+  },
+
+  focusNextCalibrationResult(input) {
+    const group = input.dataset.resultGroup;
+    const index = parseInt(input.dataset.resultIndex, 10) || 1;
+    const next =
+      index < 5
+        ? document.getElementById(`mobile-calibration-${group}-result-${index + 1}`)
+        : group === 'old'
+          ? document.getElementById('mobile-calibration-new-result-1')
+          : document.getElementById('mobile-calibration-submit');
+    next?.focus();
+  },
+
+  buildCalibrationPayload(autoOutboundPackage = false) {
+    const payload = {
+      calibrator_reagent_id: this.selectedCalibrationPreview.calibrator_reagent_id,
+      calibrator_batch_stock_id: this.selectedCalibrationPreview.calibrator_batch_stock_id,
+      target_reagent_id: parseInt(document.getElementById('mobile-calibration-target').value, 10),
+      target_old_batch_no: document.getElementById('mobile-calibration-old-batch').value || null,
+      target_new_batch_no: document.getElementById('mobile-calibration-new-batch').value || null,
+      usage_times: this.normalizePositiveInteger(document.getElementById('mobile-calibration-usage-times').value, 1),
+      result_unit: document.getElementById('mobile-calibration-result-unit').value || 'nmmol/L',
+      operator: Utils.getValidOperator(document.getElementById('mobile-calibration-operator').value),
+      raw_barcode: this.selectedCalibrationPreview.raw_barcode || `MOBILE::CALIBRATION::${this.selectedCalibrationPreview.target_reagent_id}`,
+      auto_outbound_package: Boolean(autoOutboundPackage)
+    };
+    for (let i = 1; i <= 5; i += 1) {
+      payload[`old_result_${i}`] = document.getElementById(`mobile-calibration-old-result-${i}`).value.trim() || null;
+      payload[`new_result_${i}`] = document.getElementById(`mobile-calibration-new-result-${i}`).value.trim() || null;
+    }
+    return payload;
+  },
+
+  handleCalibrationSubmit() {
+    if (!this.selectedCalibrationPreview) return;
+    const payload = this.buildCalibrationPayload(false);
+    if (!payload.target_reagent_id || !payload.operator) {
+      Utils.showToast('请先确认被校准试剂和操作人', 'warning');
+      return;
+    }
+    if (this.calibrationMode === 'create' && this.selectedCalibrationPreview.calibration_source === 'reagent') {
+      document.getElementById('mobile-calibration-fallback-confirm')?.classList.remove('hidden');
+      document.getElementById('mobile-calibration-submit')?.classList.add('hidden');
+      return;
+    }
+    this.submitCalibration(false);
+  },
+
+  async submitCalibration(autoOutboundPackage = false) {
+    if (this.isSubmittingCalibration || !this.selectedCalibrationPreview) return;
+    const payload = this.buildCalibrationPayload(autoOutboundPackage);
+    if (!payload.target_reagent_id || !payload.operator) {
+      Utils.showToast('请先确认被校准试剂和操作人', 'warning');
+      return;
+    }
+    this.isSubmittingCalibration = true;
+    const submitButton = document.getElementById('mobile-calibration-submit');
+    submitButton.disabled = true;
+    submitButton.textContent = '提交中...';
+    try {
+      if (this.calibrationMode === 'edit') {
+        await API.calibration.updateRecord(this.selectedCalibrationRecordId, payload);
+        Utils.showToast('校准记录已更新', 'success');
+      } else {
+        await API.calibration.createRecord(payload);
+        Utils.showToast(autoOutboundPackage ? '校准记录已保存，并已同步出库' : '校准记录已保存', 'success');
+      }
+      Utils.saveLastOperator(payload.operator);
+      this.closeCalibrationSheet();
+      await Promise.all([this.loadCalibrationRecords(), this.refreshOverview(), this.loadInventory()]);
+      const keyword = document.getElementById('mobile-calibration-search')?.value.trim();
+      if (keyword) await this.searchCalibrationReagents(keyword);
+    } catch (error) {
+      Utils.showToast(`校准保存失败：${error.message}`, 'error');
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = this.calibrationMode === 'edit' ? '保存校准记录' : '保存本次校准';
+      this.isSubmittingCalibration = false;
+    }
+  },
+
+  closeCalibrationSheet() {
+    document.getElementById('mobile-calibration-sheet')?.classList.add('hidden');
+    document.getElementById('mobile-calibration-fallback-confirm')?.classList.add('hidden');
+    document.getElementById('mobile-calibration-submit')?.classList.remove('hidden');
+    this.selectedCalibrationPreview = null;
+    this.selectedCalibrationRecordId = null;
+    this.calibrationMode = 'create';
+    this.isSubmittingCalibration = false;
   },
 
   async loadInventory() {
