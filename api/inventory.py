@@ -1312,6 +1312,17 @@ def update_operator(operator_id: int, data: OperatorUpdate, db: Session = Depend
     return operator
 
 
+@router.delete("/operators/{operator_id}")
+def delete_operator(operator_id: int, db: Session = Depends(get_db)):
+    operator = db.query(Operator).filter(Operator.id == operator_id).first()
+    if not operator:
+        raise HTTPException(status_code=404, detail="操作人不存在")
+
+    db.delete(operator)
+    db.commit()
+    return {"success": True, "operator_id": operator_id}
+
+
 @router.post("/admin/reset-reagent-data")
 def reset_reagent_data(data: AdminPasswordRequest, db: Session = Depends(get_db)):
     _require_admin_action_password(data.password)

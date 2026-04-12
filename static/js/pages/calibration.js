@@ -190,19 +190,19 @@ const calibrationPage = {
                 <div class="inventory-card-header compact">
                     <div class="inventory-card-main">
                         <div class="inventory-card-title-row compact">
-                            <h4>${this.escapeHtml(record.calibrator_name)}</h4>
-                            <span class="inventory-inline-meta">被校准 ${this.escapeHtml(record.target_reagent_name)}</span>
+                            <div class="inventory-card-title-main compact">
+                                <h4>${this.escapeHtml(record.calibrator_name)}</h4>
+                                <span class="inventory-inline-meta">被校准 ${this.escapeHtml(record.target_reagent_name)}</span>
+                            </div>
+                            <button class="btn btn-secondary btn-small inventory-card-manage-btn" onclick="calibrationPage.openRecordModal(${record.id})">编辑结果</button>
                         </div>
                         <div class="inventory-key-metrics compact">
                             <div class="inventory-key-metric compact"><span>来源批号</span><strong>${this.escapeHtml(record.calibrator_batch_no)}</strong></div>
                             <div class="inventory-key-metric compact"><span>旧批号</span><strong>${this.escapeHtml(record.target_old_batch_no || '未填')}</strong></div>
                             <div class="inventory-key-metric compact"><span>新批号</span><strong>${this.escapeHtml(record.target_new_batch_no || '未填')}</strong></div>
-                            <div class="inventory-key-metric compact"><span>校准用量</span><strong>${record.usage_times}</strong></div>
+                            <div class="inventory-key-metric compact"><span>校准用量</span><strong class="inventory-number-strong">${record.usage_times}</strong></div>
                         </div>
-                        <div class="catalog-item-meta">${Utils.formatDateTime(record.created_at)} / ${this.escapeHtml(record.operator)}</div>
-                    </div>
-                    <div class="inventory-card-actions compact">
-                        <button class="btn btn-secondary btn-small" onclick="calibrationPage.openRecordModal(${record.id})">编辑结果</button>
+                        <div class="catalog-item-meta calibration-record-meta-row">${Utils.formatDateTime(record.created_at)} · ${this.escapeHtml(record.operator)} · ${this.escapeHtml(record.result_unit || '-')}</div>
                     </div>
                 </div>
             </article>

@@ -98,6 +98,15 @@ const dashboardPage = {
         return `剩余 ${days} 天`;
     },
 
+    getSourceLabel(source) {
+        const normalized = String(source || '').trim().toLowerCase();
+        if (!normalized) return '-';
+        if (normalized === 'scan') return '扫码';
+        if (normalized === 'manual') return '手工';
+        if (normalized === 'mobile') return '手机';
+        return this.escapeHtml(source);
+    },
+
     render() {
         this.renderPendingTasks();
         this.renderWarnings();
@@ -111,15 +120,15 @@ const dashboardPage = {
             return;
         }
         if (!pending) {
-            container.innerHTML = '<div class="inventory-empty">暂无首页数据。</div>';
+            container.innerHTML = '<div class="inventory-empty">\u6682\u65e0\u9996\u9875\u6570\u636e\u3002</div>';
             return;
         }
 
         const cards = [
-            { label: '已过期批次', value: pending.expired_batch_count, type: 'danger', status: 'expired' },
-            { label: '近效期试剂', value: pending.expiring_reagent_count, type: 'warning', status: 'expiring' },
-            { label: '低库存/零库存', value: pending.low_or_empty_reagent_count, type: 'warning', status: 'low_or_empty' },
-            { label: '零库存未归档', value: pending.zero_stock_unarchived_count, type: 'danger', status: 'empty' }
+            { label: '\u5df2\u8fc7\u671f\u6279\u6b21', value: pending.expired_batch_count, type: 'danger', status: 'expired' },
+            { label: '\u8fd1\u6548\u671f\u8bd5\u5242', value: pending.expiring_reagent_count, type: 'warning', status: 'expiring' },
+            { label: '\u4f4e\u5e93\u5b58/\u96f6\u5e93\u5b58', value: pending.low_or_empty_reagent_count, type: 'warning', status: 'low_or_empty' },
+            { label: '\u96f6\u5e93\u5b58\u672a\u5f52\u6863', value: pending.zero_stock_unarchived_count, type: 'danger', status: 'empty' }
         ];
 
         container.innerHTML = cards.map((item) => `
@@ -158,16 +167,18 @@ const dashboardPage = {
                 onkeydown="dashboardPage.handleCardKeydown(event, () => dashboardPage.openInventoryForReagent(${item.reagent_id}))"
             >
                 <div class="dashboard-warning-head">
-                    <div>
+                    <div class="dashboard-warning-copy">
                         <div class="dashboard-warning-title">${this.escapeHtml(item.reagent_name)}</div>
                         <div class="dashboard-warning-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
                     </div>
-                    <span class="inventory-status inventory-status-${item.status_level}">${this.getStatusLabel(item.status_level)}</span>
+                    <span class="inventory-status inventory-status-${item.status_level} dashboard-warning-status">${this.getStatusLabel(item.status_level)}</span>
                 </div>
-                <div class="dashboard-warning-metrics">
-                    <span>库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit)}</span>
-                    <span>${item.nearest_expiry_date ? `最近效期 ${this.escapeHtml(item.nearest_expiry_date)}` : '最近效期 -'}</span>
-                    <span>${this.escapeHtml(this.formatDaysLabel(item.nearest_expiry_days))}</span>
+                <div class="dashboard-warning-foot">
+                    <span class="dashboard-warning-stock">库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit)}</span>
+                    <div class="dashboard-warning-metrics">
+                        <span>${item.nearest_expiry_date ? `最近效期 ${this.escapeHtml(item.nearest_expiry_date)}` : '最近效期 -'}</span>
+                        <span>${this.escapeHtml(this.formatDaysLabel(item.nearest_expiry_days))}</span>
+                    </div>
                 </div>
             </article>
         `).join('');
@@ -180,7 +191,7 @@ const dashboardPage = {
             return;
         }
         if (!rows.length) {
-            container.innerHTML = '<div class="inventory-empty">最近暂无出库记录。</div>';
+            container.innerHTML = '<div class="inventory-empty">\u6700\u8fd1\u6682\u65e0\u51fa\u5e93\u8bb0\u5f55\u3002</div>';
             return;
         }
 
@@ -191,8 +202,10 @@ const dashboardPage = {
                     <span>${this.escapeHtml(Utils.formatDateTime(item.created_at))}</span>
                 </div>
                 <div class="dashboard-recent-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
-                <div class="dashboard-recent-meta">批号 ${this.escapeHtml(item.batch_no || '-')} · ${item.quantity_min}${this.escapeHtml(item.min_unit)} · ${this.escapeHtml(item.operator)}</div>
-                <div class="dashboard-recent-meta">来源 ${this.escapeHtml(item.source || '-')}</div>
+                <div class="dashboard-recent-foot">
+                    <div class="dashboard-recent-meta">\u6279\u53f7 ${this.escapeHtml(item.batch_no || '-')} \u00b7 ${item.quantity_min}${this.escapeHtml(item.min_unit)} \u00b7 ${this.escapeHtml(item.operator)}</div>
+                    <span class="dashboard-recent-source">${this.getSourceLabel(item.source)}</span>
+                </div>
             </article>
         `).join('');
     },

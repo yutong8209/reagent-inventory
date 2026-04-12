@@ -90,7 +90,15 @@ const Utils = {
             options.push(`<option value="${operator.name}">${operator.name}</option>`);
         });
         select.innerHTML = options.join('');
-        select.value = preferredValue || '';
+        if (preferredValue) {
+            select.value = preferredValue;
+            return;
+        }
+        if (!allowEmpty && this.operators.length) {
+            select.value = this.operators[0].name;
+            return;
+        }
+        select.value = '';
     },
 
     formatDate(value) {

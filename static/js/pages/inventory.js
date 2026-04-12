@@ -621,19 +621,19 @@ const inventoryPage = {
         summaryContainer.innerHTML = `
             <div class="inventory-summary-card">
                 <div class="inventory-summary-label">在库试剂数</div>
-                <div class="inventory-summary-value">${summary.reagentCount}</div>
+                <div class="inventory-summary-value inventory-number-strong">${summary.reagentCount}</div>
             </div>
             <div class="inventory-summary-card inventory-summary-warn">
                 <div class="inventory-summary-label">近效期数</div>
-                <div class="inventory-summary-value">${summary.expiringCount}</div>
+                <div class="inventory-summary-value inventory-number-strong">${summary.expiringCount}</div>
             </div>
             <div class="inventory-summary-card inventory-summary-caution">
                 <div class="inventory-summary-label">低库存数</div>
-                <div class="inventory-summary-value">${summary.lowStockCount}</div>
+                <div class="inventory-summary-value inventory-number-strong">${summary.lowStockCount}</div>
             </div>
             <div class="inventory-summary-card inventory-summary-danger">
                 <div class="inventory-summary-label">已过期批次数</div>
-                <div class="inventory-summary-value">${summary.expiredBatchCount}</div>
+                <div class="inventory-summary-value inventory-number-strong">${summary.expiredBatchCount}</div>
             </div>
         `;
     },
@@ -685,8 +685,12 @@ const inventoryPage = {
         const manufacturerHtml = reagent.manufacturer
             ? `<span class="inventory-card-maker">${this.escapeHtml(reagent.manufacturer)}</span>`
             : '';
+        const settingsButtonHtml = `<button class="btn btn-secondary btn-small inventory-card-manage-btn" onclick="inventoryPage.openReagentModal(${reagent.id})">设置试剂信息</button>`;
         const archiveButtonHtml = reagent.status_level === 'empty'
             ? `<button class="btn btn-danger btn-small" onclick="inventoryPage.archiveReagent(${reagent.id})">归档</button>`
+            : '';
+        const actionButtonsHtml = archiveButtonHtml
+            ? `<div class="inventory-card-actions compact inventory-card-actions-inline">${archiveButtonHtml}</div>`
             : '';
         const batchListHtml = reagent.batches.length ? `
             <div class="inventory-batch-list compact">
@@ -696,10 +700,8 @@ const inventoryPage = {
                             <span class="inventory-batch-code">批号 ${this.escapeHtml(batch.batch_no)}</span>
                             <span class="inventory-batch-expiry">效期 ${this.escapeHtml(batch.expiry_date)}</span>
                             <span class="inventory-batch-days">${this.escapeHtml(this.formatDaysLabel(batch.expiry_days_left))}</span>
-                        </div>
-                        <div class="inventory-batch-secondary">
-                            <span>库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit || reagent.unit || '瓶')}</span>
-                            <span>入库 ${this.escapeHtml(Utils.formatDate(batch.created_at) || '')}</span>
+                            <span class="inventory-batch-stock">库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit || reagent.unit || '瓶')}</span>
+                            <span class="inventory-batch-entry">入库 ${this.escapeHtml(Utils.formatDate(batch.created_at) || '')}</span>
                         </div>
                     </div>
                 `).join('')}
@@ -712,15 +714,18 @@ const inventoryPage = {
                 <div class="inventory-card-header compact">
                     <div class="inventory-card-main">
                         <div class="inventory-card-title-row compact">
-                            <h4>${this.escapeHtml(reagent.name)}</h4>
-                            ${manufacturerHtml}
-                            <span class="inventory-status inventory-status-${reagent.status_level}">${this.getStatusLabel(reagent.status_level)}</span>
-                            <span class="inventory-inline-meta">批次 ${reagent.batch_count}</span>
+                            <div class="inventory-card-title-main compact">
+                                <h4>${this.escapeHtml(reagent.name)}</h4>
+                                ${manufacturerHtml}
+                                <span class="inventory-status inventory-status-${reagent.status_level}">${this.getStatusLabel(reagent.status_level)}</span>
+                                <span class="inventory-inline-meta">批次 ${reagent.batch_count}</span>
+                            </div>
+                            ${settingsButtonHtml}
                         </div>
                         <div class="inventory-key-metrics compact">
                             <div class="inventory-key-metric compact">
                                 <span>总库存</span>
-                                <strong>${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
+                                <strong class="inventory-number-strong">${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
                             </div>
                             <div class="inventory-key-metric compact">
                                 <span>最近效期</span>
@@ -736,10 +741,7 @@ const inventoryPage = {
                             </div>
                         </div>
                     </div>
-                    <div class="inventory-card-actions compact">
-                        ${archiveButtonHtml}
-                        <button class="btn btn-secondary btn-small" onclick="inventoryPage.openReagentModal(${reagent.id})">设置试剂信息</button>
-                    </div>
+                    ${actionButtonsHtml}
                 </div>
                 ${batchListHtml}
             </article>
@@ -785,15 +787,17 @@ const inventoryPage = {
         const manufacturerHtml = reagent.manufacturer
             ? `<div class="inventory-card-maker">${this.escapeHtml(reagent.manufacturer)}</div>`
             : '';
+        const settingsButtonHtml = `<button class="btn btn-secondary btn-small inventory-card-manage-btn" onclick="inventoryPage.openReagentModal(${reagent.id})">设置试剂信息</button>`;
         const archiveButtonHtml = reagent.status_level === 'empty'
             ? `<button class="btn btn-danger btn-small" onclick="inventoryPage.archiveReagent(${reagent.id})">归档</button>`
             : '';
-        const actionButtonsHtml = `
-            <div class="inventory-card-actions">
+        const actionButtonsHtml = archiveButtonHtml
+            ? `
+            <div class="inventory-card-actions inventory-card-actions-inline">
                 ${archiveButtonHtml}
-                <button class="btn btn-secondary btn-small" onclick="inventoryPage.openReagentModal(${reagent.id})">设置试剂信息</button>
             </div>
-        `;
+        `
+            : '';
 
         const batchListHtml = reagent.batches.length > 1 ? `
             <div class="inventory-batch-list">
@@ -805,7 +809,7 @@ const inventoryPage = {
                             <span class="inventory-batch-days">${this.escapeHtml(this.formatDaysLabel(batch.expiry_days_left))}</span>
                         </div>
                         <div class="inventory-batch-secondary">
-                            <span>当前库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit)}</span>
+                            <span class="inventory-batch-stock-text">当前库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit)}</span>
                         </div>
                     </div>
                 `).join('')}
@@ -818,14 +822,17 @@ const inventoryPage = {
                 <div class="inventory-card-header">
                     <div class="inventory-card-main">
                         <div class="inventory-card-title-row">
-                            <h4>${this.escapeHtml(reagent.name)}</h4>
-                            <span class="inventory-status inventory-status-${reagent.status_level}">${this.getStatusLabel(reagent.status_level)}</span>
+                            <div class="inventory-card-title-main">
+                                <h4>${this.escapeHtml(reagent.name)}</h4>
+                                <span class="inventory-status inventory-status-${reagent.status_level}">${this.getStatusLabel(reagent.status_level)}</span>
+                            </div>
+                            ${settingsButtonHtml}
                         </div>
                         ${manufacturerHtml}
                         <div class="inventory-key-metrics">
                             <div class="inventory-key-metric">
                                 <span>当前总库存</span>
-                                <strong>${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
+                                <strong class="inventory-number-strong">${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
                             </div>
                             <div class="inventory-key-metric">
                                 <span>最近效期</span>

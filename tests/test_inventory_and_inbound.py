@@ -99,6 +99,15 @@ def test_operator_crud(tmp_path):
     assert update_response.json()["name"] == "测试操作员A"
     assert update_response.json()["is_active"] is False
 
+    delete_response = client.delete(f"/api/operators/{operator_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["success"] is True
+    assert delete_response.json()["operator_id"] == operator_id
+
+    list_after_delete = client.get("/api/operators")
+    assert list_after_delete.status_code == 200
+    assert all(item["id"] != operator_id for item in list_after_delete.json())
+
 
 def test_first_manual_inbound_creates_reagent_and_batch(tmp_path):
     client, SessionLocal = build_client(tmp_path)

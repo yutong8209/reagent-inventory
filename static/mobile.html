@@ -203,7 +203,7 @@
 
     <div id="mobile-outbound-sheet" class="mobile-sheet hidden">
         <div class="mobile-sheet-backdrop"></div>
-        <div class="mobile-sheet-panel">
+        <div class="mobile-sheet-panel mobile-outbound-sheet-panel">
             <div class="mobile-sheet-handle"></div>
             <div class="mobile-panel-header mobile-sheet-header">
                 <div>
@@ -215,7 +215,7 @@
 
             <div id="mobile-outbound-batches" class="mobile-batch-list"></div>
 
-            <div class="mobile-sheet-form">
+            <div class="mobile-sheet-form mobile-outbound-sheet-form">
                 <label class="mobile-field">
                     <span>出库数量</span>
                     <input id="mobile-outbound-quantity" class="mobile-input" type="number" min="1" value="1">
@@ -227,13 +227,13 @@
                         <option value="package">包装单位</option>
                     </select>
                 </label>
-                <label class="mobile-field">
+                <label class="mobile-field mobile-field-span-full">
                     <span>操作人</span>
                     <select id="mobile-outbound-operator" class="mobile-select"></select>
                 </label>
             </div>
 
-            <div id="mobile-outbound-preview" class="mobile-preview-card hidden"></div>
+            <div id="mobile-outbound-preview" class="mobile-preview-card mobile-outbound-preview-card hidden"></div>
             <button id="mobile-outbound-submit" class="mobile-primary-btn" type="button">正式出库</button>
         </div>
     </div>

@@ -197,8 +197,11 @@
             <div class="mobile-card-title">${this.escapeHtml(item.reagent_name)}</div>
             <div class="mobile-card-meta">${this.escapeHtml(Utils.formatDateTime(item.created_at))}</div>
           </div>
-          <div class="mobile-card-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
-          <div class="mobile-card-meta">批号 ${this.escapeHtml(item.batch_no || '-')} · ${item.quantity_min}${this.escapeHtml(item.min_unit || '')} · ${this.escapeHtml(item.operator)}</div>
+          <div class="mobile-card-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)} · ${this.escapeHtml(item.operator)}</div>
+          <div class="mobile-card-metrics">
+            <span>批号 ${this.escapeHtml(item.batch_no || '-')}</span>
+            <span>${item.quantity_min}${this.escapeHtml(item.min_unit || '')}</span>
+          </div>
         </article>
       `).join('');
     }
@@ -289,10 +292,12 @@
     container.innerHTML = this.selectedOutboundReagent.batches.map((batch) => `
       <label class="mobile-batch-card ${batch.id === this.selectedOutboundBatchId ? 'active' : ''}">
         <input type="radio" name="mobile-outbound-batch" ${batch.id === this.selectedOutboundBatchId ? 'checked' : ''} onchange="mobileApp.selectOutboundBatch(${batch.id})">
-        <div>
-          <div class="mobile-card-title">${this.escapeHtml(batch.batch_no)}</div>
+        <div class="mobile-outbound-batch-main">
+          <div class="mobile-outbound-batch-top">
+            <div class="mobile-card-title">${this.escapeHtml(batch.batch_no)}</div>
+            <span class="mobile-outbound-batch-stock">库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}</span>
+          </div>
           <div class="mobile-card-meta">有效期 ${this.escapeHtml(batch.expiry_date)} · ${this.escapeHtml(this.formatDays(Utils.getDaysUntilExpiry(batch.expiry_date)))}</div>
-          <div class="mobile-card-meta">库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}</div>
         </div>
       </label>
     `).join('');
@@ -488,8 +493,7 @@
       <button class="mobile-batch-card ${batch.batch_no === this.selectedInboundBatchNo ? 'active' : ''}" type="button" data-batch-no="${this.escapeHtml(batch.batch_no)}">
         <div>
           <div class="mobile-card-title">${this.escapeHtml(batch.batch_no)}</div>
-          <div class="mobile-card-meta">有效期 ${this.escapeHtml(batch.expiry_date || '-')} · ${this.escapeHtml(this.formatDays(batch.expiry_days_left))}</div>
-          <div class="mobile-card-meta">库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}</div>
+          <div class="mobile-card-meta">有效期 ${this.escapeHtml(batch.expiry_date || '-')} · ${this.escapeHtml(this.formatDays(batch.expiry_days_left))} · 库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}</div>
         </div>
       </button>
     `).join('');
@@ -627,7 +631,7 @@
   async openCalibrationForReagent(reagentId) {
     try {
       const preview = await API.calibration.mobilePreview(reagentId);
-      this.openCalibrationSheet(preview, 'create');
+      await this.openCalibrationSheet(preview, 'create');
     } catch (error) {
       Utils.showToast(`校准预览失败：${error.message}`, 'error');
     }
@@ -670,13 +674,13 @@
   async openCalibrationRecord(recordId) {
     try {
       const record = await API.calibration.getRecord(recordId);
-      this.openCalibrationSheet(record, 'edit');
+      await this.openCalibrationSheet(record, 'edit');
     } catch (error) {
       Utils.showToast(`校准记录打开失败：${error.message}`, 'error');
     }
   },
 
-  openCalibrationSheet(data, mode = 'create') {
+  async openCalibrationSheet(data, mode = 'create') {
     this.calibrationMode = mode;
     this.selectedCalibrationPreview = data;
     this.selectedCalibrationRecordId = mode === 'edit' ? data.id : null;
@@ -694,7 +698,7 @@
     document.getElementById('mobile-calibration-fallback-confirm')?.classList.add('hidden');
     document.getElementById('mobile-calibration-submit').classList.toggle('hidden', false);
     document.getElementById('mobile-calibration-submit').textContent = mode === 'edit' ? '保存校准记录' : '保存本次校准';
-    Utils.populateOperatorSelect('mobile-calibration-operator', {
+    await Utils.populateOperatorSelect('mobile-calibration-operator', {
       allowEmpty: false,
       defaultValue: data.operator || Utils.getLastOperator()
     });

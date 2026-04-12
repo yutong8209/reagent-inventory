@@ -1,0 +1,97 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - heading "检验科试剂出入库管理系统" [level=1] [ref=e4]
+    - navigation [ref=e5]:
+      - link "首页" [ref=e6] [cursor=pointer]:
+        - /url: "#"
+      - link "入库" [ref=e7] [cursor=pointer]:
+        - /url: "#"
+      - link "校准" [ref=e8] [cursor=pointer]:
+        - /url: "#"
+      - link "库存" [active] [ref=e9] [cursor=pointer]:
+        - /url: "#"
+      - link "流水及用量" [ref=e10] [cursor=pointer]:
+        - /url: "#"
+      - link "资料设置" [ref=e11] [cursor=pointer]:
+        - /url: "#"
+  - main [ref=e12]:
+    - generic [ref=e369]:
+      - generic [ref=e370]:
+        - generic [ref=e371]:
+          - button "临检组" [ref=e372] [cursor=pointer]:
+            - generic [ref=e373]: 临检组
+          - button "生化组" [ref=e374] [cursor=pointer]:
+            - generic [ref=e375]: 生化组
+          - button "免疫组 5" [ref=e376] [cursor=pointer]:
+            - generic [ref=e377]: 免疫组
+            - generic [ref=e378]: "5"
+        - generic [ref=e379]:
+          - button "血球仪" [ref=e380] [cursor=pointer]:
+            - generic [ref=e381]: 血球仪
+          - button "血凝仪" [ref=e382] [cursor=pointer]:
+            - generic [ref=e383]: 血凝仪
+          - button "血流变仪" [ref=e384] [cursor=pointer]:
+            - generic [ref=e385]: 血流变仪
+          - button "尿干化学仪" [ref=e386] [cursor=pointer]:
+            - generic [ref=e387]: 尿干化学仪
+          - button "尿沉渣仪" [ref=e388] [cursor=pointer]:
+            - generic [ref=e389]: 尿沉渣仪
+          - button "其他耗材" [ref=e390] [cursor=pointer]:
+            - generic [ref=e391]: 其他耗材
+      - generic [ref=e392]:
+        - generic [ref=e393]:
+          - generic [ref=e394]:
+            - heading "血球仪" [level=2] [ref=e395]
+            - paragraph [ref=e396]: 临检组 / 当前库存页优先展示更多试剂；仪器预警请到资料设置中维护。
+          - generic [ref=e397]: 最近刷新：2026/4/12 09:00:37
+        - generic [ref=e398]:
+          - generic [ref=e399]:
+            - generic [ref=e400]: 在库试剂数
+            - generic [ref=e401]: "0"
+          - generic [ref=e402]:
+            - generic [ref=e403]: 近效期数
+            - generic [ref=e404]: "0"
+          - generic [ref=e405]:
+            - generic [ref=e406]: 低库存数
+            - generic [ref=e407]: "0"
+          - generic [ref=e408]:
+            - generic [ref=e409]: 已过期批次数
+            - generic [ref=e410]: "0"
+      - generic [ref=e411]:
+        - generic [ref=e412]:
+          - generic [ref=e413]:
+            - generic [ref=e414]: 关键词搜索
+            - textbox "关键词搜索" [ref=e415]:
+              - /placeholder: 输入试剂名称关键词
+          - generic [ref=e416]:
+            - generic [ref=e417]: 状态筛选
+            - combobox "状态筛选" [ref=e418]:
+              - option "全部状态" [selected]
+              - option "零库存"
+              - option "已过期"
+              - option "近效期"
+              - option "低库存/零库存"
+              - option "低库存"
+              - option "正常"
+          - generic [ref=e419]:
+            - generic [ref=e420]: 排序方式
+            - combobox "排序方式" [ref=e421]:
+              - option "按异常优先" [selected]
+              - option "按最近效期"
+              - option "按库存从低到高"
+              - option "按名称"
+        - generic [ref=e422]:
+          - generic [ref=e423]:
+            - checkbox "仅看预警" [ref=e424]
+            - generic [ref=e425]: 仅看预警
+          - generic [ref=e426]:
+            - checkbox "仅看校准品" [ref=e427]
+            - generic [ref=e428]: 仅看校准品
+          - generic [ref=e429]:
+            - button "导出 Excel" [ref=e430] [cursor=pointer]
+            - button "一键归档零库存" [ref=e431] [cursor=pointer]
+            - button "刷新库存" [ref=e432] [cursor=pointer]
+      - generic [ref=e433]:
+        - heading "试剂库存" [level=3] [ref=e434]
+        - generic [ref=e435]: 显示 0 / 0 个试剂
+      - generic [ref=e437]: 当前筛选条件下没有匹配的库存试剂。

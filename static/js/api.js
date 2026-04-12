@@ -369,6 +369,11 @@ const API = {
                 method: 'PUT',
                 body: JSON.stringify(data)
             });
+        },
+        remove(id) {
+            return API.request(`/operators/${id}`, {
+                method: 'DELETE'
+            });
         }
     },
 

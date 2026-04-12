@@ -27,6 +27,17 @@ function uniqueValue(prefix) {
   return `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
 }
 
+async function expectNoHorizontalOverflow(page) {
+  const metrics = await page.evaluate(() => ({
+    innerWidth: window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+    bodyScrollWidth: document.body.scrollWidth
+  }));
+
+  expect(metrics.scrollWidth, `document scrollWidth ${metrics.scrollWidth} should stay within viewport ${metrics.innerWidth}`).toBeLessThanOrEqual(metrics.innerWidth);
+  expect(metrics.bodyScrollWidth, `body scrollWidth ${metrics.bodyScrollWidth} should stay within viewport ${metrics.innerWidth}`).toBeLessThanOrEqual(metrics.innerWidth);
+}
+
 async function createExactReagent(request, {
   instrumentId,
   name,
@@ -557,6 +568,8 @@ test.describe('Reagent inventory smoke flows', () => {
     await calibrationResult.click();
 
     await expect(page.locator('#mobile-calibration-sheet')).not.toHaveClass(/hidden/);
+    await expectNoHorizontalOverflow(page);
+    await expect(page.locator('#mobile-calibration-operator')).not.toHaveValue('');
     await expect(page.locator('#mobile-calibration-source-card')).toContainText('独立校准品');
     await page.locator('#mobile-calibration-operator').selectOption({ label: setup.operatorName });
     await page.locator('#mobile-calibration-old-result-1').fill('12.1');
@@ -568,6 +581,8 @@ test.describe('Reagent inventory smoke flows', () => {
     await expect(recordCard).toBeVisible();
     await recordCard.click();
     await expect(page.locator('#mobile-calibration-sheet')).not.toHaveClass(/hidden/);
+    await expectNoHorizontalOverflow(page);
+    await expect(page.locator('#mobile-calibration-operator')).not.toHaveValue('');
     await page.locator('#mobile-calibration-old-result-2').fill('12.2');
     await page.locator('#mobile-calibration-submit').click();
     await expect(page.locator('#mobile-calibration-sheet')).toHaveClass(/hidden/);
@@ -618,11 +633,13 @@ test.describe('Reagent inventory smoke flows', () => {
     await calibrationResult.click();
 
     await expect(page.locator('#mobile-calibration-sheet')).not.toHaveClass(/hidden/);
+    await expectNoHorizontalOverflow(page);
     await expect(page.locator('#mobile-calibration-source-card')).toContainText('试剂自带校准');
     await page.locator('#mobile-calibration-operator').selectOption({ label: setup.operatorName });
     await page.locator('#mobile-calibration-new-result-1').fill('8.8');
     await page.locator('#mobile-calibration-submit').click();
     await expect(page.locator('#mobile-calibration-fallback-confirm')).not.toHaveClass(/hidden/);
+    await expectNoHorizontalOverflow(page);
     await page.locator('#mobile-calibration-save-outbound').click();
     await expect(page.locator('#mobile-calibration-sheet')).toHaveClass(/hidden/);
     await expect(page.locator('#mobile-calibration-records')).toContainText(uniqueName);

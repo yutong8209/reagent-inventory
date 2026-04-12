@@ -416,14 +416,18 @@ const catalogPage = {
                         ${this.catalog.length ? this.catalog.map((group) => `
                             <div class="settings-tree-group">
                                 <button class="settings-tree-item ${this.structureEditor.type === 'workGroup' && group.id === this.structureEditor.id ? 'active' : ''}" onclick="catalogPage.selectWorkGroup(${group.id})">
-                                    <span>${this.escapeHtml(group.name)}</span>
-                                    <span class="settings-tree-meta">${(group.instruments || []).length} 台仪器</span>
+                                    <span class="settings-item-head">
+                                        <span class="settings-list-title">${this.escapeHtml(group.name)}</span>
+                                        <span class="settings-item-badge">${(group.instruments || []).length} 台仪器</span>
+                                    </span>
                                 </button>
                                 <div class="settings-tree-children">
                                     ${(group.instruments || []).length ? group.instruments.map((instrument) => `
                                         <button class="settings-tree-item child ${this.structureEditor.type === 'instrument' && instrument.id === this.structureEditor.id ? 'active' : ''}" onclick="catalogPage.selectInstrument(${instrument.id})">
-                                            <span>${this.escapeHtml(instrument.name)}</span>
-                                            <span class="settings-tree-meta">${this.escapeHtml(instrument.model || '未填写型号')}</span>
+                                            <span class="settings-item-head">
+                                                <span class="settings-list-title">${this.escapeHtml(instrument.name)}</span>
+                                                <span class="settings-tree-meta">${this.escapeHtml(instrument.model || '未填写型号')}</span>
+                                            </span>
                                         </button>
                                     `).join('') : '<p class="catalog-empty">该工作组下还没有仪器</p>'}
                                 </div>
@@ -495,10 +499,11 @@ const catalogPage = {
                     <div class="settings-list">
                         ${this.reagents.length ? this.reagents.map((item) => `
                             <button class="settings-list-item ${item.id === this.selectedReagentId ? 'active' : ''}" onclick="catalogPage.selectReagent(${item.id})">
-                                <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
-                                <span class="settings-list-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</span>
-                                <span class="settings-list-meta">${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</span>
-                                <span class="settings-list-meta">${this.getReagentStatusLabel(item)}</span>
+                                <span class="settings-item-head">
+                                    <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
+                                    <span class="settings-item-badge">${this.getReagentStatusLabel(item)}</span>
+                                </span>
+                                <span class="settings-list-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)} · ${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</span>
                             </button>
                         `).join('') : '<p class="catalog-empty">当前筛选下没有试剂档案。</p>'}
                     </div>
@@ -602,8 +607,10 @@ const catalogPage = {
                     <div class="settings-list">
                         ${this.operators.length ? this.operators.map((item) => `
                             <button class="settings-list-item ${item.id === this.selectedOperatorId ? 'active' : ''}" onclick="catalogPage.selectOperator(${item.id})">
-                                <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
-                                <span class="settings-list-meta">${item.is_active ? '启用中' : '已停用'}</span>
+                                <span class="settings-item-head">
+                                    <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
+                                    <span class="settings-item-badge">${item.is_active ? '启用中' : '已停用'}</span>
+                                </span>
                             </button>
                         `).join('') : '<p class="catalog-empty">还没有操作人。</p>'}
                     </div>
@@ -623,6 +630,7 @@ const catalogPage = {
                     <div class="button-group">
                         <button class="btn btn-primary" onclick="catalogPage.submitOperator()">保存操作人</button>
                         <button class="btn btn-secondary" onclick="catalogPage.startCreateOperator()">新建操作人</button>
+                        ${selected ? '<button class="btn btn-danger" onclick="catalogPage.deleteOperator()">删除操作人</button>' : ''}
                     </div>
                 </div>
             </div>
@@ -653,9 +661,11 @@ const catalogPage = {
                     <div class="settings-list">
                         ${this.getFilteredUnitOptions().length ? this.getFilteredUnitOptions().map((item) => `
                             <button class="settings-list-item ${item.id === this.selectedUnitOptionId ? 'active' : ''}" onclick="catalogPage.selectUnitOption(${item.id})">
-                                <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
-                                <span class="settings-list-meta">${this.getScopeLabel(item.scope)}</span>
-                                <span class="settings-list-meta">${item.is_active ? '启用中' : '已停用'} / 排序 ${item.sort_order}</span>
+                                <span class="settings-item-head">
+                                    <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
+                                    <span class="settings-item-badge">${this.getScopeLabel(item.scope)}</span>
+                                </span>
+                                <span class="settings-list-meta">${item.is_active ? '启用中' : '已停用'} · 排序 ${item.sort_order}</span>
                             </button>
                         `).join('') : '<p class="catalog-empty">当前范围下还没有单位选项。</p>'}
                     </div>
@@ -999,6 +1009,24 @@ const catalogPage = {
         await Promise.all([this.loadOperators(), Utils.loadOperators(true)]);
         this.ensureSelections();
         this.render();
+    },
+
+    async deleteOperator() {
+        const selected = this.getSelectedOperator();
+        if (!selected) {
+            return Utils.showToast('请先选择要删除的操作人', 'warning');
+        }
+        if (!confirm(`确定删除操作人“${selected.name}”吗？`)) {
+            return;
+        }
+
+        await API.operators.remove(selected.id);
+        this.selectedOperatorId = null;
+        Utils.operatorsLoaded = false;
+        await Promise.all([this.loadOperators(), Utils.loadOperators(true)]);
+        this.ensureSelections();
+        this.render();
+        Utils.showToast('操作人已删除', 'success');
     },
 
     changeUnitFilterScope(value) {
