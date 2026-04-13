@@ -43,6 +43,12 @@ radial-gradient(circle at 82% 14%,rgba(255,255,255,.32),transparent 16%)}
 .mobile-input,.mobile-select{width:100%;min-height:46px;padding:12px 14px;border:1px solid rgba(190,207,227,.9);border-radius:16px;background:rgba(255,255,255,.88);font-size:15px;color:var(--mobile-text);box-shadow:inset 0 1px 0 rgba(255,255,255,.62)}
 .mobile-input:focus,.mobile-select:focus{outline:none;border-color:#80adff;box-shadow:0 0 0 3px rgba(67,128,255,.16)}
 .mobile-check{display:flex;align-items:center;gap:8px;font-size:13px;color:#4f657d;margin-bottom:6px}
+.mobile-check input[type="checkbox"]{
+  width:18px;
+  height:18px;
+  accent-color:#2f6fe7;
+  flex-shrink:0;
+}
 .mobile-warning-panel{padding:14px 16px}
 .mobile-warning-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:0;border:none;background:transparent;color:inherit;text-align:left}
 .mobile-warning-toggle h2{font-size:21px;line-height:1.15}
@@ -1779,7 +1785,7 @@ body{
 }
 
 .mobile-desktop-link{
-  min-height:40px;
+  min-height:44px;
   padding:0 12px;
 }
 
