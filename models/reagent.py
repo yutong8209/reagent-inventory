@@ -13,6 +13,9 @@ class Reagent(Base):
     instrument_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("instruments.id"), nullable=False
     )
+    reagent_group_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("reagent_groups.id"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     match_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="exact")
     match_pattern: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -34,3 +37,4 @@ class Reagent(Base):
     )
 
     instrument: Mapped["Instrument"] = relationship("Instrument")
+    reagent_group: Mapped["ReagentGroup"] = relationship("ReagentGroup")

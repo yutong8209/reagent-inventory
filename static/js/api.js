@@ -147,8 +147,15 @@ const API = {
     },
 
     mobile: {
-        overview() {
-            return API.request('/mobile/overview');
+        overview(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/mobile/overview${suffix}`);
         }
     },
 
@@ -307,6 +314,18 @@ const API = {
                 body: JSON.stringify(data)
             });
         },
+        stockAdjustmentAccess(password) {
+            return API.request('/admin/stock-adjustments/access', {
+                method: 'POST',
+                body: JSON.stringify({ password })
+            });
+        },
+        applyStockAdjustments(data) {
+            return API.request('/admin/stock-adjustments/apply', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
         resetReagentData(password) {
             return API.request('/admin/reset-reagent-data', {
                 method: 'POST',
@@ -373,6 +392,31 @@ const API = {
         remove(id) {
             return API.request(`/operators/${id}`, {
                 method: 'DELETE'
+            });
+        }
+    },
+
+    reagentGroups: {
+        list(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/reagent-groups${suffix}`);
+        },
+        create(data) {
+            return API.request('/reagent-groups', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
+        update(id, data) {
+            return API.request(`/reagent-groups/${id}`, {
+                method: 'PUT',
+                body: JSON.stringify(data)
             });
         }
     },

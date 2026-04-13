@@ -13,10 +13,11 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, UnitOption, WorkGroup
+from models import BatchStock, Instrument, Operator, ParseLog, Reagent, ReagentGroup, Transaction, UnitOption, WorkGroup
 from schemas import (
     AdminPasswordRequest,
     BatchInfo,
+    BatchStockAdjustmentRequest,
     DashboardOverviewResponse,
     DashboardPendingTasks,
     DashboardWarningReagent,
@@ -31,6 +32,9 @@ from schemas import (
     OperatorResponse,
     OperatorUpdate,
     ReagentCatalogItem,
+    ReagentGroupCreate,
+    ReagentGroupResponse,
+    ReagentGroupUpdate,
     ReagentInfo,
     ReagentUpdate,
     ReagentWarningSettingsUpdate,
@@ -105,6 +109,10 @@ def _safe_int(value: int | None, fallback: int) -> int:
     return max(value, 0)
 
 
+def _safe_ratio(value: int | None) -> int:
+    return value if value and value > 0 else 1
+
+
 def _unit_option_sort_key(option: UnitOption):
     scope_priority = {"both": 0, "package": 1, "min": 2}
     return (
@@ -125,6 +133,31 @@ def _unit_option_matches_scope(option_scope: str, scope: str | None) -> bool:
     return True
 
 
+def _reagent_group_sort_key(group: ReagentGroup):
+    return (
+        group.sort_order if group.sort_order is not None else 100,
+        group.name.lower(),
+        group.id,
+    )
+
+
+def _serialize_reagent_group(group: ReagentGroup) -> ReagentGroupResponse:
+    return ReagentGroupResponse.model_validate(group)
+
+
+def _resolve_reagent_group(
+    db: Session,
+    reagent_group_id: int | None,
+) -> ReagentGroup | None:
+    if reagent_group_id is None:
+        return None
+
+    group = db.query(ReagentGroup).filter(ReagentGroup.id == reagent_group_id).first()
+    if not group:
+        raise HTTPException(status_code=400, detail="项目分组不存在")
+    return group
+
+
 def _require_admin_action_password(password: str):
     if password != ADMIN_ACTION_PASSWORD:
         raise HTTPException(status_code=403, detail="密码错误，不能执行危险操作")
@@ -135,8 +168,15 @@ def _days_until(target: date) -> int:
 
 
 def _batch_total_min_units(batch: BatchStock) -> int:
-    ratio = batch.package_to_min_qty if batch.package_to_min_qty and batch.package_to_min_qty > 0 else 1
+    ratio = _safe_ratio(batch.package_to_min_qty)
     return (batch.quantity * ratio) + (batch.loose_min_quantity or 0)
+
+
+def _set_batch_total_min_units(batch: BatchStock, total_min_units: int):
+    ratio = _safe_ratio(batch.package_to_min_qty)
+    normalized_total = max(int(total_min_units or 0), 0)
+    batch.quantity = normalized_total // ratio
+    batch.loose_min_quantity = normalized_total % ratio
 
 
 def _reagent_total_min_units(db: Session, reagent_id: int) -> int:
@@ -222,6 +262,7 @@ def _serialize_batch(batch: BatchStock) -> BatchInfo:
 def _serialize_reagent(reagent: Reagent) -> ReagentCatalogItem:
     instrument = reagent.instrument
     work_group = instrument.work_group if instrument else None
+    reagent_group = reagent.reagent_group
     effective_warning_days, effective_warning_stock, warning_source = _effective_warning_values(reagent)
     return ReagentCatalogItem(
         id=reagent.id,
@@ -229,6 +270,9 @@ def _serialize_reagent(reagent: Reagent) -> ReagentCatalogItem:
         instrument_name=instrument.name if instrument else "",
         work_group_id=work_group.id if work_group else 0,
         work_group_name=work_group.name if work_group else "",
+        reagent_group_id=reagent_group.id if reagent_group else None,
+        reagent_group_name=reagent_group.name if reagent_group else None,
+        reagent_group_sort_order=reagent_group.sort_order if reagent_group else 9999,
         name=reagent.name,
         manufacturer=reagent.manufacturer,
         is_calibrator=bool(reagent.is_calibrator),
@@ -295,6 +339,7 @@ def _build_reagent_info(
         and nearest_expiry_days <= effective_warning_days
     )
     is_low_stock = total_min_quantity <= effective_warning_stock
+    reagent_group = reagent.reagent_group
     status_level = _build_status_level(
         has_expired_batch=has_expired_batch,
         nearest_expiry_days=nearest_expiry_days,
@@ -306,6 +351,9 @@ def _build_reagent_info(
     return ReagentInfo(
         id=reagent.id,
         instrument_id=reagent.instrument_id,
+        reagent_group_id=reagent_group.id if reagent_group else None,
+        reagent_group_name=reagent_group.name if reagent_group else None,
+        reagent_group_sort_order=reagent_group.sort_order if reagent_group else 9999,
         name=reagent.name,
         unit=reagent.unit,
         package_unit=reagent.package_unit,
@@ -349,11 +397,21 @@ def _status_sort_key(reagent: ReagentInfo):
     )
 
 
+def _reagent_grouped_sort_key(reagent: ReagentInfo):
+    return (
+        reagent.reagent_group_sort_order if reagent.reagent_group_sort_order is not None else 9999,
+        reagent.reagent_group_name or "未分组",
+        reagent.name,
+        reagent.id,
+    )
+
+
 def _query_inventory_data(
     db: Session,
     *,
     work_group_id: int | None = None,
     instrument_id: int | None = None,
+    reagent_sort_mode: str = "status",
 ) -> list[WorkGroupInfo]:
     work_groups_query = db.query(WorkGroup).order_by(WorkGroup.id.asc())
     if work_group_id is not None:
@@ -411,7 +469,8 @@ def _query_inventory_data(
                     )
                 )
 
-            reagent_items.sort(key=_status_sort_key)
+            sort_key = _reagent_grouped_sort_key if reagent_sort_mode == "group" else _status_sort_key
+            reagent_items.sort(key=sort_key)
             group_instruments.append(
                 InstrumentInfo(
                     id=instrument.id,
@@ -524,15 +583,25 @@ def _serialize_transaction_list_item(row) -> TransactionListItem:
     )
 
 
-def _query_recent_outbounds(db: Session, limit: int = 20) -> list[TransactionListItem]:
-    rows = (
+def _query_recent_outbounds(
+    db: Session,
+    limit: int = 20,
+    *,
+    instrument_id: int | None = None,
+) -> list[TransactionListItem]:
+    query = (
         db.query(Transaction, Reagent, Instrument, WorkGroup, BatchStock)
         .join(Reagent, Transaction.reagent_id == Reagent.id)
         .join(Instrument, Reagent.instrument_id == Instrument.id)
         .join(WorkGroup, Instrument.work_group_id == WorkGroup.id)
         .outerjoin(BatchStock, Transaction.batch_stock_id == BatchStock.id)
         .filter(Transaction.type == "OUT")
-        .order_by(Transaction.created_at.desc(), Transaction.id.desc())
+    )
+    if instrument_id is not None:
+        query = query.filter(Instrument.id == instrument_id)
+
+    rows = (
+        query.order_by(Transaction.created_at.desc(), Transaction.id.desc())
         .limit(limit)
         .all()
     )
@@ -728,12 +797,15 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
 
 
 @router.get("/mobile/overview", response_model=MobileOverviewResponse)
-def get_mobile_overview(db: Session = Depends(get_db)):
-    inventory_data = _query_inventory_data(db)
+def get_mobile_overview(
+    instrument_id: int | None = Query(None, ge=1),
+    db: Session = Depends(get_db),
+):
+    inventory_data = _query_inventory_data(db, instrument_id=instrument_id)
     return MobileOverviewResponse(
         pending_tasks=_build_dashboard_pending_tasks(inventory_data),
         warning_reagents=_build_dashboard_warning_reagents(inventory_data)[:4],
-        recent_outbounds=_query_recent_outbounds(db, limit=5),
+        recent_outbounds=_query_recent_outbounds(db, limit=5, instrument_id=instrument_id),
     )
 
 
@@ -1097,8 +1169,10 @@ def update_reagent(reagent_id: int, data: ReagentUpdate, db: Session = Depends(g
         name=data.name,
         exclude_reagent_id=reagent_id,
     )
+    reagent_group = _resolve_reagent_group(db, data.reagent_group_id)
 
     reagent.instrument_id = instrument.id
+    reagent.reagent_group_id = reagent_group.id if reagent_group else None
     reagent.name = name
     reagent.manufacturer = _clean_text(data.manufacturer) or None
     reagent.is_calibrator = bool(data.is_calibrator) or _is_calibrator_name(name)
@@ -1192,6 +1266,66 @@ def archive_zero_stock_reagents(db: Session = Depends(get_db)):
 
     db.commit()
     return {"success": True, "archived_count": len(archived_ids), "reagent_ids": archived_ids}
+
+
+@router.get("/reagent-groups", response_model=List[ReagentGroupResponse])
+def get_reagent_groups(
+    include_inactive: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    query = db.query(ReagentGroup)
+    if not include_inactive:
+        query = query.filter(ReagentGroup.is_active.is_(True))
+    groups = query.all()
+    groups.sort(key=_reagent_group_sort_key)
+    return [_serialize_reagent_group(group) for group in groups]
+
+
+@router.post("/reagent-groups", response_model=ReagentGroupResponse, status_code=201)
+def create_reagent_group(data: ReagentGroupCreate, db: Session = Depends(get_db)):
+    name = _clean_text(data.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="项目分组名称不能为空")
+
+    existing = db.query(ReagentGroup).filter(func.lower(ReagentGroup.name) == name.lower()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"项目分组“{name}”已存在")
+
+    group = ReagentGroup(
+        name=name,
+        sort_order=_safe_int(data.sort_order, 100),
+        is_active=bool(data.is_active),
+    )
+    db.add(group)
+    db.commit()
+    db.refresh(group)
+    return _serialize_reagent_group(group)
+
+
+@router.put("/reagent-groups/{group_id}", response_model=ReagentGroupResponse)
+def update_reagent_group(group_id: int, data: ReagentGroupUpdate, db: Session = Depends(get_db)):
+    group = db.query(ReagentGroup).filter(ReagentGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="项目分组不存在")
+
+    name = _clean_text(data.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="项目分组名称不能为空")
+
+    existing = (
+        db.query(ReagentGroup)
+        .filter(func.lower(ReagentGroup.name) == name.lower(), ReagentGroup.id != group_id)
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail=f"项目分组“{name}”已存在")
+
+    group.name = name
+    group.sort_order = _safe_int(data.sort_order, 100)
+    group.is_active = bool(data.is_active)
+    db.commit()
+    db.refresh(group)
+    return _serialize_reagent_group(group)
 
 
 @router.get("/unit-options", response_model=List[UnitOptionResponse])
@@ -1321,6 +1455,58 @@ def delete_operator(operator_id: int, db: Session = Depends(get_db)):
     db.delete(operator)
     db.commit()
     return {"success": True, "operator_id": operator_id}
+
+
+@router.post("/admin/stock-adjustments/access", response_model=List[WorkGroupInfo])
+def get_stock_adjustment_inventory(data: AdminPasswordRequest, db: Session = Depends(get_db)):
+    _require_admin_action_password(data.password)
+    return _query_inventory_data(db, reagent_sort_mode="group")
+
+
+@router.post("/admin/stock-adjustments/apply")
+def apply_stock_adjustments(data: BatchStockAdjustmentRequest, db: Session = Depends(get_db)):
+    _require_admin_action_password(data.password)
+    normalized_items = {
+        int(item.batch_stock_id): max(int(item.target_min_quantity), 0)
+        for item in data.items
+    }
+    if not normalized_items:
+        return {"success": True, "updated_batch_count": 0, "updated_reagent_count": 0}
+
+    batches = (
+        db.query(BatchStock)
+        .join(Reagent, BatchStock.reagent_id == Reagent.id)
+        .filter(
+            BatchStock.id.in_(list(normalized_items.keys())),
+            Reagent.is_archived.is_(False),
+        )
+        .all()
+    )
+    batch_map = {batch.id: batch for batch in batches}
+    missing_ids = [batch_id for batch_id in normalized_items if batch_id not in batch_map]
+    if missing_ids:
+        missing_text = ", ".join(str(item) for item in missing_ids)
+        raise HTTPException(status_code=404, detail=f"以下批次不存在或已归档：{missing_text}")
+
+    updated_batch_count = 0
+    updated_reagent_ids: set[int] = set()
+    for batch_id, target_min_quantity in normalized_items.items():
+        batch = batch_map[batch_id]
+        if _batch_total_min_units(batch) == target_min_quantity:
+            continue
+        _set_batch_total_min_units(batch, target_min_quantity)
+        updated_batch_count += 1
+        updated_reagent_ids.add(batch.reagent_id)
+
+    if not updated_batch_count:
+        return {"success": True, "updated_batch_count": 0, "updated_reagent_count": 0}
+
+    db.commit()
+    return {
+        "success": True,
+        "updated_batch_count": updated_batch_count,
+        "updated_reagent_count": len(updated_reagent_ids),
+    }
 
 
 @router.post("/admin/reset-reagent-data")

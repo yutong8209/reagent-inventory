@@ -174,6 +174,7 @@ def _build_target_candidates(db: Session, calibrator: Reagent) -> list[Reagent]:
 def _serialize_target_candidate(reagent: Reagent) -> CalibrationTargetCandidate:
     instrument = reagent.instrument
     work_group = instrument.work_group if instrument else None
+    reagent_group = reagent.reagent_group
     return CalibrationTargetCandidate(
         reagent_id=reagent.id,
         reagent_name=reagent.name,
@@ -181,6 +182,9 @@ def _serialize_target_candidate(reagent: Reagent) -> CalibrationTargetCandidate:
         instrument_name=instrument.name if instrument else "",
         work_group_id=work_group.id if work_group else 0,
         work_group_name=work_group.name if work_group else "",
+        reagent_group_id=reagent_group.id if reagent_group else None,
+        reagent_group_name=reagent_group.name if reagent_group else None,
+        reagent_group_sort_order=reagent_group.sort_order if reagent_group else 9999,
         calibration_result_unit=_clean_text(reagent.calibration_result_unit) or "nmmol/L",
     )
 

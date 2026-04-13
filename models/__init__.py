@@ -1,5 +1,6 @@
 from .work_group import WorkGroup
 from .instrument import Instrument
+from .reagent_group import ReagentGroup
 from .reagent import Reagent
 from .batch_stock import BatchStock
 from .transaction import Transaction
@@ -12,6 +13,7 @@ from .calibration_record import CalibrationRecord
 __all__ = [
     "WorkGroup",
     "Instrument",
+    "ReagentGroup",
     "Reagent",
     "BatchStock",
     "Transaction",

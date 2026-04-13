@@ -22,6 +22,9 @@ class BatchInfo(BaseModel):
 class ReagentInfo(BaseModel):
     id: int
     instrument_id: int
+    reagent_group_id: Optional[int] = None
+    reagent_group_name: Optional[str] = None
+    reagent_group_sort_order: int = 9999
     name: str
     unit: str
     package_unit: Optional[str]
@@ -102,6 +105,9 @@ class ReagentCatalogItem(BaseModel):
     instrument_name: str
     work_group_id: int
     work_group_name: str
+    reagent_group_id: Optional[int] = None
+    reagent_group_name: Optional[str] = None
+    reagent_group_sort_order: int = 9999
     name: str
     manufacturer: Optional[str] = None
     is_calibrator: bool = False
@@ -171,6 +177,13 @@ class ReagentWarningSettingsUpdate(BaseModel):
     warning_stock: int = Field(default=5, ge=0)
 
 
+class ReagentGroupCatalogItem(BaseModel):
+    id: int
+    name: str
+    sort_order: int = 100
+    is_active: bool = True
+
+
 class AdminPasswordRequest(BaseModel):
     password: str
 
@@ -182,6 +195,16 @@ class ClearTransactionsRequest(BaseModel):
     reagent_id: Optional[int] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+
+
+class BatchStockAdjustmentItem(BaseModel):
+    batch_stock_id: int
+    target_min_quantity: int = Field(ge=0)
+
+
+class BatchStockAdjustmentRequest(BaseModel):
+    password: str
+    items: List[BatchStockAdjustmentItem] = Field(default_factory=list)
 
 
 from .reporting import TransactionListItem

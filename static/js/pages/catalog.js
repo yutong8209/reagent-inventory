@@ -3,6 +3,7 @@ const catalogPage = {
     activeModule: 'structure',
     catalog: [],
     reagents: [],
+    reagentGroups: [],
     operators: [],
     unitOptions: [],
     structureEditor: {
@@ -11,8 +12,11 @@ const catalogPage = {
         mode: 'create'
     },
     selectedReagentId: null,
+    selectedReagentGroupId: null,
     selectedOperatorId: null,
     selectedUnitOptionId: null,
+    qrInstrumentId: null,
+    mobilePreferredOrigin: 'http://192.168.31.32:8000',
     reagentFilters: {
         workGroupId: '',
         instrumentId: '',
@@ -27,6 +31,14 @@ const catalogPage = {
         endDate: ''
     },
     maintenanceReagents: [],
+    stockAdjustmentState: {
+        unlocked: false,
+        password: '',
+        inventory: [],
+        selectedWorkGroupId: null,
+        selectedInstrumentId: null,
+        drafts: {}
+    },
     unitFilterScope: 'all',
     moduleCopy: {
         structure: {
@@ -36,6 +48,10 @@ const catalogPage = {
         reagents: {
             title: '试剂档案',
             copy: '这里是试剂主档案入口，可统一修改归属、包装关系、预警值和归档状态。'
+        },
+        groups: {
+            title: '项目分组',
+            copy: '维护手机仪器模式下的默认试剂分组和排序。'
         },
         operators: {
             title: '操作人',
@@ -88,6 +104,7 @@ const catalogPage = {
     async reloadBaseData() {
         await Promise.all([
             this.loadCatalog(),
+            this.loadReagentGroups(),
             this.loadOperators(),
             this.loadUnitOptions()
         ]);
@@ -99,6 +116,10 @@ const catalogPage = {
 
     async loadOperators() {
         this.operators = await API.operators.list();
+    },
+
+    async loadReagentGroups() {
+        this.reagentGroups = await API.reagentGroups.list({ include_inactive: true });
     },
 
     async loadUnitOptions() {
@@ -128,6 +149,7 @@ const catalogPage = {
     ensureSelections() {
         this.ensureStructureSelection();
         this.ensureReagentSelection();
+        this.ensureReagentGroupSelection();
         this.ensureOperatorSelection();
         this.ensureUnitSelection();
     },
@@ -162,6 +184,13 @@ const catalogPage = {
             return;
         }
         this.selectedReagentId = this.reagents[0]?.id || null;
+    },
+
+    ensureReagentGroupSelection() {
+        if (this.selectedReagentGroupId && this.reagentGroups.some((item) => item.id === this.selectedReagentGroupId)) {
+            return;
+        }
+        this.selectedReagentGroupId = this.reagentGroups[0]?.id || null;
     },
 
     ensureOperatorSelection() {
@@ -217,6 +246,33 @@ const catalogPage = {
         return `1${packageLabel} = ${ratio}${minLabel}`;
     },
 
+    getMobileTargetOrigin() {
+        const currentOrigin = window.location.origin;
+        return ['http://127.0.0.1:8000', 'http://localhost:8000'].includes(currentOrigin)
+            ? this.mobilePreferredOrigin
+            : currentOrigin;
+    },
+
+    getMobileAppVersion() {
+        return '20260413-7';
+    },
+
+    buildMobileUrl(params = {}) {
+        const search = new URLSearchParams({
+            ...params,
+            appv: this.getMobileAppVersion(),
+        });
+        return `${this.getMobileTargetOrigin()}/mobile.html?${search.toString()}`;
+    },
+
+    getInstrumentMobileUrl(instrumentId) {
+        const normalizedId = Number(instrumentId);
+        if (!normalizedId) {
+            return this.buildMobileUrl();
+        }
+        return this.buildMobileUrl({ instrument_id: normalizedId });
+    },
+
     getWorkGroupById(id) {
         return this.catalog.find((group) => group.id === Number(id)) || null;
     },
@@ -231,8 +287,102 @@ const catalogPage = {
         return null;
     },
 
+    ensureStockAdjustmentSelection() {
+        const state = this.stockAdjustmentState;
+        const groups = state.inventory || [];
+        if (!groups.length) {
+            state.selectedWorkGroupId = null;
+            state.selectedInstrumentId = null;
+            return;
+        }
+
+        const currentGroup = groups.find((group) => group.id === Number(state.selectedWorkGroupId)) || groups[0];
+        state.selectedWorkGroupId = currentGroup.id;
+
+        const instruments = currentGroup.instruments || [];
+        if (!instruments.length) {
+            state.selectedInstrumentId = null;
+            return;
+        }
+
+        const currentInstrument = instruments.find((item) => item.id === Number(state.selectedInstrumentId)) || instruments[0];
+        state.selectedInstrumentId = currentInstrument.id;
+    },
+
+    getStockAdjustmentSelectedGroup() {
+        return (this.stockAdjustmentState.inventory || []).find(
+            (group) => group.id === Number(this.stockAdjustmentState.selectedWorkGroupId)
+        ) || null;
+    },
+
+    getStockAdjustmentSelectedInstrument() {
+        const group = this.getStockAdjustmentSelectedGroup();
+        return (group?.instruments || []).find(
+            (instrument) => instrument.id === Number(this.stockAdjustmentState.selectedInstrumentId)
+        ) || null;
+    },
+
+    getStockAdjustmentDraftValue(batch) {
+        const stored = this.stockAdjustmentState.drafts[String(batch.id)];
+        if (stored === undefined || stored === null || stored === '') {
+            return String(batch.available_min_quantity ?? 0);
+        }
+        return String(stored);
+    },
+
+    getStockAdjustmentGroupLabel(reagent) {
+        return this.normalizeText(reagent?.reagent_group_name) || '未分组';
+    },
+
+    getStockAdjustmentGroupedReagents(instrument) {
+        const reagents = [...(instrument?.reagents || [])];
+        reagents.sort((left, right) => {
+            return (left.reagent_group_sort_order ?? 9999) - (right.reagent_group_sort_order ?? 9999)
+                || this.getStockAdjustmentGroupLabel(left).localeCompare(this.getStockAdjustmentGroupLabel(right), 'zh-CN')
+                || (left.name || '').localeCompare(right.name || '', 'zh-CN');
+        });
+
+        const groups = [];
+        for (const reagent of reagents) {
+            const groupLabel = this.getStockAdjustmentGroupLabel(reagent);
+            const existing = groups.find((item) => item.label === groupLabel);
+            if (existing) {
+                existing.reagents.push(reagent);
+            } else {
+                groups.push({ label: groupLabel, reagents: [reagent] });
+            }
+        }
+        return groups;
+    },
+
+    getChangedStockAdjustmentItems() {
+        const selectedInstrument = this.getStockAdjustmentSelectedInstrument();
+        const changedItems = [];
+        for (const reagent of (selectedInstrument?.reagents || [])) {
+            for (const batch of (reagent.batches || [])) {
+                const rawValue = this.stockAdjustmentState.drafts[String(batch.id)];
+                if (rawValue === undefined || rawValue === null || rawValue === '') {
+                    continue;
+                }
+                const targetMinQuantity = this.parseNonNegative(rawValue, batch.available_min_quantity ?? 0);
+                if (targetMinQuantity === Number(batch.available_min_quantity ?? 0)) {
+                    continue;
+                }
+                changedItems.push({
+                    batch_stock_id: batch.id,
+                    target_min_quantity: targetMinQuantity
+                });
+            }
+        }
+        return changedItems;
+    },
+
     getSelectedReagent() {
         return this.reagents.find((item) => item.id === this.selectedReagentId) || null;
+    },
+
+    getSelectedReagentGroup() {
+        return this.reagentGroups.find((item) => item.id === this.selectedReagentGroupId) || null;
     },
 
     getSelectedOperator() {
@@ -297,6 +447,22 @@ const catalogPage = {
         ).join('');
     },
 
+    getReagentGroupOptions(selectedValue = '', { includeInactive = true } = {}) {
+        const normalizedValue = selectedValue === null || selectedValue === undefined ? '' : String(selectedValue);
+        const groups = this.reagentGroups
+            .filter((group) => includeInactive || group.is_active)
+            .sort((left, right) => {
+                return (left.sort_order ?? 100) - (right.sort_order ?? 100)
+                    || left.name.localeCompare(right.name, 'zh-CN');
+            });
+
+        return ['<option value="">未分组</option>'].concat(
+            groups.map((group) => (
+                `<option value="${group.id}" ${String(group.id) === normalizedValue ? 'selected' : ''}>${this.escapeHtml(group.name)}</option>`
+            ))
+        ).join('');
+    },
+
     getScopeLabel(scope) {
         if (scope === 'package') return '包装单位';
         if (scope === 'min') return '最小单位';
@@ -328,6 +494,10 @@ const catalogPage = {
             this.refreshReagentRelationPreview();
             return;
         }
+        if (this.activeModule === 'groups') {
+            body.innerHTML = this.renderReagentGroupModule();
+            return;
+        }
         if (this.activeModule === 'operators') {
             body.innerHTML = this.renderOperatorModule();
             return;
@@ -348,6 +518,7 @@ const catalogPage = {
             : null;
         const selectedInstrument = selectedInstrumentBundle?.instrument || null;
         const defaultGroupId = selectedInstrument?.work_group_id || selectedGroup?.id || '';
+        const qrTarget = selectedInstrument ? this.getInstrumentMobileUrl(selectedInstrument.id) : this.buildMobileUrl();
 
         const editorHtml = this.structureEditor.type === 'instrument'
             ? `
@@ -382,6 +553,7 @@ const catalogPage = {
                 <div class="button-group">
                     <button class="btn btn-primary" onclick="catalogPage.submitInstrument()">保存仪器</button>
                     ${selectedInstrument ? '<button class="btn btn-secondary" onclick="catalogPage.batchUpdateStructureInstrumentWarnings()">批量设置当前仪器预警</button>' : ''}
+                    ${selectedInstrument ? '<button class="btn btn-secondary" onclick="catalogPage.openInstrumentQrModal()">手机二维码</button>' : ''}
                     <button class="btn btn-secondary" onclick="catalogPage.startCreateInstrument(${defaultGroupId || 'null'})">新建仪器</button>
                     <button class="btn btn-secondary" onclick="catalogPage.selectWorkGroup(${defaultGroupId || 'null'})">返回工作组</button>
                 </div>
@@ -439,6 +611,24 @@ const catalogPage = {
                     ${editorHtml}
                 </div>
             </div>
+            ${selectedInstrument ? `
+                <div class="settings-modal-backdrop ${this.qrInstrumentId === selectedInstrument.id ? '' : 'hidden'}" onclick="catalogPage.closeInstrumentQrModal()">
+                    <div class="settings-modal-card" onclick="event.stopPropagation()">
+                        <div class="settings-editor-header">
+                            <h4>${this.escapeHtml(selectedInstrument.name)} 手机二维码</h4>
+                            <p class="hint">扫码后会直接进入该仪器的手机工作台，默认只展示本仪器信息。</p>
+                        </div>
+                        <div class="settings-qr-block">
+                            <img class="settings-qr-image" src="/api/mobile/qr?target=${encodeURIComponent(qrTarget)}" alt="${this.escapeHtml(selectedInstrument.name)} 手机二维码">
+                            <div class="settings-inline-note">链接：${this.escapeHtml(qrTarget)}</div>
+                        </div>
+                        <div class="button-group">
+                            <button class="btn btn-primary" onclick="catalogPage.copyInstrumentQrLink()">复制链接</button>
+                            <button class="btn btn-secondary" onclick="catalogPage.closeInstrumentQrModal()">关闭</button>
+                        </div>
+                    </div>
+                </div>
+            ` : ''}
         `;
     },
 
@@ -503,7 +693,7 @@ const catalogPage = {
                                     <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
                                     <span class="settings-item-badge">${this.getReagentStatusLabel(item)}</span>
                                 </span>
-                                <span class="settings-list-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)} · ${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</span>
+                                <span class="settings-list-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)} · ${this.escapeHtml(item.reagent_group_name || '未分组')} · ${this.escapeHtml(this.formatRelation(item.package_unit, item.package_to_min_qty, item.unit))}</span>
                             </button>
                         `).join('') : '<p class="catalog-empty">当前筛选下没有试剂档案。</p>'}
                     </div>
@@ -536,6 +726,14 @@ const catalogPage = {
                             <div class="form-group">
                                 <label for="catalog-reagent-manufacturer">厂家</label>
                                 <input type="text" id="catalog-reagent-manufacturer" class="form-input" value="${this.escapeHtml(selected.manufacturer || '')}" placeholder="可选">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="catalog-reagent-group">项目分组</label>
+                                <select id="catalog-reagent-group" class="form-select">
+                                    ${this.getReagentGroupOptions(selected.reagent_group_id)}
+                                </select>
                             </div>
                         </div>
                         <div class="form-row">
@@ -590,6 +788,58 @@ const catalogPage = {
                             <p class="hint">先从左侧列表选择一个试剂档案，再在这里维护详细资料。</p>
                         </div>
                     `}
+                </div>
+            </div>
+        `;
+    },
+
+    renderReagentGroupModule() {
+        const selected = this.getSelectedReagentGroup();
+        const sortedGroups = [...this.reagentGroups].sort((left, right) => {
+            return (left.sort_order ?? 100) - (right.sort_order ?? 100)
+                || left.name.localeCompare(right.name, 'zh-CN');
+        });
+
+        return `
+            <div class="settings-module-grid">
+                <div class="settings-panel">
+                    <div class="settings-panel-head">
+                        <h4>项目分组列表</h4>
+                        <button class="btn btn-secondary btn-small" onclick="catalogPage.startCreateReagentGroup()">新建分组</button>
+                    </div>
+                    <div class="settings-list">
+                        ${sortedGroups.length ? sortedGroups.map((item) => `
+                            <button class="settings-list-item ${item.id === this.selectedReagentGroupId ? 'active' : ''}" onclick="catalogPage.selectReagentGroup(${item.id})">
+                                <span class="settings-item-head">
+                                    <span class="settings-list-title">${this.escapeHtml(item.name)}</span>
+                                    <span class="settings-item-badge">${item.is_active ? '启用中' : '已停用'}</span>
+                                </span>
+                                <span class="settings-list-meta">排序 ${item.sort_order ?? 100}</span>
+                            </button>
+                        `).join('') : '<p class="catalog-empty">还没有项目分组。</p>'}
+                    </div>
+                </div>
+                <div class="settings-panel">
+                    <div class="settings-editor-header">
+                        <h4>${selected ? '编辑项目分组' : '新建项目分组'}</h4>
+                        <p class="hint">手机端仪器模式下的默认试剂按钮会按这里的分组和排序显示。</p>
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-reagent-group-name">分组名称</label>
+                        <input type="text" id="catalog-reagent-group-name" class="form-input" placeholder="例如：甲功" value="${this.escapeHtml(selected?.name || '')}">
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-reagent-group-sort-order">排序</label>
+                        <input type="number" id="catalog-reagent-group-sort-order" class="form-input" min="0" value="${selected?.sort_order ?? 100}">
+                    </div>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="catalog-reagent-group-active" ${selected ? (selected.is_active ? 'checked' : '') : 'checked'}>
+                        <span>启用状态</span>
+                    </label>
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="catalogPage.submitReagentGroup()">保存项目分组</button>
+                        <button class="btn btn-secondary" onclick="catalogPage.startCreateReagentGroup()">新建项目分组</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -706,11 +956,117 @@ const catalogPage = {
     },
 
     renderSystemModule() {
+        const stockAdjustmentState = this.stockAdjustmentState;
+        const stockAdjustmentGroup = this.getStockAdjustmentSelectedGroup();
+        const stockAdjustmentInstrument = this.getStockAdjustmentSelectedInstrument();
+        const stockAdjustmentGroups = this.getStockAdjustmentGroupedReagents(stockAdjustmentInstrument);
+        const changedItems = this.getChangedStockAdjustmentItems();
         const maintenanceInstruments = this.maintenanceFilters.workGroupId
             ? (this.getWorkGroupById(this.maintenanceFilters.workGroupId)?.instruments || [])
             : this.catalog.flatMap((group) => group.instruments || []);
         return `
             <div class="settings-system-stack">
+                <div class="settings-panel">
+                    <div class="settings-editor-header">
+                        <div>
+                            <h4>调整试剂库存</h4>
+                            <p class="hint">进入前必须输入密码。按工作组和仪器快速切换，直接修改未归档试剂各批号的当前库存最小单位数。</p>
+                        </div>
+                        ${stockAdjustmentState.unlocked ? '<span class="settings-item-badge">已进入维护页</span>' : '<span class="settings-item-badge">密码保护</span>'}
+                    </div>
+                    ${stockAdjustmentState.unlocked ? `
+                        <div class="stock-adjustment-shell">
+                            <div class="stock-adjustment-toolbar">
+                                <div class="stock-adjustment-toolbar-copy">
+                                    <strong>${this.escapeHtml(stockAdjustmentInstrument?.name || '请选择仪器')}</strong>
+                                    <span>当前仅显示该仪器下未归档试剂的批次库存，可分别调整每个批号。</span>
+                                </div>
+                                <div class="button-group">
+                                    <button class="btn btn-primary" onclick="catalogPage.saveStockAdjustments()" ${changedItems.length ? '' : 'disabled'}>保存当前仪器修改${changedItems.length ? `（${changedItems.length}项）` : ''}</button>
+                                    <button class="btn btn-secondary" onclick="catalogPage.resetStockAdjustmentDrafts()">恢复当前页原值</button>
+                                    <button class="btn btn-secondary" onclick="catalogPage.closeStockAdjustmentWorkspace()">退出库存调整</button>
+                                </div>
+                            </div>
+                            <div class="stock-adjustment-tab-section">
+                                <div class="stock-adjustment-tab-label">工作组</div>
+                                <div class="inventory-tab-strip">
+                                    ${(stockAdjustmentState.inventory || []).map((group) => `
+                                        <button class="inventory-tab ${group.id === stockAdjustmentState.selectedWorkGroupId ? 'active' : ''}" onclick="catalogPage.selectStockAdjustmentWorkGroup(${group.id})">
+                                            <span>${this.escapeHtml(group.name)}</span>
+                                            <span class="inventory-tab-badge">${(group.instruments || []).length}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div class="stock-adjustment-tab-section">
+                                <div class="stock-adjustment-tab-label">仪器</div>
+                                <div class="inventory-subtab-strip">
+                                    ${(stockAdjustmentGroup?.instruments || []).map((instrument) => `
+                                        <button class="inventory-subtab ${instrument.id === stockAdjustmentState.selectedInstrumentId ? 'active' : ''}" onclick="catalogPage.selectStockAdjustmentInstrument(${instrument.id})">
+                                            <span>${this.escapeHtml(instrument.name)}</span>
+                                            <span class="inventory-tab-badge">${(instrument.reagents || []).length}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div class="stock-adjustment-groups">
+                                ${stockAdjustmentGroups.length ? stockAdjustmentGroups.map((group) => `
+                                    <section class="stock-adjustment-group">
+                                        <div class="stock-adjustment-group-head">
+                                            <h5>${this.escapeHtml(group.label)}</h5>
+                                            <span>${group.reagents.reduce((count, reagent) => count + ((reagent.batches || []).length || 0), 0)} 个批次</span>
+                                        </div>
+                                        <div class="stock-adjustment-table-head compact">
+                                            ${Array.from({ length: 3 }).map(() => `
+                                                <div class="stock-adjustment-head-item">
+                                                    <span>名称</span>
+                                                    <span>当前</span>
+                                                    <span>调整后</span>
+                                                    <span>单位</span>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                        <div class="stock-adjustment-grid">
+                                            ${group.reagents.flatMap((reagent) => (reagent.batches || []).map((batch) => {
+                                                const originalValue = Number(batch.available_min_quantity ?? 0);
+                                                const currentValue = this.parseNonNegative(this.getStockAdjustmentDraftValue(batch), originalValue);
+                                                const changed = currentValue !== originalValue;
+                                                return `
+                                                    <div class="stock-adjustment-grid-item ${changed ? 'is-changed' : ''}">
+                                                        <div class="stock-adjustment-name-cell">
+                                                            <strong>${this.escapeHtml(reagent.name)}</strong>
+                                                            <span>${this.escapeHtml(batch.batch_no)}</span>
+                                                        </div>
+                                                        <div class="stock-adjustment-value-cell">${originalValue}</div>
+                                                        <div class="stock-adjustment-input-cell">
+                                                            <input
+                                                                type="number"
+                                                                id="stock-adjustment-batch-${batch.id}"
+                                                                class="form-input"
+                                                                min="0"
+                                                                value="${this.escapeHtml(this.getStockAdjustmentDraftValue(batch))}"
+                                                                onchange="catalogPage.updateStockAdjustmentDraft(${batch.id}, this.value)"
+                                                                oninput="catalogPage.updateStockAdjustmentDraft(${batch.id}, this.value, true)"
+                                                            >
+                                                        </div>
+                                                        <div class="stock-adjustment-unit-cell">${this.escapeHtml(batch.min_unit || reagent.unit || '')}</div>
+                                                    </div>
+                                                `;
+                                            })).join('')}
+                                        </div>
+                                    </section>
+                                `).join('') : '<div class="settings-empty-state">当前仪器下暂无可调整的未归档试剂批次。</div>'}
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="stock-adjustment-entry">
+                            <p class="settings-inline-note">适合盘点后一次性校正库存。每个批号单独输入目标最小单位数，保存后立即生效。</p>
+                            <div class="button-group">
+                                <button class="btn btn-primary" onclick="catalogPage.openStockAdjustmentWorkspace()">进入库存调整</button>
+                            </div>
+                        </div>
+                    `}
+                </div>
                 <div class="settings-panel danger-section">
                     <div class="settings-editor-header">
                         <h4>清空库存</h4>
@@ -883,6 +1239,39 @@ const catalogPage = {
         this.render();
     },
 
+    openInstrumentQrModal(instrumentId = null) {
+        const targetId = Number(instrumentId || this.structureEditor.id);
+        if (!targetId) {
+            return;
+        }
+        this.qrInstrumentId = targetId;
+        this.render();
+    },
+
+    closeInstrumentQrModal() {
+        if (!this.qrInstrumentId) {
+            return;
+        }
+        this.qrInstrumentId = null;
+        this.render();
+    },
+
+    async copyInstrumentQrLink() {
+        const instrumentBundle = this.getInstrumentById(this.qrInstrumentId || this.structureEditor.id);
+        const instrument = instrumentBundle?.instrument;
+        if (!instrument) {
+            return Utils.showToast('请先选择仪器', 'warning');
+        }
+
+        const target = this.getInstrumentMobileUrl(instrument.id);
+        try {
+            await navigator.clipboard.writeText(target);
+            Utils.showToast('仪器手机链接已复制', 'success');
+        } catch (error) {
+            Utils.showToast('复制失败，请手动复制链接', 'warning');
+        }
+    },
+
     async applyReagentFilters() {
         this.reagentFilters.workGroupId = document.getElementById('catalog-reagent-filter-work-group')?.value || '';
         this.reagentFilters.instrumentId = document.getElementById('catalog-reagent-filter-instrument')?.value || '';
@@ -916,6 +1305,16 @@ const catalogPage = {
         this.render();
     },
 
+    startCreateReagentGroup() {
+        this.selectedReagentGroupId = null;
+        this.render();
+    },
+
+    selectReagentGroup(id) {
+        this.selectedReagentGroupId = Number(id);
+        this.render();
+    },
+
     handleReagentWorkGroupChange() {
         const workGroupId = document.getElementById('catalog-reagent-work-group')?.value || '';
         const instrumentSelect = document.getElementById('catalog-reagent-instrument');
@@ -942,6 +1341,10 @@ const catalogPage = {
 
         const payload = {
             instrument_id: parseInt(document.getElementById('catalog-reagent-instrument')?.value, 10),
+            reagent_group_id: (() => {
+                const value = document.getElementById('catalog-reagent-group')?.value;
+                return value ? parseInt(value, 10) : null;
+            })(),
             name: this.normalizeText(document.getElementById('catalog-reagent-name')?.value),
             manufacturer: this.normalizeText(document.getElementById('catalog-reagent-manufacturer')?.value) || null,
             package_unit: this.normalizeText(document.getElementById('catalog-reagent-package-unit')?.value),
@@ -966,6 +1369,31 @@ const catalogPage = {
         if (typeof inventoryPage !== 'undefined' && inventoryPage.initialized) {
             inventoryPage.loadInventory();
         }
+    },
+
+    async submitReagentGroup() {
+        const payload = {
+            name: this.normalizeText(document.getElementById('catalog-reagent-group-name')?.value),
+            sort_order: this.parseNonNegative(document.getElementById('catalog-reagent-group-sort-order')?.value, 100),
+            is_active: Boolean(document.getElementById('catalog-reagent-group-active')?.checked)
+        };
+        if (!payload.name) {
+            return Utils.showToast('请输入项目分组名称', 'warning');
+        }
+
+        if (this.selectedReagentGroupId) {
+            const updated = await API.reagentGroups.update(this.selectedReagentGroupId, payload);
+            this.selectedReagentGroupId = updated.id;
+            Utils.showToast('项目分组已更新', 'success');
+        } else {
+            const created = await API.reagentGroups.create(payload);
+            this.selectedReagentGroupId = created.id;
+            Utils.showToast('项目分组已新增', 'success');
+        }
+
+        await Promise.all([this.loadReagentGroups(), this.loadReagents()]);
+        this.ensureSelections();
+        this.render();
     },
 
     async restoreSelectedReagent() {
@@ -1084,8 +1512,104 @@ const catalogPage = {
             this.loadCatalog(),
             this.loadReagents()
         ]);
+        this.stockAdjustmentState = {
+            unlocked: false,
+            password: '',
+            inventory: [],
+            selectedWorkGroupId: null,
+            selectedInstrumentId: null,
+            drafts: {}
+        };
         this.ensureSelections();
         this.render();
+        if (typeof inventoryPage !== 'undefined' && inventoryPage.initialized) {
+            await inventoryPage.loadInventory();
+        }
+    },
+
+    async openStockAdjustmentWorkspace() {
+        const password = this.promptAdminPassword('库存调整');
+        if (!password) {
+            return;
+        }
+        const inventory = await API.inventory.stockAdjustmentAccess(password);
+        this.stockAdjustmentState = {
+            unlocked: true,
+            password,
+            inventory,
+            selectedWorkGroupId: this.stockAdjustmentState.selectedWorkGroupId,
+            selectedInstrumentId: this.stockAdjustmentState.selectedInstrumentId,
+            drafts: {}
+        };
+        this.ensureStockAdjustmentSelection();
+        this.render();
+    },
+
+    closeStockAdjustmentWorkspace() {
+        this.stockAdjustmentState = {
+            unlocked: false,
+            password: '',
+            inventory: [],
+            selectedWorkGroupId: null,
+            selectedInstrumentId: null,
+            drafts: {}
+        };
+        this.render();
+    },
+
+    selectStockAdjustmentWorkGroup(groupId) {
+        this.stockAdjustmentState.selectedWorkGroupId = Number(groupId);
+        this.stockAdjustmentState.selectedInstrumentId = null;
+        this.ensureStockAdjustmentSelection();
+        this.render();
+    },
+
+    selectStockAdjustmentInstrument(instrumentId) {
+        this.stockAdjustmentState.selectedInstrumentId = Number(instrumentId);
+        this.ensureStockAdjustmentSelection();
+        this.render();
+    },
+
+    updateStockAdjustmentDraft(batchId, value, skipRender = false) {
+        this.stockAdjustmentState.drafts[String(batchId)] = value;
+        if (!skipRender) {
+            this.render();
+        }
+    },
+
+    resetStockAdjustmentDrafts() {
+        this.stockAdjustmentState.drafts = {};
+        this.render();
+    },
+
+    async saveStockAdjustments() {
+        const items = this.getChangedStockAdjustmentItems();
+        if (!items.length) {
+            return Utils.showToast('当前仪器没有需要保存的库存修改', 'warning');
+        }
+
+        const instrument = this.getStockAdjustmentSelectedInstrument();
+        const result = await API.inventory.applyStockAdjustments({
+            password: this.stockAdjustmentState.password,
+            items
+        });
+        const inventory = await API.inventory.stockAdjustmentAccess(this.stockAdjustmentState.password);
+        this.stockAdjustmentState.inventory = inventory;
+        this.stockAdjustmentState.drafts = {};
+        this.ensureStockAdjustmentSelection();
+        this.render();
+
+        if (typeof inventoryPage !== 'undefined' && inventoryPage.initialized) {
+            await inventoryPage.loadInventory();
+        }
+        if (typeof dashboardPage !== 'undefined' && dashboardPage.initialized) {
+            await dashboardPage.refreshOverview();
+        }
+
+        Utils.showToast(
+            `已更新 ${result.updated_batch_count} 个批次${instrument ? ` · ${instrument.name}` : ''}`,
+            'success'
+        );
     },
 
     async handleMaintenanceGroupChange() {
@@ -1125,6 +1649,15 @@ const catalogPage = {
         }
         const result = await API.inventory.clearStock(password);
         Utils.showToast(`已清空 ${result.cleared_batch_count} 条库存批次`, 'success');
+        if (this.stockAdjustmentState.unlocked) {
+            this.stockAdjustmentState.inventory = await API.inventory.stockAdjustmentAccess(this.stockAdjustmentState.password);
+            this.stockAdjustmentState.drafts = {};
+            this.ensureStockAdjustmentSelection();
+            this.render();
+        }
+        if (typeof inventoryPage !== 'undefined' && inventoryPage.initialized) {
+            await inventoryPage.loadInventory();
+        }
     },
 
     async clearTransactions() {

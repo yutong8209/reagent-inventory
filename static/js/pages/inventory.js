@@ -250,6 +250,16 @@ const inventoryPage = {
         };
     },
 
+    getSummaryValueClass(kind, count) {
+        if (kind === 'expiring' || kind === 'low') {
+            return count > 0 ? 'inventory-summary-value inventory-summary-value-warning' : 'inventory-summary-value inventory-summary-value-success';
+        }
+        if (kind === 'expired') {
+            return count > 0 ? 'inventory-summary-value inventory-summary-value-danger' : 'inventory-summary-value inventory-summary-value-success';
+        }
+        return 'inventory-summary-value inventory-summary-value-success';
+    },
+
     getSortedReagents(reagents) {
         const levelPriority = { empty: 0, expired: 1, expiring: 2, low: 3, normal: 4 };
         const next = [...reagents];
@@ -621,19 +631,19 @@ const inventoryPage = {
         summaryContainer.innerHTML = `
             <div class="inventory-summary-card">
                 <div class="inventory-summary-label">在库试剂数</div>
-                <div class="inventory-summary-value inventory-number-strong">${summary.reagentCount}</div>
+                <div class="${this.getSummaryValueClass('reagentCount', summary.reagentCount)}">${summary.reagentCount}</div>
             </div>
             <div class="inventory-summary-card inventory-summary-warn">
                 <div class="inventory-summary-label">近效期数</div>
-                <div class="inventory-summary-value inventory-number-strong">${summary.expiringCount}</div>
+                <div class="${this.getSummaryValueClass('expiring', summary.expiringCount)}">${summary.expiringCount}</div>
             </div>
             <div class="inventory-summary-card inventory-summary-caution">
                 <div class="inventory-summary-label">低库存数</div>
-                <div class="inventory-summary-value inventory-number-strong">${summary.lowStockCount}</div>
+                <div class="${this.getSummaryValueClass('low', summary.lowStockCount)}">${summary.lowStockCount}</div>
             </div>
             <div class="inventory-summary-card inventory-summary-danger">
                 <div class="inventory-summary-label">已过期批次数</div>
-                <div class="inventory-summary-value inventory-number-strong">${summary.expiredBatchCount}</div>
+                <div class="${this.getSummaryValueClass('expired', summary.expiredBatchCount)}">${summary.expiredBatchCount}</div>
             </div>
         `;
     },

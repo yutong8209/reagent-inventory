@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import BatchStock, Instrument, Operator, Reagent, Transaction
+from models import BatchStock, Instrument, Operator, Reagent, ReagentGroup, Transaction
 from schemas import (
     ReagentCreate,
     ReagentResponse,
@@ -61,6 +61,16 @@ def _require_operator(operator_name: str, db: Session) -> str:
         raise HTTPException(status_code=400, detail=f"操作人“{cleaned_operator}”不存在或已停用")
 
     return cleaned_operator
+
+
+def _resolve_reagent_group(db: Session, reagent_group_id: int | None) -> ReagentGroup | None:
+    if reagent_group_id is None:
+        return None
+
+    group = db.query(ReagentGroup).filter(ReagentGroup.id == reagent_group_id).first()
+    if not group:
+        raise HTTPException(status_code=400, detail="项目分组不存在")
+    return group
 
 
 def _resolve_package_to_min_qty(item: StockInBatchItem, reagent: Reagent | None = None) -> int:
@@ -312,6 +322,7 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
 @router.post("/reagents", response_model=ReagentResponse, status_code=201)
 def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
     instrument = db.query(Instrument).filter(Instrument.id == data.instrument_id).first()
+    reagent_group = _resolve_reagent_group(db, data.reagent_group_id)
     if not instrument:
         raise HTTPException(status_code=400, detail=f"仪器 ID {data.instrument_id} 不存在")
 
@@ -385,6 +396,7 @@ def create_reagent(data: ReagentCreate, db: Session = Depends(get_db)):
     is_calibrator = bool(data.is_calibrator if data.is_calibrator is not None else _is_calibrator_name(name))
     reagent = Reagent(
         instrument_id=data.instrument_id,
+        reagent_group_id=reagent_group.id if reagent_group else None,
         name=name,
         match_mode=data.match_mode,
         match_pattern=match_pattern,

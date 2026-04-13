@@ -46,6 +46,7 @@ class StockInBatchItem(BaseModel):
     reagent_id: Optional[int] = None
     work_group_id: Optional[int] = None
     instrument_id: Optional[int] = None
+    reagent_group_id: Optional[int] = None
     reagent_name: str
     manufacturer: Optional[str] = None
     batch_no: str
@@ -92,6 +93,9 @@ class OutboundReagentItem(BaseModel):
     instrument_name: str
     work_group_id: int
     work_group_name: str
+    reagent_group_id: Optional[int] = None
+    reagent_group_name: Optional[str] = None
+    reagent_group_sort_order: int = 9999
     package_unit: str
     min_unit: str
     package_to_min_qty: int

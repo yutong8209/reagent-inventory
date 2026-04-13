@@ -38,6 +38,10 @@ def ensure_schema():
         ],
         "reagents": [
             (
+                "reagent_group_id",
+                "ALTER TABLE reagents ADD COLUMN reagent_group_id INTEGER",
+            ),
+            (
                 "package_unit",
                 "ALTER TABLE reagents ADD COLUMN package_unit VARCHAR(50) NOT NULL DEFAULT '盒'",
             ),
@@ -116,6 +120,16 @@ def ensure_schema():
             (
                 "sort_order",
                 "ALTER TABLE unit_options ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100",
+            ),
+        ],
+        "reagent_groups": [
+            (
+                "sort_order",
+                "ALTER TABLE reagent_groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 100",
+            ),
+            (
+                "is_active",
+                "ALTER TABLE reagent_groups ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1",
             ),
         ],
     }
@@ -304,6 +318,17 @@ def ensure_schema():
                         ),
                         1
                     )
+                    """
+                )
+            )
+
+        if "reagent_groups" in table_columns:
+            connection.execute(
+                text(
+                    """
+                    UPDATE reagent_groups
+                    SET sort_order = COALESCE(sort_order, 100),
+                        is_active = COALESCE(is_active, 1)
                     """
                 )
             )

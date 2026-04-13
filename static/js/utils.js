@@ -151,10 +151,38 @@ const Utils = {
         return this.storage.get(this.OPERATOR_KEY, '');
     },
 
+    getInstrumentOperatorKey(instrumentId) {
+        const normalized = Number(instrumentId);
+        if (!Number.isFinite(normalized) || normalized <= 0) {
+            return this.OPERATOR_KEY;
+        }
+        return `${this.OPERATOR_KEY}:instrument:${normalized}`;
+    },
+
+    getLastOperatorForInstrument(instrumentId) {
+        const key = this.getInstrumentOperatorKey(instrumentId);
+        if (key === this.OPERATOR_KEY) {
+            return this.getLastOperator();
+        }
+        return this.storage.get(key, '') || this.getLastOperator();
+    },
+
     saveLastOperator(operator) {
         const normalized = String(operator || '').trim();
         if (normalized) {
             this.storage.set(this.OPERATOR_KEY, normalized);
+        }
+    },
+
+    saveLastOperatorForInstrument(instrumentId, operator) {
+        const normalized = String(operator || '').trim();
+        if (!normalized) {
+            return;
+        }
+        this.saveLastOperator(normalized);
+        const key = this.getInstrumentOperatorKey(instrumentId);
+        if (key !== this.OPERATOR_KEY) {
+            this.storage.set(key, normalized);
         }
     },
 

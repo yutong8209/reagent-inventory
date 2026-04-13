@@ -1,5 +1,6 @@
 from .barcode import BarcodeParseRequest, BarcodeParseResult, CandidateInfo
 from .reagent import ReagentCreate, ReagentResponse, ReagentUpdate
+from .reagent_group import ReagentGroupCreate, ReagentGroupUpdate, ReagentGroupResponse
 from .operator import OperatorCreate, OperatorResponse, OperatorUpdate
 from .unit_option import UnitOptionCreate, UnitOptionResponse, UnitOptionUpdate
 from .stock import (
@@ -43,7 +44,10 @@ from .inventory import (
     InstrumentWarningDefaultsUpdate,
     AdminPasswordRequest,
     ClearTransactionsRequest,
+    BatchStockAdjustmentItem,
+    BatchStockAdjustmentRequest,
     ReagentWarningSettingsUpdate,
+    ReagentGroupCatalogItem,
 )
 from .calibration import (
     CalibrationBatchCandidate,
@@ -62,6 +66,9 @@ __all__ = [
     "ReagentCreate",
     "ReagentResponse",
     "ReagentUpdate",
+    "ReagentGroupCreate",
+    "ReagentGroupUpdate",
+    "ReagentGroupResponse",
     "OperatorCreate",
     "OperatorResponse",
     "OperatorUpdate",
@@ -108,7 +115,10 @@ __all__ = [
     "InstrumentWarningDefaultsUpdate",
     "AdminPasswordRequest",
     "ClearTransactionsRequest",
+    "BatchStockAdjustmentItem",
+    "BatchStockAdjustmentRequest",
     "ReagentWarningSettingsUpdate",
+    "ReagentGroupCatalogItem",
     "CalibrationBatchCandidate",
     "CalibrationTargetCandidate",
     "CalibrationTargetPreviewResponse",

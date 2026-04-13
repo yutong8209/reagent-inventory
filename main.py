@@ -1,8 +1,10 @@
 ﻿import sys
 sys.path.insert(0, ".")
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from urllib.parse import urlencode
+
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,6 +27,8 @@ app = FastAPI(
     version="1.0.0",
 )
 
+MOBILE_APP_VERSION = "20260413-7"
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -40,14 +44,34 @@ def health_check():
     return {"status": "ok"}
 
 
+def mobile_file_response():
+    return FileResponse(
+        "static/mobile.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
 @app.get("/m")
-def mobile_page():
-    return FileResponse("static/mobile.html")
+def mobile_page(request: Request):
+    params = dict(request.query_params)
+    params["appv"] = MOBILE_APP_VERSION
+    return RedirectResponse(url=f"/mobile.html?{urlencode(params)}", status_code=307)
 
 
 @app.get("/m/")
-def mobile_page_with_slash():
-    return FileResponse("static/mobile.html")
+def mobile_page_with_slash(request: Request):
+    params = dict(request.query_params)
+    params["appv"] = MOBILE_APP_VERSION
+    return RedirectResponse(url=f"/mobile.html?{urlencode(params)}", status_code=307)
+
+
+@app.get("/mobile.html")
+def mobile_html_page():
+    return mobile_file_response()
 
 # Include API routers
 app.include_router(barcode.router, prefix="/api", tags=["barcode"])

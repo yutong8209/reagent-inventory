@@ -80,6 +80,87 @@ def test_reagent_list_filters_and_keyword(tmp_path):
     assert payload[0]["manufacturer"] == "测试厂家"
 
 
+def test_reagent_group_crud_and_reagent_assignment(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    create_group_response = client.post("/api/reagent-groups", json={
+        "name": "甲功",
+        "sort_order": 10,
+        "is_active": True,
+    })
+    assert create_group_response.status_code == 201
+    group_one_id = create_group_response.json()["id"]
+
+    create_second_group_response = client.post("/api/reagent-groups", json={
+        "name": "激素",
+        "sort_order": 20,
+        "is_active": True,
+    })
+    assert create_second_group_response.status_code == 201
+    group_two_id = create_second_group_response.json()["id"]
+
+    create_reagent_response = client.post("/api/reagents", json={
+        "instrument_id": instrument_id,
+        "name": "项目分组试剂",
+        "match_mode": "exact",
+        "match_pattern": "GROUP-REAGENT-001",
+        "manufacturer": "分组厂家",
+        "unit": "瓶",
+        "package_unit": "盒",
+        "package_to_min_qty": 2,
+        "warning_days": 30,
+        "warning_stock": 5,
+        "reagent_group_id": group_one_id,
+    })
+    assert create_reagent_response.status_code == 201
+    reagent_id = create_reagent_response.json()["id"]
+    assert create_reagent_response.json()["reagent_group_id"] == group_one_id
+
+    list_response = client.get(f"/api/reagents?instrument_id={instrument_id}&keyword=项目分组")
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["reagent_group_id"] == group_one_id
+    assert list_response.json()[0]["reagent_group_name"] == "甲功"
+
+    update_reagent_response = client.put(f"/api/reagents/{reagent_id}", json={
+        "instrument_id": instrument_id,
+        "name": "项目分组试剂",
+        "manufacturer": "分组厂家",
+        "package_unit": "盒",
+        "unit": "瓶",
+        "package_to_min_qty": 2,
+        "warning_days": 30,
+        "warning_stock": 5,
+        "follow_instrument": False,
+        "is_calibrator": False,
+        "calibration_result_unit": "nmmol/L",
+        "reagent_group_id": group_two_id,
+    })
+    assert update_reagent_response.status_code == 200
+    assert update_reagent_response.json()["reagent_group_id"] == group_two_id
+    assert update_reagent_response.json()["reagent_group_name"] == "激素"
+
+    deactivate_group_response = client.put(f"/api/reagent-groups/{group_one_id}", json={
+        "name": "甲功",
+        "sort_order": 10,
+        "is_active": False,
+    })
+    assert deactivate_group_response.status_code == 200
+    assert deactivate_group_response.json()["is_active"] is False
+
+    active_groups_response = client.get("/api/reagent-groups")
+    assert active_groups_response.status_code == 200
+    active_group_names = {item["name"] for item in active_groups_response.json()}
+    assert "甲功" not in active_group_names
+    assert "激素" in active_group_names
+
+    all_groups_response = client.get("/api/reagent-groups?include_inactive=true")
+    assert all_groups_response.status_code == 200
+    all_groups = {item["name"]: item for item in all_groups_response.json()}
+    assert all_groups["甲功"]["is_active"] is False
+    assert all_groups["激素"]["is_active"] is True
+
+
 def test_operator_crud(tmp_path):
     client, _ = build_client(tmp_path)
 
@@ -689,6 +770,123 @@ def test_mobile_overview_returns_compact_recent_outbounds(tmp_path):
     assert len(payload["warning_reagents"]) <= 4
 
 
+def test_mobile_overview_filters_by_instrument(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+
+    with SessionLocal() as db:
+        work_group = db.query(WorkGroup).order_by(WorkGroup.id.asc()).first()
+        first_instrument = (
+            db.query(Instrument)
+            .filter(Instrument.work_group_id == work_group.id)
+            .order_by(Instrument.id.asc())
+            .first()
+        )
+        second_instrument = Instrument(
+            work_group_id=work_group.id,
+            name="SECOND-INSTRUMENT",
+            model="MODEL-B",
+            default_warning_days=30,
+            default_warning_stock=5,
+        )
+        db.add(second_instrument)
+        db.flush()
+
+        first_reagent = Reagent(
+            instrument_id=first_instrument.id,
+            name="FILTERED-A",
+            match_mode="exact",
+            match_pattern="FILTERED-A",
+            manufacturer="Maker A",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        second_reagent = Reagent(
+            instrument_id=second_instrument.id,
+            name="FILTERED-B",
+            match_mode="exact",
+            match_pattern="FILTERED-B",
+            manufacturer="Maker B",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add_all([first_reagent, second_reagent])
+        db.flush()
+
+        first_batch = BatchStock(
+            reagent_id=first_reagent.id,
+            batch_no="FILTER-A-001",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 5),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        second_batch = BatchStock(
+            reagent_id=second_reagent.id,
+            batch_no="FILTER-B-001",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 5),
+            quantity=2,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        db.add_all([first_batch, second_batch])
+        db.flush()
+
+        db.add_all([
+            Transaction(
+                reagent_id=first_reagent.id,
+                batch_stock_id=first_batch.id,
+                type="OUT",
+                quantity=1,
+                operator="闄堣尳",
+                source="manual",
+                raw_barcode="FILTER-A",
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=1,
+                remark=None,
+                created_at=datetime(2026, 4, 9, 8, 0, 0),
+            ),
+            Transaction(
+                reagent_id=second_reagent.id,
+                batch_stock_id=second_batch.id,
+                type="OUT",
+                quantity=1,
+                operator="闄堣尳",
+                source="manual",
+                raw_barcode="FILTER-B",
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=1,
+                remark=None,
+                created_at=datetime(2026, 4, 9, 9, 0, 0),
+            ),
+        ])
+        db.commit()
+        first_instrument_id = first_instrument.id
+        first_instrument_name = first_instrument.name
+
+    filtered_response = client.get(f"/api/mobile/overview?instrument_id={first_instrument_id}")
+    assert filtered_response.status_code == 200
+    filtered_payload = filtered_response.json()
+
+    assert filtered_payload["pending_tasks"]["expiring_reagent_count"] == 1
+    assert [item["reagent_name"] for item in filtered_payload["warning_reagents"]] == ["FILTERED-A"]
+    assert [item["instrument_name"] for item in filtered_payload["recent_outbounds"]] == [first_instrument_name]
+    assert [item["reagent_name"] for item in filtered_payload["recent_outbounds"]] == ["FILTERED-A"]
+
+
 def test_mobile_qr_returns_svg(tmp_path):
     client, _ = build_client(tmp_path)
 
@@ -932,6 +1130,100 @@ def test_clear_transactions_with_filters_only_removes_matching_rows(tmp_path):
         assert db.query(BatchStock).count() == 1
 
 
+def test_stock_adjustment_access_and_apply_updates_batch_totals(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    create_group_response = client.post("/api/reagent-groups", json={
+        "name": "快速调整组",
+        "sort_order": 5,
+        "is_active": True,
+    })
+    assert create_group_response.status_code == 201
+    reagent_group_id = create_group_response.json()["id"]
+
+    create_reagent_response = client.post("/api/reagents", json={
+        "instrument_id": instrument_id,
+        "name": "库存调整试剂",
+        "match_mode": "exact",
+        "match_pattern": "STOCK-ADJUST-001",
+        "manufacturer": "维护厂家",
+        "unit": "瓶",
+        "package_unit": "盒",
+        "package_to_min_qty": 4,
+        "warning_days": 30,
+        "warning_stock": 5,
+        "reagent_group_id": reagent_group_id,
+    })
+    assert create_reagent_response.status_code == 201
+    reagent_id = create_reagent_response.json()["id"]
+
+    with SessionLocal() as db:
+        db.add_all([
+            BatchStock(
+                reagent_id=reagent_id,
+                batch_no="ADJUST-BATCH-1",
+                expiry_date=date(2031, 1, 1),
+                quantity=2,
+                loose_min_quantity=1,
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=4,
+            ),
+            BatchStock(
+                reagent_id=reagent_id,
+                batch_no="ADJUST-BATCH-2",
+                expiry_date=date(2031, 6, 1),
+                quantity=1,
+                loose_min_quantity=0,
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=4,
+            ),
+        ])
+        db.commit()
+        batches = (
+            db.query(BatchStock)
+            .filter(BatchStock.reagent_id == reagent_id)
+            .order_by(BatchStock.batch_no.asc())
+            .all()
+        )
+        first_batch_id = batches[0].id
+        second_batch_id = batches[1].id
+
+    access_response = client.post("/api/admin/stock-adjustments/access", json={"password": "wtsyyjyk"})
+    assert access_response.status_code == 200
+    payload = access_response.json()
+    reagent_payload = next(
+        reagent
+        for group in payload
+        for instrument in group["instruments"]
+        for reagent in instrument["reagents"]
+        if reagent["id"] == reagent_id
+    )
+    assert reagent_payload["reagent_group_id"] == reagent_group_id
+    assert [batch["batch_no"] for batch in reagent_payload["batches"]] == ["ADJUST-BATCH-1", "ADJUST-BATCH-2"]
+
+    apply_response = client.post("/api/admin/stock-adjustments/apply", json={
+        "password": "wtsyyjyk",
+        "items": [
+            {"batch_stock_id": first_batch_id, "target_min_quantity": 6},
+            {"batch_stock_id": second_batch_id, "target_min_quantity": 3},
+        ],
+    })
+    assert apply_response.status_code == 200
+    assert apply_response.json()["updated_batch_count"] == 2
+    assert apply_response.json()["updated_reagent_count"] == 1
+
+    with SessionLocal() as db:
+        first_batch = db.query(BatchStock).filter(BatchStock.id == first_batch_id).first()
+        second_batch = db.query(BatchStock).filter(BatchStock.id == second_batch_id).first()
+        assert first_batch.quantity == 1
+        assert first_batch.loose_min_quantity == 2
+        assert second_batch.quantity == 0
+        assert second_batch.loose_min_quantity == 3
+
+
 def test_dangerous_admin_actions_require_password(tmp_path):
     client, _ = build_client(tmp_path)
 
@@ -940,6 +1232,12 @@ def test_dangerous_admin_actions_require_password(tmp_path):
 
     clear_transactions = client.post("/api/admin/clear-transactions", json={"password": "wrong"})
     assert clear_transactions.status_code == 403
+
+    stock_adjustment_access = client.post("/api/admin/stock-adjustments/access", json={"password": "wrong"})
+    assert stock_adjustment_access.status_code == 403
+
+    stock_adjustment_apply = client.post("/api/admin/stock-adjustments/apply", json={"password": "wrong", "items": []})
+    assert stock_adjustment_apply.status_code == 403
 
     reset_response = client.post("/api/admin/reset-reagent-data", json={"password": "wrong"})
     assert reset_response.status_code == 403

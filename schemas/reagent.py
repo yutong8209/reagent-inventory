@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 class ReagentCreate(BaseModel):
     instrument_id: int
+    reagent_group_id: Optional[int] = None
     name: str
     match_mode: Literal["exact", "prefix"] = "exact"
     match_pattern: str
@@ -24,6 +25,7 @@ class ReagentCreate(BaseModel):
 class ReagentResponse(BaseModel):
     id: int
     instrument_id: int
+    reagent_group_id: Optional[int]
     name: str
     match_mode: str
     match_pattern: str
@@ -46,6 +48,7 @@ class ReagentResponse(BaseModel):
 
 class ReagentUpdate(BaseModel):
     instrument_id: int
+    reagent_group_id: Optional[int] = None
     name: str
     manufacturer: Optional[str] = None
     unit: str = "瓶"

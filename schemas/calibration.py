@@ -21,6 +21,9 @@ class CalibrationTargetCandidate(BaseModel):
     instrument_name: str
     work_group_id: int
     work_group_name: str
+    reagent_group_id: Optional[int] = None
+    reagent_group_name: Optional[str] = None
+    reagent_group_sort_order: int = 9999
     calibration_result_unit: str = "nmmol/L"
 
 
