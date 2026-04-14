@@ -64,11 +64,16 @@ class BarcodeParser:
 
             self._log_parse(barcode, "prefix", None)
             candidates = [self._build_candidate(reagent) for reagent in prefix_matches[:5]]
-            generic_batch_no, generic_rule = self._extract_batch_no_from_instrument_rules(barcode)
+            generic_batch_no = self._extract_batch_no(barcode)
+            learned_batch_no, generic_rule = self._extract_batch_no_from_instrument_rules(barcode)
+            product_family_instrument = self._infer_instrument_from_product_family(product_code)
             inferred_instrument = (
-                generic_rule.instrument
-                if generic_rule and generic_rule.instrument
-                else self._infer_instrument_from_product_family(product_code)
+                product_family_instrument
+                or (
+                    generic_rule.instrument
+                    if generic_rule and generic_rule.instrument
+                    else None
+                )
             )
             inferred_work_group = inferred_instrument.work_group if inferred_instrument else None
             return BarcodeParseResult(
@@ -82,7 +87,7 @@ class BarcodeParser:
                 work_group_name=inferred_work_group.name if inferred_work_group else None,
                 extracted_product_code=product_code,
                 extracted_production_date=production_date,
-                extracted_batch_no=generic_batch_no or self._extract_batch_no(barcode),
+                extracted_batch_no=generic_batch_no or learned_batch_no,
                 extracted_expiry_date=expiry_date,
                 package_to_min_qty=1,
                 confidence="medium",
@@ -90,11 +95,12 @@ class BarcodeParser:
             )
 
         self._log_parse(barcode, "none", None)
-        generic_batch_no, generic_rule = self._extract_batch_no_from_instrument_rules(barcode)
+        generic_batch_no = self._extract_batch_no(barcode)
+        learned_batch_no, generic_rule = self._extract_batch_no_from_instrument_rules(barcode)
+        product_family_instrument = self._infer_instrument_from_product_family(product_code)
         generic_instrument = (
-            generic_rule.instrument
-            if generic_rule
-            else self._infer_instrument_from_product_family(product_code)
+            product_family_instrument
+            or (generic_rule.instrument if generic_rule else None)
         )
         generic_work_group = generic_instrument.work_group if generic_instrument else None
         return BarcodeParseResult(
@@ -108,7 +114,7 @@ class BarcodeParser:
             work_group_name=generic_work_group.name if generic_work_group else None,
             extracted_product_code=product_code,
             extracted_production_date=production_date,
-            extracted_batch_no=generic_batch_no or self._extract_batch_no(barcode),
+            extracted_batch_no=generic_batch_no or learned_batch_no,
             extracted_expiry_date=expiry_date,
             package_unit=None,
             min_unit=None,
@@ -267,13 +273,16 @@ class BarcodeParser:
         learned_batch = self._extract_batch_no_from_rule(barcode, reagent, product_code)
         if learned_batch:
             return learned_batch
+        generic_batch = self._extract_batch_no(barcode)
+        if generic_batch:
+            return generic_batch
         instrument_batch, _ = self._extract_batch_no_from_instrument_rules(
             barcode,
             instrument_id=reagent.instrument_id,
         )
         if instrument_batch:
             return instrument_batch
-        return self._extract_batch_no(barcode)
+        return None
 
     def _extract_batch_no_from_rule(
         self,
@@ -323,6 +332,7 @@ class BarcodeParser:
         barcode: str,
         instrument_id: int | None = None,
     ) -> tuple[Optional[str], BarcodeBatchRule | None]:
+        current_product_code = self._extract_product_code(barcode)
         query = self.db.query(BarcodeBatchRule).filter(
             BarcodeBatchRule.is_active.is_(True),
         )
@@ -336,6 +346,8 @@ class BarcodeParser:
 
         instrument_matches: dict[int, dict[str, BarcodeBatchRule]] = {}
         for rule in active_rules:
+            if rule.product_code and rule.product_code != current_product_code:
+                continue
             extracted = self._apply_batch_rule(barcode, rule)
             if not extracted:
                 continue
@@ -409,6 +421,13 @@ class BarcodeParser:
         return extracted or None
 
     def _extract_batch_no(self, barcode: str) -> Optional[str]:
+        ai_sequence_match = re.search(r"11\d{6}17\d{6}10(.+)", barcode)
+        if ai_sequence_match:
+            lot = ai_sequence_match.group(1).strip()
+            if lot:
+                normalized_lot = self._extract_structured_lot(lot)
+                return normalized_lot or lot
+
         expiry_matches = list(re.finditer(r"17\d{6}", barcode))
         for expiry_match in reversed(expiry_matches):
             lot_anchor = barcode.find("10", expiry_match.end())
@@ -416,13 +435,15 @@ class BarcodeParser:
                 continue
             lot = barcode[lot_anchor + 2 :].strip()
             if lot:
-                return lot
+                normalized_lot = self._extract_structured_lot(lot)
+                return normalized_lot or lot
 
         lot_anchor = barcode.rfind("10")
         if lot_anchor >= 0:
             lot = barcode[lot_anchor + 2 :].strip()
             if lot:
-                return lot
+                normalized_lot = self._extract_structured_lot(lot)
+                return normalized_lot or lot
 
         patterns = [
             r"[A-Z]{2,}\d{4,}",
@@ -434,6 +455,13 @@ class BarcodeParser:
             if match:
                 return match.group(0)
 
+        return None
+
+    def _extract_structured_lot(self, lot: str) -> Optional[str]:
+        normalized_lot = self._normalize_rule_value(lot)
+        x8_match = re.match(r"^(\d{9})2401302\d{5}M$", normalized_lot)
+        if x8_match:
+            return x8_match.group(1)
         return None
 
     def _infer_instrument_from_product_family(self, product_code: str | None):

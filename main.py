@@ -27,6 +27,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+DESKTOP_APP_VERSION = "20260414-1"
 MOBILE_APP_VERSION = "20260413-7"
 
 # CORS middleware
@@ -53,6 +54,27 @@ def mobile_file_response():
             "Expires": "0",
         },
     )
+
+
+def desktop_file_response():
+    return FileResponse(
+        "static/index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/")
+def desktop_index_page():
+    return desktop_file_response()
+
+
+@app.get("/index.html")
+def desktop_index_html_page():
+    return desktop_file_response()
 
 
 @app.get("/m")

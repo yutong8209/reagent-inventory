@@ -177,22 +177,38 @@ const inboundPage = {
         this.populateUnitSelect('new-reagent-min-unit', 'min', '', this.defaultMinUnit);
     },
 
-    isSelectedInstrumentX8(selectId) {
+    getSelectedInstrumentProfile(selectId) {
         const select = this.el(selectId);
         const selectedText = select?.selectedOptions?.[0]?.textContent || '';
-        return /X8/i.test(selectedText);
+        if (/DXI800/i.test(selectedText)) {
+            return {
+                packageUnit: '盒',
+                minUnit: '瓶',
+                ratio: 2,
+            };
+        }
+        if (/X8/i.test(selectedText)) {
+            return {
+                packageUnit: '盒',
+                minUnit: '盒',
+                ratio: 1,
+            };
+        }
+        return null;
     },
 
-    applyX8UnitDefaults(packageSelectId, minSelectId, ratioInputId, refreshCallback) {
-        this.populateUnitSelect(packageSelectId, 'package', '盒', this.defaultPackageUnit);
-        this.populateUnitSelect(minSelectId, 'min', '盒', this.defaultMinUnit);
-        this.el(ratioInputId).value = '1';
+    applyInstrumentUnitDefaults(selectId, packageSelectId, minSelectId, ratioInputId, refreshCallback) {
+        const profile = this.getSelectedInstrumentProfile(selectId);
+        if (!profile) return;
+        this.populateUnitSelect(packageSelectId, 'package', profile.packageUnit, this.defaultPackageUnit);
+        this.populateUnitSelect(minSelectId, 'min', profile.minUnit, this.defaultMinUnit);
+        this.el(ratioInputId).value = String(profile.ratio);
         refreshCallback.call(this);
     },
 
     applyNewReagentInstrumentDefaults() {
-        if (!this.isSelectedInstrumentX8('new-reagent-instrument')) return;
-        this.applyX8UnitDefaults(
+        this.applyInstrumentUnitDefaults(
+            'new-reagent-instrument',
             'new-reagent-package-unit',
             'new-reagent-min-unit',
             'new-reagent-package-to-min-qty',
@@ -201,8 +217,8 @@ const inboundPage = {
     },
 
     applyManualCreateInstrumentDefaults() {
-        if (!this.isSelectedInstrumentX8('manual-create-instrument')) return;
-        this.applyX8UnitDefaults(
+        this.applyInstrumentUnitDefaults(
+            'manual-create-instrument',
             'manual-create-package-unit',
             'manual-create-min-unit',
             'manual-create-package-to-min-qty',
@@ -670,34 +686,48 @@ const inboundPage = {
         list.innerHTML = this.scanItems.map((item) => {
             const locked = Boolean(item.reagentId);
             const relationText = this.formatRelation(item.packageUnit, item.packageToMinQty, item.minUnit);
+            const specSummary = locked
+                ? `
+                    <div class="item-field item-field-spec scan-item-spec-field">
+                        <span>规格</span>
+                        <strong>${this.escapeHtml(item.packageUnit)} / ${this.escapeHtml(item.minUnit)} / ${this.escapeHtml(relationText)}</strong>
+                    </div>
+                `
+                : '';
             const packageControl = locked
-                ? `<div class="item-field"><span>包装单位</span><strong>${this.escapeHtml(item.packageUnit)}</strong></div>`
-                : `<label class="item-field"><span>包装单位</span><select class="form-select" onchange="inboundPage.updateScanField(${item.id}, 'packageUnit', this.value)">${this.getUnitSelectOptions('package', item.packageUnit, this.defaultPackageUnit)}</select></label>`;
+                ? `<div class="item-field item-field-package"><span>包装单位</span><strong>${this.escapeHtml(item.packageUnit)}</strong></div>`
+                : `<label class="item-field item-field-package"><span>包装单位</span><select class="form-select" onchange="inboundPage.updateScanField(${item.id}, 'packageUnit', this.value)">${this.getUnitSelectOptions('package', item.packageUnit, this.defaultPackageUnit)}</select></label>`;
             const minControl = locked
-                ? `<div class="item-field"><span>最小单位</span><strong>${this.escapeHtml(item.minUnit)}</strong></div>`
-                : `<label class="item-field"><span>最小单位</span><select class="form-select" onchange="inboundPage.updateScanField(${item.id}, 'minUnit', this.value)">${this.getUnitSelectOptions('min', item.minUnit, this.defaultMinUnit)}</select></label>`;
+                ? `<div class="item-field item-field-min"><span>最小单位</span><strong>${this.escapeHtml(item.minUnit)}</strong></div>`
+                : `<label class="item-field item-field-min"><span>最小单位</span><select class="form-select" onchange="inboundPage.updateScanField(${item.id}, 'minUnit', this.value)">${this.getUnitSelectOptions('min', item.minUnit, this.defaultMinUnit)}</select></label>`;
             const relationControl = locked
-                ? `<div class="item-field"><span>包装关系</span><strong>${this.escapeHtml(relationText)}</strong></div>`
-                : `<label class="item-field"><span>包装关系</span><input type="number" min="1" class="form-input" value="${item.packageToMinQty}" onchange="inboundPage.updateScanField(${item.id}, 'packageToMinQty', this.value)"><small class="field-hint">${this.escapeHtml(relationText)}</small></label>`;
+                ? `<div class="item-field item-field-relation"><span>包装关系</span><strong>${this.escapeHtml(relationText)}</strong></div>`
+                : `<label class="item-field item-field-relation"><span>包装关系</span><input type="number" min="1" class="form-input" value="${item.packageToMinQty}" onchange="inboundPage.updateScanField(${item.id}, 'packageToMinQty', this.value)"><small class="field-hint">${this.escapeHtml(relationText)}</small></label>`;
             return `
-                <div class="item-card">
-                    <div class="item-card-header">
-                        <div>
+                <div class="item-card scan-item-card scan-item-card-compact">
+                    <div class="scan-item-topline">
+                        <div class="scan-item-title-wrap">
                             <div class="item-card-title">${this.escapeHtml(item.reagentName)}</div>
                             <div class="item-card-meta">${this.escapeHtml(item.workGroupName || '')} / ${this.escapeHtml(item.instrumentName || '')}</div>
-                            <div class="item-card-submeta">条码：${this.escapeHtml(item.barcode)}${item.productCode ? ` | 编码：${this.escapeHtml(item.productCode)}` : ''}${item.productionDate ? ` | 生产日期：${this.escapeHtml(item.productionDate)}` : ''}</div>
                         </div>
-                        <span class="item-status ${locked ? 'info' : 'warning'}">${locked ? '沿用档案' : '待补全'}</span>
+                        <div class="scan-item-top-actions">
+                            <span class="item-status ${locked ? 'info' : 'warning'}">${locked ? '沿用档案' : '待补全'}</span>
+                            <button class="btn btn-danger btn-small" onclick="inboundPage.removeScanItem(${item.id})">删除</button>
+                        </div>
                     </div>
-                    <div class="item-grid">
-                        <label class="item-field"><span>批号</span><input type="text" class="form-input" value="${this.escapeHtml(item.batchNo)}" onchange="inboundPage.updateScanField(${item.id}, 'batchNo', this.value)"></label>
-                        <label class="item-field"><span>有效期</span><input type="date" class="form-input" value="${this.escapeHtml(item.expiryDate)}" onchange="inboundPage.updateScanField(${item.id}, 'expiryDate', this.value)"></label>
-                        ${packageControl}
-                        ${minControl}
-                        ${relationControl}
-                        <label class="item-field"><span>入库量</span><input type="number" min="1" class="form-input" value="${item.quantity}" onchange="inboundPage.updateScanField(${item.id}, 'quantity', this.value)"></label>
+                    <div class="item-card-submeta item-card-submeta-wrap scan-item-meta-row">
+                        <span>条码：${this.escapeHtml(item.barcode)}</span>
+                        ${item.productCode ? `<span>编码：${this.escapeHtml(item.productCode)}</span>` : ''}
+                        ${item.productionDate ? `<span>生产日期：${this.escapeHtml(item.productionDate)}</span>` : ''}
                     </div>
-                    <div class="item-card-actions"><button class="btn btn-danger" onclick="inboundPage.removeScanItem(${item.id})">删除</button></div>
+                    <div class="item-grid scan-item-grid ${locked ? 'scan-item-grid-locked' : ''}">
+                        <label class="item-field item-field-batch"><span>批号</span><input type="text" class="form-input" value="${this.escapeHtml(item.batchNo)}" onchange="inboundPage.updateScanField(${item.id}, 'batchNo', this.value)"></label>
+                        <label class="item-field item-field-expiry"><span>有效期</span><input type="date" class="form-input" value="${this.escapeHtml(item.expiryDate)}" onchange="inboundPage.updateScanField(${item.id}, 'expiryDate', this.value)"></label>
+                        <label class="item-field item-field-quantity"><span>入库量</span><input type="number" min="1" class="form-input" value="${item.quantity}" onchange="inboundPage.updateScanField(${item.id}, 'quantity', this.value)"></label>
+                        ${locked ? specSummary : packageControl}
+                        ${locked ? '' : minControl}
+                        ${locked ? '' : relationControl}
+                    </div>
                 </div>
             `;
         }).join('');

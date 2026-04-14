@@ -287,6 +287,20 @@ const catalogPage = {
         return null;
     },
 
+    getInstrumentPackagingDefaults(instrumentId) {
+        const bundle = this.getInstrumentById(instrumentId);
+        const instrument = bundle?.instrument;
+        const label = `${instrument?.name || ''} ${instrument?.model || ''}`;
+        if (/DXI800/i.test(label)) {
+            return {
+                packageUnit: '盒',
+                minUnit: '瓶',
+                ratio: 2,
+            };
+        }
+        return null;
+    },
+
     ensureStockAdjustmentSelection() {
         const state = this.stockAdjustmentState;
         const groups = state.inventory || [];
@@ -713,7 +727,7 @@ const catalogPage = {
                             </div>
                             <div class="form-group">
                                 <label for="catalog-reagent-instrument">仪器</label>
-                                <select id="catalog-reagent-instrument" class="form-select">
+                                <select id="catalog-reagent-instrument" class="form-select" onchange="catalogPage.handleReagentInstrumentChange()">
                                     ${this.getInstrumentOptions(workGroupId, instrumentId)}
                                 </select>
                             </div>
@@ -1321,6 +1335,27 @@ const catalogPage = {
         if (instrumentSelect) {
             instrumentSelect.innerHTML = this.getInstrumentOptions(workGroupId, '');
         }
+        this.applyReagentInstrumentDefaults();
+    },
+
+    handleReagentInstrumentChange() {
+        this.applyReagentInstrumentDefaults();
+    },
+
+    applyReagentInstrumentDefaults() {
+        const instrumentId = parseInt(document.getElementById('catalog-reagent-instrument')?.value, 10);
+        const defaults = this.getInstrumentPackagingDefaults(instrumentId);
+        if (!defaults) return;
+
+        const packageUnitInput = document.getElementById('catalog-reagent-package-unit');
+        const minUnitInput = document.getElementById('catalog-reagent-min-unit');
+        const ratioInput = document.getElementById('catalog-reagent-package-to-min-qty');
+        if (!packageUnitInput || !minUnitInput || !ratioInput) return;
+
+        packageUnitInput.value = defaults.packageUnit;
+        minUnitInput.value = defaults.minUnit;
+        ratioInput.value = String(defaults.ratio);
+        this.refreshReagentRelationPreview();
     },
 
     refreshReagentRelationPreview() {

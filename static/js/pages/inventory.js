@@ -9,7 +9,7 @@ const inventoryPage = {
         status: 'all',
         onlyWarnings: false,
         onlyCalibrators: false,
-        sort: 'severity'
+        sort: 'group'
     },
     lastLoadedAt: null,
     isExporting: false,
@@ -264,6 +264,13 @@ const inventoryPage = {
         const levelPriority = { empty: 0, expired: 1, expiring: 2, low: 3, normal: 4 };
         const next = [...reagents];
         next.sort((left, right) => {
+            if (this.filters.sort === 'group') {
+                return (
+                    levelPriority[left.status_level] - levelPriority[right.status_level]
+                    || (left.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER) - (right.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER)
+                    || left.name.localeCompare(right.name, 'zh-CN')
+                );
+            }
             if (this.filters.sort === 'name') {
                 return left.name.localeCompare(right.name, 'zh-CN');
             }
@@ -287,6 +294,34 @@ const inventoryPage = {
             );
         });
         return next;
+    },
+
+    getGroupedReagents(reagents) {
+        const grouped = new Map();
+        reagents.forEach((reagent) => {
+            const groupName = reagent.reagent_group_name || '未分组';
+            const groupKey = reagent.reagent_group_id ? `group-${reagent.reagent_group_id}` : `ungrouped-${groupName}`;
+            if (!grouped.has(groupKey)) {
+                grouped.set(groupKey, {
+                    id: reagent.reagent_group_id || null,
+                    name: groupName,
+                    sortOrder: reagent.reagent_group_sort_order ?? 9999,
+                    reagents: []
+                });
+            }
+            grouped.get(groupKey).reagents.push(reagent);
+        });
+
+        return [...grouped.values()]
+            .sort((left, right) => (
+                (left.sortOrder ?? 9999) - (right.sortOrder ?? 9999)
+                || left.name.localeCompare(right.name, 'zh-CN')
+            ))
+            .map((group) => ({
+                ...group,
+                warningCount: group.reagents.filter((item) => item.status_level !== 'normal').length,
+                reagents: this.getSortedReagents(group.reagents)
+            }));
     },
 
     getFilteredReagents(instrument) {
@@ -655,20 +690,49 @@ const inventoryPage = {
 
         if (!instrument) {
             resultMeta.textContent = '';
+            container.classList.remove('inventory-grouped-mode');
             container.innerHTML = '<div class="inventory-empty">当前没有可展示的库存数据。</div>';
             return;
         }
 
         const reagents = this.getFilteredReagents(instrument);
-        resultMeta.textContent = `显示 ${reagents.length} / ${instrument.reagents.length} 个试剂`;
+        const groupedReagents = this.getGroupedReagents(reagents);
+        resultMeta.textContent = this.filters.sort === 'group'
+            ? `显示 ${groupedReagents.length} 个项目组 / ${reagents.length} 个试剂`
+            : `显示 ${reagents.length} / ${instrument.reagents.length} 个试剂`;
 
         if (!reagents.length) {
+            container.classList.remove('inventory-grouped-mode');
             container.innerHTML = '<div class="inventory-empty">当前筛选条件下没有匹配的库存试剂。</div>';
             return;
         }
 
-        container.innerHTML = reagents.map((reagent) => this.renderCompactReagentCard(reagent)).join('');
+        if (this.filters.sort === 'group') {
+            container.classList.add('inventory-grouped-mode');
+            container.innerHTML = groupedReagents.map((group) => this.renderReagentGroupSection(group)).join('');
+        } else {
+            container.classList.remove('inventory-grouped-mode');
+            container.innerHTML = reagents.map((reagent) => this.renderCompactReagentCard(reagent)).join('');
+        }
         this.focusTargetReagentCard();
+    },
+
+    renderReagentGroupSection(group) {
+        return `
+            <section class="inventory-group-section">
+                <div class="inventory-group-header">
+                    <div>
+                        <h4 class="inventory-group-title">${this.escapeHtml(group.name)}</h4>
+                        <p class="inventory-group-meta">
+                            共 ${group.reagents.length} 个试剂${group.warningCount ? ` · ${group.warningCount} 个预警` : ' · 全部正常'}
+                        </p>
+                    </div>
+                </div>
+                <div class="inventory-card-list inventory-card-list-grouped">
+                    ${group.reagents.map((reagent) => this.renderCompactReagentCard(reagent)).join('')}
+                </div>
+            </section>
+        `;
     },
 
     focusTargetReagentCard() {

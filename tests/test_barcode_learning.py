@@ -50,7 +50,7 @@ def get_first_catalog_session(session_local):
         return work_group.id, instrument.id
 
 
-def test_scan_inbound_specific_rule_helps_new_reagent_parse_on_same_instrument(tmp_path):
+def test_scan_inbound_x8_barcode_parses_without_learning_specific_rule(tmp_path):
     client, session_local = build_client(tmp_path)
     work_group_id, instrument_id = get_first_catalog_session(session_local)
     barcode_one = "0106947145508814112511201727052010123250711240130210009M"
@@ -86,7 +86,7 @@ def test_scan_inbound_specific_rule_helps_new_reagent_parse_on_same_instrument(t
     assert first_parse.status_code == 200
     first_payload = first_parse.json()
     assert first_payload["reagent_id"] == reagent_id
-    assert first_payload["extracted_batch_no"] != "123250711"
+    assert first_payload["extracted_batch_no"] == "123250711"
 
     inbound_response = client.post("/api/inbound/batch", json={
         "operator": operator_name,
@@ -118,8 +118,165 @@ def test_scan_inbound_specific_rule_helps_new_reagent_parse_on_same_instrument(t
         specific_rule = db.query(BarcodeBatchRule).filter(
             BarcodeBatchRule.reagent_id == reagent_id
         ).first()
-        assert specific_rule is not None
-        assert specific_rule.product_code == "06947145508814"
-        assert specific_rule.batch_anchor == "10"
-        assert specific_rule.batch_offset == 0
-        assert specific_rule.batch_length == 9
+        assert specific_rule is None
+
+
+def test_product_specific_batch_rule_does_not_bleed_into_other_x8_product(tmp_path):
+    client, session_local = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(session_local)
+    barcode_hbsag = "0106947145508814112511201727052010123250711240130210009M"
+    barcode_hbsab = "0106947145508838112510161726101610124250411240130210010M"
+
+    with session_local() as db:
+        operator_name = (
+            db.query(Operator)
+            .filter(Operator.is_active.is_(True))
+            .order_by(Operator.id.asc())
+            .first()
+            .name
+        )
+        reagent_hbsag = Reagent(
+            instrument_id=instrument_id,
+            name="HbsAg",
+            match_mode="prefix",
+            match_pattern="0106947145508814",
+            raw_barcode_sample=barcode_hbsag,
+            manufacturer="Snibe",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        reagent_hbsab = Reagent(
+            instrument_id=instrument_id,
+            name="HbsAb",
+            match_mode="prefix",
+            match_pattern="0106947145508838",
+            raw_barcode_sample=barcode_hbsab,
+            manufacturer="Snibe",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add_all([reagent_hbsag, reagent_hbsab])
+        db.commit()
+        reagent_hbsag_id = reagent_hbsag.id
+        reagent_hbsab_id = reagent_hbsab.id
+
+    learned_parse = client.post("/api/barcode/parse", json={"barcode": barcode_hbsag})
+    assert learned_parse.status_code == 200
+    learned_payload = learned_parse.json()
+    assert learned_payload["reagent_id"] == reagent_hbsag_id
+
+    inbound_response = client.post("/api/inbound/batch", json={
+        "operator": operator_name,
+        "items": [{
+            "source": "scan",
+            "reagent_id": reagent_hbsag_id,
+            "reagent_name": "HbsAg",
+            "batch_no": "123250711",
+            "parsed_batch_no": learned_payload["extracted_batch_no"],
+            "expiry_date": "2027-05-20",
+            "quantity": 1,
+            "package_unit": "盒",
+            "min_unit": "瓶",
+            "package_to_min_qty": 1,
+            "raw_barcode": barcode_hbsag
+        }]
+    })
+    assert inbound_response.status_code == 200
+
+    parse_other = client.post("/api/barcode/parse", json={"barcode": barcode_hbsab})
+    assert parse_other.status_code == 200
+    payload = parse_other.json()
+    assert payload["reagent_id"] == reagent_hbsab_id
+    assert payload["extracted_batch_no"] == "124250411"
+
+
+def test_generic_instrument_rule_does_not_override_structured_x8_batch(tmp_path):
+    client, session_local = build_client(tmp_path)
+    barcode = "0106947145518158112602031727080310136250611240130210011M"
+
+    with session_local() as db:
+        fallback_instrument = db.query(Instrument).order_by(Instrument.id.asc()).first()
+        x8_instrument = (
+            db.query(Instrument)
+            .filter(Instrument.name == "MAGLUMI X8化学发光分析仪")
+            .first()
+        )
+        db.add(
+            Reagent(
+                instrument_id=x8_instrument.id,
+                name="X8 Family Sample",
+                match_mode="prefix",
+                match_pattern="0106947145508814",
+                raw_barcode_sample="0106947145508814112511201727052010123250711240130210009M",
+                manufacturer="Snibe",
+                unit="次",
+                package_unit="盒",
+                package_to_min_qty=1,
+                warning_days=30,
+                warning_stock=5,
+                follow_instrument=False,
+            )
+        )
+        db.add(
+            BarcodeBatchRule(
+                instrument_id=fallback_instrument.id,
+                reagent_id=None,
+                product_code=None,
+                batch_anchor="10",
+                batch_offset=0,
+                batch_length=6,
+                raw_barcode_sample="0106947145518158112602031727080310136250611240130210011M",
+                learned_batch_no="694714",
+                is_active=True,
+            )
+        )
+        db.commit()
+
+    parse_result = client.post("/api/barcode/parse", json={"barcode": barcode})
+    assert parse_result.status_code == 200
+    payload = parse_result.json()
+    assert payload["extracted_batch_no"] == "136250611"
+    assert payload["instrument_name"] == "MAGLUMI X8化学发光分析仪"
+
+
+def test_x8_batch_with_internal_17_sequence_keeps_full_batch(tmp_path):
+    client, session_local = build_client(tmp_path)
+    barcode = "0106947145512262112505191727051910217250111240130201030M"
+
+    with session_local() as db:
+        x8_instrument = (
+            db.query(Instrument)
+            .filter(Instrument.name == "MAGLUMI X8化学发光分析仪")
+            .first()
+        )
+        db.add(
+            Reagent(
+                instrument_id=x8_instrument.id,
+                name="X8 Family Sample 2",
+                match_mode="prefix",
+                match_pattern="0106947145508814",
+                raw_barcode_sample="0106947145508814112511201727052010123250711240130210009M",
+                manufacturer="Snibe",
+                unit="次",
+                package_unit="盒",
+                package_to_min_qty=1,
+                warning_days=30,
+                warning_stock=5,
+                follow_instrument=False,
+            )
+        )
+        db.commit()
+
+    parse_result = client.post("/api/barcode/parse", json={"barcode": barcode})
+    assert parse_result.status_code == 200
+    payload = parse_result.json()
+    assert payload["instrument_name"] == "MAGLUMI X8化学发光分析仪"
+    assert payload["extracted_batch_no"] == "217250111"

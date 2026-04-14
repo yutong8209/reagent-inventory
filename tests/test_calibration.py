@@ -160,6 +160,31 @@ def test_create_reagent_name_with_calibrator_suffix_defaults_to_calibrator(tmp_p
     assert payload["calibration_result_unit"] == "nmmol/L"
 
 
+def test_create_calibrator_preserves_manual_package_ratio(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = first_catalog_ids(SessionLocal)
+
+    response = client.post(
+        "/api/reagents",
+        json={
+            "instrument_id": instrument_id,
+            "name": "CA-125校准品",
+            "match_mode": "exact",
+            "match_pattern": "CA125-CAL-001",
+            "package_unit": "盒",
+            "unit": "次",
+            "package_to_min_qty": 10,
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["is_calibrator"] is True
+    assert payload["package_unit"] == "盒"
+    assert payload["unit"] == "次"
+    assert payload["package_to_min_qty"] == 10
+
+
 def test_calibration_scan_preview_matches_target_and_history_batches(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     ids = seed_tt4_calibration_case(SessionLocal)
