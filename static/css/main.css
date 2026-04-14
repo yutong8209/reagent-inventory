@@ -307,10 +307,20 @@ linear-gradient(135deg,rgba(255,255,255,.22),transparent 44%)}
 .inventory-key-metric.compact strong{font-size:13px;line-height:1.1;text-align:right}
 .inventory-batch-list.compact{gap:6px;margin-top:9px}
 .inventory-batch-row.compact{padding:8px 10px;border-radius:10px}
-.inventory-batch-row.compact .inventory-batch-primary{align-items:center;gap:8px;font-size:11px;line-height:1.3}
+.inventory-batch-row.compact .inventory-batch-primary{
+display:grid;
+grid-template-columns:auto auto auto auto;
+align-items:center;
+gap:6px 8px;
+font-size:11px;
+line-height:1.3;
+}
 .inventory-batch-row.compact .inventory-batch-code{font-size:12px}
 .inventory-batch-row.compact .inventory-batch-expiry,.inventory-batch-row.compact .inventory-batch-days,.inventory-batch-row.compact .inventory-batch-entry{font-size:11px}
 .inventory-batch-row.compact .inventory-batch-stock,.inventory-batch-stock-text{display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;background:rgba(231,251,245,.96);font-size:10px;font-weight:800;color:#0d8b72;box-shadow:inset 0 1px 0 rgba(255,255,255,.78)}
+.inventory-batch-row.compact .inventory-batch-entry{
+grid-column:1 / -1;
+}
 .calibration-record-meta-row{margin-top:7px;line-height:1.3}
 .calibration-record-section{
 padding:13px 14px;
@@ -2613,18 +2623,20 @@ color:#b42318;
 color:#18324f;
 }
 
-.inventory-card-normal .inventory-key-metric strong{
+.inventory-card .inventory-key-metric strong.inventory-metric-success{
 color:#0d8b72;
 }
 
-.inventory-card-expiring .inventory-key-metric strong,
-.inventory-card-low .inventory-key-metric strong{
+.inventory-card .inventory-key-metric strong.inventory-metric-warning{
 color:#9f5a0b;
 }
 
-.inventory-card-expired .inventory-key-metric strong,
-.inventory-card-empty .inventory-key-metric strong{
+.inventory-card .inventory-key-metric strong.inventory-metric-danger{
 color:#b42318;
+}
+
+.inventory-card .inventory-key-metric strong.inventory-metric-neutral{
+color:#18324f;
 }
 
 .inventory-toolbar{
@@ -2677,6 +2689,163 @@ gap:10px;
 display:flex;
 flex-direction:column;
 gap:12px;
+}
+
+.inventory-top-panel{
+padding:10px 14px 12px;
+border-radius:18px;
+background:linear-gradient(135deg,rgba(244,249,255,.8),rgba(232,242,255,.66) 55%,rgba(255,255,255,.6));
+border:1px solid rgba(255,255,255,.76);
+box-shadow:0 14px 24px rgba(20,39,67,.06);
+backdrop-filter:blur(14px);
+-webkit-backdrop-filter:blur(14px);
+}
+
+.inventory-top-primary{
+display:grid;
+grid-template-columns:minmax(360px,1.02fr) minmax(320px,.98fr);
+gap:12px;
+align-items:stretch;
+}
+
+.inventory-top-actions{
+display:grid;
+grid-template-columns:auto 1fr;
+gap:12px;
+align-items:center;
+padding-top:8px;
+margin-top:8px;
+border-top:1px solid rgba(223,232,241,.78);
+}
+
+.inventory-top-toggles{
+display:flex;
+align-items:center;
+gap:16px;
+flex-wrap:wrap;
+}
+
+.inventory-top-buttons{
+justify-self:end;
+gap:8px;
+}
+
+.inventory-top-panel .inventory-overview-panel{
+padding:0;
+border:none;
+border-radius:0;
+background:transparent;
+box-shadow:none;
+min-height:0;
+}
+
+.inventory-top-panel .inventory-overview-panel-inline{
+display:flex;
+flex-direction:column;
+justify-content:center;
+}
+
+.inventory-top-panel .inventory-overview-panel::before{
+display:none;
+}
+
+.inventory-top-panel .inventory-overview-head{
+align-items:center;
+gap:10px;
+margin-bottom:6px;
+}
+
+.inventory-top-panel .inventory-overview-panel h2{
+font-size:16px;
+margin-bottom:1px;
+}
+
+.inventory-top-panel .inventory-overview-copy{
+margin:0;
+font-size:11px;
+line-height:1.2;
+white-space:nowrap;
+overflow:hidden;
+text-overflow:ellipsis;
+max-width:760px;
+}
+
+.inventory-top-panel .inventory-last-refreshed{
+font-size:11px;
+white-space:nowrap;
+flex-shrink:0;
+}
+
+.inventory-top-panel .inventory-summary-grid{
+grid-template-columns:repeat(4,minmax(0,1fr));
+gap:6px;
+margin-top:0;
+}
+
+.inventory-top-panel .inventory-summary-card{
+min-height:58px;
+padding:7px 10px;
+border-radius:12px;
+box-shadow:0 8px 14px rgba(18,39,67,.04);
+}
+
+.inventory-top-panel .inventory-summary-label{
+font-size:10px;
+margin-bottom:2px;
+}
+
+.inventory-top-panel .inventory-summary-value{
+font-size:16px;
+line-height:1;
+}
+
+.inventory-top-panel .inventory-toolbar{
+margin-top:0;
+padding:0;
+border:none;
+border-radius:0;
+background:transparent;
+box-shadow:none;
+}
+
+.inventory-top-panel .inventory-toolbar-inline .form-row{
+display:grid;
+grid-template-columns:minmax(170px,.9fr) repeat(2,minmax(130px,.72fr));
+gap:8px;
+margin-bottom:0;
+align-items:end;
+}
+
+.inventory-top-panel .inventory-toolbar-inline .form-group{
+min-width:0;
+margin-bottom:0;
+max-width:100%;
+}
+
+.inventory-top-panel .inventory-toolbar-inline .form-group label{
+font-size:11px;
+margin-bottom:3px;
+}
+
+.inventory-top-panel .inventory-toolbar-inline .form-input,
+.inventory-top-panel .inventory-toolbar-inline .form-select{
+width:100%;
+max-width:100%;
+padding:7px 9px;
+font-size:12px;
+border-radius:10px;
+box-sizing:border-box;
+}
+
+.inventory-top-panel .checkbox-row{
+margin-bottom:0;
+font-size:11px;
+}
+
+.inventory-top-panel .inventory-top-buttons .btn{
+padding:6px 10px;
+font-size:12px;
+border-radius:8px;
 }
 
 .inventory-group-list{
@@ -2751,9 +2920,36 @@ white-space:normal;
 grid-template-columns:repeat(2,minmax(0,1fr));
 }
 
+@media (min-width: 1500px){
+  .inventory-card-list.inventory-card-list-grouped{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+
 @media (max-width: 1280px){
   .inventory-card-list.inventory-card-list-grouped{
     grid-template-columns:1fr;
+  }
+
+  .inventory-top-primary{
+    grid-template-columns:1fr;
+  }
+
+  .inventory-top-panel .inventory-toolbar-inline .form-row{
+    grid-template-columns:1fr;
+  }
+
+  .inventory-top-actions{
+    grid-template-columns:1fr;
+    align-items:start;
+  }
+
+  .inventory-top-buttons{
+    justify-self:start;
+  }
+
+  .inventory-top-panel .inventory-summary-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
   }
 }
 
@@ -2847,7 +3043,7 @@ border-radius:9px;
 }
 
 .inventory-batch-row.compact .inventory-batch-primary{
-gap:6px;
+gap:6px 8px;
 font-size:10px;
 }
 

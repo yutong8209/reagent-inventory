@@ -6,7 +6,7 @@
     <title>检验科试剂出入库管理系统</title>
     <meta name="description" content="检验科试剂出入库、库存预警、流水及资料设置一体化管理系统。">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/css/main.css?v=20260414-1">
+    <link rel="stylesheet" href="/css/main.css?v=20260414-4">
 </head>
 <body>
     <div id="app">
@@ -337,56 +337,63 @@
                         <div class="inventory-subtab-strip" id="inventory-instrument-tabs"></div>
                     </div>
 
-                    <div class="inventory-overview-panel">
-                        <div class="inventory-overview-head">
-                            <div>
-                                <h2 id="inventory-current-title">库存总览</h2>
-                                <p id="inventory-current-subtitle" class="inventory-overview-copy">按工作组和仪器切换库存，预警默认值请到资料设置里的工作组与仪器中调整。</p>
+                    <div class="inventory-top-panel">
+                        <div class="inventory-top-primary">
+                            <div class="inventory-overview-panel inventory-overview-panel-inline">
+                                <div class="inventory-overview-head">
+                                    <div>
+                                        <h2 id="inventory-current-title">库存总览</h2>
+                                        <p id="inventory-current-subtitle" class="inventory-overview-copy">按工作组和仪器切换库存，预警默认值请到资料设置里的工作组与仪器中调整。</p>
+                                    </div>
+                                    <div id="inventory-last-refreshed" class="inventory-last-refreshed"></div>
+                                </div>
+                                <div id="inventory-summary-cards" class="inventory-summary-grid"></div>
                             </div>
-                            <div id="inventory-last-refreshed" class="inventory-last-refreshed"></div>
-                        </div>
-                        <div id="inventory-summary-cards" class="inventory-summary-grid"></div>
-                    </div>
 
-                    <div class="form-section inventory-toolbar">
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="inventory-search">关键词搜索</label>
-                                <input type="text" id="inventory-search" class="form-input" placeholder="输入试剂名称关键词">
-                            </div>
-                            <div class="form-group">
-                                <label for="inventory-status-filter">状态筛选</label>
-                                <select id="inventory-status-filter" class="form-select">
-                                    <option value="all">全部状态</option>
-                                    <option value="empty">零库存</option>
-                                    <option value="expired">已过期</option>
-                                    <option value="expiring">近效期</option>
-                                    <option value="low_or_empty">低库存/零库存</option>
-                                    <option value="low">低库存</option>
-                                    <option value="normal">正常</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label for="inventory-sort">排序方式</label>
-                                <select id="inventory-sort" class="form-select">
-                                    <option value="group">按项目组</option>
-                                    <option value="severity">按异常优先</option>
-                                    <option value="expiry">按最近效期</option>
-                                    <option value="stock">按库存从低到高</option>
-                                    <option value="name">按名称</option>
-                                </select>
+                            <div class="form-section inventory-toolbar inventory-toolbar-inline">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="inventory-search">关键词搜索</label>
+                                        <input type="text" id="inventory-search" class="form-input" placeholder="输入试剂名称关键词">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="inventory-status-filter">状态筛选</label>
+                                        <select id="inventory-status-filter" class="form-select">
+                                            <option value="all">全部状态</option>
+                                            <option value="empty">零库存</option>
+                                            <option value="expired">已过期</option>
+                                            <option value="expiring">近效期</option>
+                                            <option value="low_or_empty">低库存/零库存</option>
+                                            <option value="low">低库存</option>
+                                            <option value="normal">正常</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="inventory-sort">排序方式</label>
+                                        <select id="inventory-sort" class="form-select">
+                                            <option value="group">按项目组</option>
+                                            <option value="severity">按异常优先</option>
+                                            <option value="expiry">按最近效期</option>
+                                            <option value="stock">按库存从低到高</option>
+                                            <option value="name">按名称</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="inventory-toolbar-actions">
-                            <label class="checkbox-row">
-                                <input type="checkbox" id="inventory-only-warnings">
-                                <span>仅看预警</span>
-                            </label>
-                            <label class="checkbox-row">
-                                <input type="checkbox" id="inventory-only-calibrators">
-                                <span>仅看校准品</span>
-                            </label>
-                            <div class="button-group">
+
+                        <div class="inventory-top-actions">
+                            <div class="inventory-top-toggles">
+                                <label class="checkbox-row">
+                                    <input type="checkbox" id="inventory-only-warnings">
+                                    <span>仅看预警</span>
+                                </label>
+                                <label class="checkbox-row">
+                                    <input type="checkbox" id="inventory-only-calibrators">
+                                    <span>仅看校准品</span>
+                                </label>
+                            </div>
+                            <div class="button-group inventory-top-buttons">
                                 <button id="inventory-export-btn" class="btn btn-primary">导出 Excel</button>
                                 <button id="inventory-archive-zero-btn" class="btn btn-secondary">一键归档零库存</button>
                                 <button id="inventory-refresh-btn" class="btn btn-secondary">刷新库存</button>
@@ -927,15 +934,15 @@
     <datalist id="package-unit-options"></datalist>
     <datalist id="min-unit-options"></datalist>
 
-    <script src="/js/utils.js?v=20260414-1"></script>
-    <script src="/js/api.js?v=20260414-1"></script>
-    <script src="/js/main.js?v=20260414-1"></script>
-    <script src="/js/pages/dashboard.js?v=20260414-1"></script>
-    <script src="/js/pages/inbound.js?v=20260414-1"></script>
-    <script src="/js/pages/outbound.js?v=20260414-1"></script>
-    <script src="/js/pages/inventory.js?v=20260414-1"></script>
-    <script src="/js/pages/calibration.js?v=20260414-1"></script>
-    <script src="/js/pages/reports.js?v=20260414-1"></script>
-    <script src="/js/pages/catalog.js?v=20260414-1"></script>
+    <script src="/js/utils.js?v=20260414-4"></script>
+    <script src="/js/api.js?v=20260414-4"></script>
+    <script src="/js/main.js?v=20260414-4"></script>
+    <script src="/js/pages/dashboard.js?v=20260414-4"></script>
+    <script src="/js/pages/inbound.js?v=20260414-4"></script>
+    <script src="/js/pages/outbound.js?v=20260414-4"></script>
+    <script src="/js/pages/inventory.js?v=20260414-4"></script>
+    <script src="/js/pages/calibration.js?v=20260414-4"></script>
+    <script src="/js/pages/reports.js?v=20260414-4"></script>
+    <script src="/js/pages/catalog.js?v=20260414-4"></script>
 </body>
 </html>

@@ -217,6 +217,18 @@
     return 'neutral';
   },
 
+  getStockTone(quantity, warningStock = 0) {
+    const numericQuantity = Number(quantity ?? 0);
+    const numericWarningStock = Number(warningStock ?? 0);
+    if (numericQuantity <= 0) return 'danger';
+    if (numericQuantity <= numericWarningStock) return 'warning';
+    return 'success';
+  },
+
+  getReagentStockTone(item) {
+    return this.getStockTone(item?.total_min_quantity, item?.warning_stock);
+  },
+
   getExpiryTone(days, warningDays = 30) {
     if (days === null || days === undefined) return 'neutral';
     if (days < 0) return 'danger';
@@ -236,6 +248,12 @@
   getBatchCardTone(batch, warningDays = 30) {
     if (batch?.is_expired || Number(batch?.available_min_quantity || 0) <= 0) return 'danger';
     return this.getBatchExpiryTone(batch, warningDays);
+  },
+
+  getBatchDetailTone(batch, warningDays = 30) {
+    if (batch?.is_expired || Number(batch?.available_min_quantity || 0) <= 0) return 'danger';
+    if (this.getBatchExpiryTone(batch, warningDays) === 'warning') return 'warning';
+    return 'neutral';
   },
 
   renderMetricChip(content, tone = 'neutral') {
@@ -534,7 +552,7 @@
             <span class="mobile-status mobile-status-${item.status_level}">${this.getStatusLabel(item.status_level)}</span>
           </div>
           <div class="mobile-card-metrics">
-            ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit || '')}`, this.getStatusTone(item.status_level))}
+            ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit || '')}`, this.getReagentStockTone(item))}
             ${this.renderMetricChip(item.nearest_expiry_date ? `最近效期 ${this.escapeHtml(item.nearest_expiry_date)}` : '最近效期 -', this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || 30))}
             ${this.renderMetricChip(this.escapeHtml(this.formatDays(item.nearest_expiry_days)), this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || 30))}
           </div>
@@ -594,7 +612,7 @@
             <span class="mobile-status mobile-status-${status}">${this.getStatusLabel(status)}</span>
           </div>
           <div class="mobile-card-metrics">
-            ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit)}`, this.getStatusTone(status))}
+            ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit)}`, this.getReagentStockTone(item))}
             ${this.renderMetricChip(item.nearest_expiry_date ? `最近效期 ${this.escapeHtml(item.nearest_expiry_date)}` : '最近效期 -', this.getExpiryTone(item.nearest_expiry_date ? Utils.getDaysUntilExpiry(item.nearest_expiry_date) : null, 30))}
             ${this.renderMetricChip(`批次数 ${item.batch_count}`, item.batch_count > 0 ? 'success' : 'danger')}
           </div>
@@ -1330,12 +1348,12 @@
                 <span class="mobile-status mobile-status-${item.status_level}">${this.getStatusLabel(item.status_level)}</span>
               </div>
               <div class="mobile-card-metrics">
-                ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.unit)}`, this.getStatusTone(item.status_level))}
+                ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.unit)}`, this.getReagentStockTone(item))}
                 ${this.renderMetricChip(item.nearest_expiry_date ? `最近效期 ${this.escapeHtml(item.nearest_expiry_date)}` : '最近效期 -', this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
                 ${this.renderMetricChip(this.escapeHtml(this.formatDays(item.nearest_expiry_days)), this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
               </div>
               ${this.expandedInventoryIds.has(item.id) ? `<div class="mobile-stock-batches">${(item.batches || []).map((batch) => `
-                <div class="mobile-batch-detail ${batch.is_expired ? 'expired' : batch.available_min_quantity <= 0 ? 'empty' : item.status_level === 'expiring' || item.status_level === 'low' ? 'warning' : ''}">
+                <div class="mobile-batch-detail ${this.getBatchDetailTone(batch, item.effective_warning_days || item.warning_days || 30)}">
                   <div>${this.renderInlineTone(`批号 ${this.escapeHtml(batch.batch_no)}`, 'neutral')}</div>
                   <div>有效期 ${this.escapeHtml(batch.expiry_date)} · ${this.renderInlineTone(this.escapeHtml(this.formatDays(batch.expiry_days_left)), this.getBatchExpiryTone(batch, item.effective_warning_days || item.warning_days || 30))}</div>
                   <div>${this.renderInlineTone(`库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}`, this.getBatchStockTone(batch))}</div>

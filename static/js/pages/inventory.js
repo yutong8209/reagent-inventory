@@ -756,6 +756,20 @@ const inventoryPage = {
     },
 
     renderCompactReagentCard(reagent) {
+        const totalStockClass = this.getInventoryMetricClass({
+            normal: reagent.total_min_quantity > reagent.warning_stock,
+            warning: reagent.total_min_quantity > 0 && reagent.total_min_quantity <= reagent.warning_stock,
+            danger: reagent.total_min_quantity <= 0
+        });
+        const expiryDateClass = this.getInventoryMetricClass({
+            normal: reagent.nearest_expiry_days === null || reagent.nearest_expiry_days > reagent.warning_days,
+            warning: reagent.nearest_expiry_days !== null && reagent.nearest_expiry_days >= 0 && reagent.nearest_expiry_days <= reagent.warning_days,
+            danger: reagent.nearest_expiry_days !== null && reagent.nearest_expiry_days < 0
+        });
+        const expiryDaysClass = expiryDateClass;
+        const warningValueClass = this.getInventoryMetricClass({
+            neutral: true
+        });
         const manufacturerHtml = reagent.manufacturer
             ? `<span class="inventory-card-maker">${this.escapeHtml(reagent.manufacturer)}</span>`
             : '';
@@ -799,19 +813,19 @@ const inventoryPage = {
                         <div class="inventory-key-metrics compact">
                             <div class="inventory-key-metric compact">
                                 <span>总库存</span>
-                                <strong class="inventory-number-strong">${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
+                                <strong class="${totalStockClass}">${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
                             </div>
                             <div class="inventory-key-metric compact">
                                 <span>最近效期</span>
-                                <strong>${this.escapeHtml(reagent.nearest_expiry_date || '暂无')}</strong>
+                                <strong class="${expiryDateClass}">${this.escapeHtml(reagent.nearest_expiry_date || '暂无')}</strong>
                             </div>
                             <div class="inventory-key-metric compact">
                                 <span>剩余天数</span>
-                                <strong>${this.escapeHtml(this.formatDaysLabel(reagent.nearest_expiry_days))}</strong>
+                                <strong class="${expiryDaysClass}">${this.escapeHtml(this.formatDaysLabel(reagent.nearest_expiry_days))}</strong>
                             </div>
                             <div class="inventory-key-metric compact">
                                 <span>预警值</span>
-                                <strong>${reagent.warning_stock} / ${reagent.warning_days}</strong>
+                                <strong class="${warningValueClass}">${reagent.warning_stock} / ${reagent.warning_days}</strong>
                             </div>
                         </div>
                     </div>
@@ -832,6 +846,22 @@ const inventoryPage = {
             low: '低库存',
             normal: '正常'
         }[level] || '正常';
+    },
+
+    getInventoryMetricClass({ normal = false, warning = false, danger = false, neutral = false } = {}) {
+        if (danger) {
+            return 'inventory-metric-danger';
+        }
+        if (warning) {
+            return 'inventory-metric-warning';
+        }
+        if (normal) {
+            return 'inventory-metric-success';
+        }
+        if (neutral) {
+            return 'inventory-metric-neutral';
+        }
+        return 'inventory-metric-neutral';
     },
 
     formatDaysLabel(days) {

@@ -34,7 +34,7 @@ const dashboardPage = {
         const targetOrigin = ['http://127.0.0.1:8000', 'http://localhost:8000'].includes(currentOrigin)
             ? this.mobilePreferredOrigin
             : currentOrigin;
-        const target = `${targetOrigin}/mobile.html?appv=20260413-7`;
+    const target = `${targetOrigin}/mobile.html?appv=20260414-1`;
         qrImage.src = `/api/mobile/qr?target=${encodeURIComponent(target)}`;
     },
 
