@@ -35,7 +35,6 @@
     await Utils.loadOperators();
     await Promise.all([this.populateOperatorSelects(), this.refreshData()]);
     this.switchPage('outbound');
-    this.toggleWarningFold(false);
   },
 
   parseInstrumentContext() {
@@ -177,13 +176,6 @@
     document.querySelectorAll('.mobile-tab').forEach((button) => button.classList.toggle('active', button.dataset.page === page));
   },
 
-  toggleWarningFold(forceExpanded) {
-    this.isWarningFoldExpanded = typeof forceExpanded === 'boolean' ? forceExpanded : !this.isWarningFoldExpanded;
-    document.getElementById('mobile-warning-fold')?.classList.toggle('hidden', !this.isWarningFoldExpanded);
-    document.getElementById('mobile-warning-toggle')?.setAttribute('aria-expanded', String(this.isWarningFoldExpanded));
-    const label = document.getElementById('mobile-warning-toggle-label');
-    if (label) label.textContent = this.isWarningFoldExpanded ? '收起' : '展开';
-  },
 
   escapeHtml(value) {
     return String(value ?? '')
@@ -262,6 +254,15 @@
 
   renderInlineTone(content, tone = 'neutral') {
     return `<span class="mobile-inline-tone mobile-inline-tone-${tone}">${content}</span>`;
+  },
+
+  renderInventoryMetric(label, value, tone = 'neutral') {
+    return `
+      <div class="mobile-inventory-metric">
+        <span class="mobile-inventory-metric-label">${label}</span>
+        <strong class="mobile-inventory-metric-value mobile-inventory-metric-value-${tone}">${value}</strong>
+      </div>
+    `;
   },
 
   renderPreviewLine(content, tone = 'neutral') {
@@ -489,76 +490,34 @@
 
   renderOverview() {
     const summary = this.overview?.pending_tasks;
-    const warningCountEl = document.getElementById('mobile-warning-count');
+    const expiredCountEl = document.getElementById('mobile-summary-expired');
     const expiringCountEl = document.getElementById('mobile-summary-expiring');
     const lowCountEl = document.getElementById('mobile-summary-low');
     const emptyCountEl = document.getElementById('mobile-summary-empty');
-    const warningStatEl = document.getElementById('mobile-overview-stat-warning');
+    const expiredStatEl = document.getElementById('mobile-overview-stat-expired');
     const expiringStatEl = document.getElementById('mobile-overview-stat-expiring');
     const lowStatEl = document.getElementById('mobile-overview-stat-low');
     const emptyStatEl = document.getElementById('mobile-overview-stat-empty');
     if (!summary) {
-      if (warningCountEl) warningCountEl.textContent = '0';
+      if (expiredCountEl) expiredCountEl.textContent = '0';
       if (expiringCountEl) expiringCountEl.textContent = '0';
       if (lowCountEl) lowCountEl.textContent = '0';
       if (emptyCountEl) emptyCountEl.textContent = '0';
-      warningStatEl?.classList.remove('warning', 'danger');
+      expiredStatEl?.classList.add('danger');
       expiringStatEl?.classList.add('warning');
       lowStatEl?.classList.add('warning');
       emptyStatEl?.classList.add('danger');
-      this.showEmpty('mobile-summary-cards', '暂无待处理摘要');
-      this.showEmpty('mobile-warning-list', '暂无重点预警');
       this.showEmpty('mobile-recent-list', '暂无最近出库记录');
       return;
     }
-    const warnings = this.overview.warning_reagents || [];
-    if (warningCountEl) warningCountEl.textContent = String(warnings.length);
+    if (expiredCountEl) expiredCountEl.textContent = String(summary.expired_batch_count || 0);
     if (expiringCountEl) expiringCountEl.textContent = String(summary.expiring_reagent_count || 0);
     if (lowCountEl) lowCountEl.textContent = String(summary.low_or_empty_reagent_count || 0);
     if (emptyCountEl) emptyCountEl.textContent = String(summary.zero_stock_unarchived_count || 0);
-    if (warningStatEl) {
-      warningStatEl.classList.remove('warning', 'danger');
-      if ((summary.zero_stock_unarchived_count || 0) > 0) {
-        warningStatEl.classList.add('danger');
-      } else if (warnings.length > 0) {
-        warningStatEl.classList.add('warning');
-      }
-    }
+    expiredStatEl?.classList.toggle('danger', (summary.expired_batch_count || 0) > 0);
     expiringStatEl?.classList.toggle('warning', (summary.expiring_reagent_count || 0) > 0);
     lowStatEl?.classList.toggle('warning', (summary.low_or_empty_reagent_count || 0) > 0);
     emptyStatEl?.classList.toggle('danger', (summary.zero_stock_unarchived_count || 0) > 0);
-    const summaryCards = [
-      { label: '近效期', value: summary.expiring_reagent_count, tone: 'warning', status: 'expiring' },
-      { label: '低库存', value: summary.low_or_empty_reagent_count, tone: 'warning', status: 'low_or_empty' },
-      { label: '零库存', value: summary.zero_stock_unarchived_count, tone: 'danger', status: 'empty' }
-    ];
-    document.getElementById('mobile-summary-cards').innerHTML = summaryCards.map((item) => `
-      <article class="mobile-summary-card ${item.tone}" onclick="mobileApp.openInventoryByStatus('${item.status}')">
-        <span>${item.label}</span>
-        <strong>${item.value}</strong>
-      </article>
-    `).join('');
-
-    if (!warnings.length) {
-      this.showEmpty('mobile-warning-list', '当前没有需要优先处理的试剂');
-    } else {
-      document.getElementById('mobile-warning-list').innerHTML = warnings.map((item) => `
-        <article class="mobile-warning-card ${item.status_level}" onclick="mobileApp.openInventoryFocus(${item.reagent_id})">
-          <div class="mobile-card-head">
-            <div>
-              <div class="mobile-card-title">${this.escapeHtml(item.reagent_name)}</div>
-              <div class="mobile-card-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
-            </div>
-            <span class="mobile-status mobile-status-${item.status_level}">${this.getStatusLabel(item.status_level)}</span>
-          </div>
-          <div class="mobile-card-metrics">
-            ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit || '')}`, this.getReagentStockTone(item))}
-            ${this.renderMetricChip(item.nearest_expiry_date ? `最近效期 ${this.escapeHtml(item.nearest_expiry_date)}` : '最近效期 -', this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || 30))}
-            ${this.renderMetricChip(this.escapeHtml(this.formatDays(item.nearest_expiry_days)), this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || 30))}
-          </div>
-        </article>
-      `).join('');
-    }
 
     const rows = this.overview.recent_outbounds || [];
     if (!rows.length) {
@@ -1347,16 +1306,23 @@
                 </div>
                 <span class="mobile-status mobile-status-${item.status_level}">${this.getStatusLabel(item.status_level)}</span>
               </div>
-              <div class="mobile-card-metrics">
-                ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.unit)}`, this.getReagentStockTone(item))}
-                ${this.renderMetricChip(item.nearest_expiry_date ? `最近效期 ${this.escapeHtml(item.nearest_expiry_date)}` : '最近效期 -', this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
-                ${this.renderMetricChip(this.escapeHtml(this.formatDays(item.nearest_expiry_days)), this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
+              <div class="mobile-inventory-metrics">
+                ${this.renderInventoryMetric('总库存', `${item.total_min_quantity}${this.escapeHtml(item.unit)}`, this.getReagentStockTone(item))}
+                ${this.renderInventoryMetric('最近效期', item.nearest_expiry_date ? this.escapeHtml(item.nearest_expiry_date) : '-', this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
+                ${this.renderInventoryMetric('剩余天数', this.escapeHtml(this.formatDays(item.nearest_expiry_days)), this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
+                ${this.renderInventoryMetric('预警值', `${item.warning_stock ?? 0}${this.escapeHtml(item.unit)}`, this.getStockTone(item.warning_stock ?? 0, item.warning_stock ?? 0))}
               </div>
               ${this.expandedInventoryIds.has(item.id) ? `<div class="mobile-stock-batches">${(item.batches || []).map((batch) => `
                 <div class="mobile-batch-detail ${this.getBatchDetailTone(batch, item.effective_warning_days || item.warning_days || 30)}">
-                  <div>${this.renderInlineTone(`批号 ${this.escapeHtml(batch.batch_no)}`, 'neutral')}</div>
-                  <div>有效期 ${this.escapeHtml(batch.expiry_date)} · ${this.renderInlineTone(this.escapeHtml(this.formatDays(batch.expiry_days_left)), this.getBatchExpiryTone(batch, item.effective_warning_days || item.warning_days || 30))}</div>
-                  <div>${this.renderInlineTone(`库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}`, this.getBatchStockTone(batch))}</div>
+                  <div class="mobile-batch-detail-row mobile-batch-detail-row-primary">
+                    <span class="mobile-batch-detail-code">批号 ${this.escapeHtml(batch.batch_no)}</span>
+                    <span class="mobile-batch-detail-expiry">效期 ${this.escapeHtml(batch.expiry_date || '-')}</span>
+                    ${this.renderInlineTone(this.escapeHtml(this.formatDays(batch.expiry_days_left)), this.getBatchExpiryTone(batch, item.effective_warning_days || item.warning_days || 30))}
+                    ${this.renderInlineTone(`库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}`, this.getBatchStockTone(batch))}
+                  </div>
+                  <div class="mobile-batch-detail-row mobile-batch-detail-row-secondary">
+                    <span class="mobile-batch-detail-entry">入库 ${this.escapeHtml(batch.created_at ? Utils.formatDateTime(batch.created_at).slice(0, 10) : '-')}</span>
+                  </div>
                 </div>`).join('')}</div>` : ''}
             </article>
           `).join('')}

@@ -936,6 +936,21 @@ def update_work_group(work_group_id: int, data: WorkGroupUpdate, db: Session = D
     )
 
 
+@router.delete("/work-groups/{work_group_id}")
+def delete_work_group(work_group_id: int, db: Session = Depends(get_db)):
+    work_group = db.query(WorkGroup).filter(WorkGroup.id == work_group_id).first()
+    if not work_group:
+        raise HTTPException(status_code=404, detail="宸ヤ綔缁勪笉瀛樺湪")
+
+    instrument_count = db.query(Instrument).filter(Instrument.work_group_id == work_group_id).count()
+    if instrument_count > 0:
+        raise HTTPException(status_code=400, detail=f"褰撳墠宸ヤ綔缁勪笅杩樻湁 {instrument_count} 鍙颁华鍣紝璇峰厛鍒犻櫎鎴栬浆绉诲悗鍐嶅垹闄?")
+
+    db.delete(work_group)
+    db.commit()
+    return {"success": True, "work_group_id": work_group_id}
+
+
 @router.get("/instruments")
 def get_instruments(
     work_group_id: Optional[int] = None,
@@ -996,6 +1011,21 @@ def create_instrument(data: InstrumentCreate, db: Session = Depends(get_db)):
         default_warning_days=_safe_int(instrument.default_warning_days, 30),
         default_warning_stock=_safe_int(instrument.default_warning_stock, 5),
     )
+
+
+@router.delete("/instruments/{instrument_id}")
+def delete_instrument(instrument_id: int, db: Session = Depends(get_db)):
+    instrument = db.query(Instrument).filter(Instrument.id == instrument_id).first()
+    if not instrument:
+        raise HTTPException(status_code=404, detail="浠櫒涓嶅瓨鍦?")
+
+    reagent_count = db.query(Reagent).filter(Reagent.instrument_id == instrument_id).count()
+    if reagent_count > 0:
+        raise HTTPException(status_code=400, detail=f"褰撳墠浠櫒涓嬭繕鏈? {reagent_count} 涓瘯鍓傛。妗堬紝璇峰厛澶勭悊璇曞墏鍚庡啀鍒犻櫎")
+
+    db.delete(instrument)
+    db.commit()
+    return {"success": True, "instrument_id": instrument_id}
 
 
 @router.put("/instruments/{instrument_id}", response_model=InstrumentCatalogItem)
@@ -1328,6 +1358,21 @@ def update_reagent_group(group_id: int, data: ReagentGroupUpdate, db: Session = 
     return _serialize_reagent_group(group)
 
 
+@router.delete("/reagent-groups/{group_id}")
+def delete_reagent_group(group_id: int, db: Session = Depends(get_db)):
+    group = db.query(ReagentGroup).filter(ReagentGroup.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="椤圭洰鍒嗙粍涓嶅瓨鍦?")
+
+    reagent_count = db.query(Reagent).filter(Reagent.reagent_group_id == group_id).count()
+    if reagent_count > 0:
+        raise HTTPException(status_code=400, detail=f"褰撳墠鍒嗙粍宸茶 {reagent_count} 涓瘯鍓備娇鐢紝璇峰厛鏇存敼璇曞墏鍒嗙粍鍚庡啀鍒犻櫎")
+
+    db.delete(group)
+    db.commit()
+    return {"success": True, "group_id": group_id}
+
+
 @router.get("/unit-options", response_model=List[UnitOptionResponse])
 def get_unit_options(
     scope: Optional[str] = None,
@@ -1397,6 +1442,17 @@ def update_unit_option(option_id: int, data: UnitOptionUpdate, db: Session = Dep
     db.commit()
     db.refresh(option)
     return option
+
+
+@router.delete("/unit-options/{option_id}")
+def delete_unit_option(option_id: int, db: Session = Depends(get_db)):
+    option = db.query(UnitOption).filter(UnitOption.id == option_id).first()
+    if not option:
+        raise HTTPException(status_code=404, detail="鍗曚綅閫夐」涓嶅瓨鍦?")
+
+    db.delete(option)
+    db.commit()
+    return {"success": True, "option_id": option_id}
 
 
 @router.get("/operators", response_model=List[OperatorResponse])

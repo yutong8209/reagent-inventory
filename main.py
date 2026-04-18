@@ -27,8 +27,8 @@ app = FastAPI(
     version="1.0.0",
 )
 
-DESKTOP_APP_VERSION = "20260414-4"
-MOBILE_APP_VERSION = "20260414-1"
+DESKTOP_APP_VERSION = "20260414-5"
+MOBILE_APP_VERSION = "20260418-1"
 
 # CORS middleware
 app.add_middleware(

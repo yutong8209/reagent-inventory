@@ -6,7 +6,7 @@
     <title>试剂移动工作台</title>
     <meta name="description" content="适合微信现场使用的试剂移动工作台，支持快速出库、快速入库和库存查看。">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/css/mobile.css?v=20260414-1">
+    <link rel="stylesheet" href="/css/mobile.css?v=20260414-5">
 </head>
 <body>
     <div id="mobile-app" class="mobile-app">
@@ -29,39 +29,27 @@
         <main class="mobile-main">
             <section id="mobile-page-outbound" class="mobile-page active">
                 <section class="mobile-panel mobile-warning-panel mobile-overview-panel">
-                    <button id="mobile-warning-toggle" class="mobile-warning-toggle" type="button" aria-expanded="false">
-                        <div class="mobile-overview-toggle-main">
-                            <div>
-                                <p class="mobile-section-kicker">预警总览</p>
-                                <h2>重点预警 / 待处理摘要</h2>
-                            </div>
-                            <div class="mobile-overview-stats">
-                                <div id="mobile-overview-stat-warning" class="mobile-overview-stat">
-                                    <span>预警</span>
-                                    <strong id="mobile-warning-count">0</strong>
-                                </div>
-                                <div id="mobile-overview-stat-expiring" class="mobile-overview-stat warning">
-                                    <span>近效期</span>
-                                    <strong id="mobile-summary-expiring">0</strong>
-                                </div>
-                                <div id="mobile-overview-stat-low" class="mobile-overview-stat warning">
-                                    <span>低库存</span>
-                                    <strong id="mobile-summary-low">0</strong>
-                                </div>
-                                <div id="mobile-overview-stat-empty" class="mobile-overview-stat danger">
-                                    <span>零库存</span>
-                                    <strong id="mobile-summary-empty">0</strong>
-                                </div>
-                            </div>
+                    <div class="mobile-overview-header">
+                        <p class="mobile-section-kicker">预警总览</p>
+                        <h2>重点预警 / 待处理摘要</h2>
+                    </div>
+                    <div class="mobile-overview-stats">
+                        <div id="mobile-overview-stat-expired" class="mobile-overview-stat danger" onclick="mobileApp.openInventoryByStatus('expired')">
+                            <span>已过期</span>
+                            <strong id="mobile-summary-expired">0</strong>
                         </div>
-                        <div class="mobile-warning-toggle-side">
-                            <span id="mobile-warning-toggle-label">展开</span>
+                        <div id="mobile-overview-stat-expiring" class="mobile-overview-stat warning" onclick="mobileApp.openInventoryByStatus('expiring')">
+                            <span>近效期</span>
+                            <strong id="mobile-summary-expiring">0</strong>
                         </div>
-                    </button>
-                    <div id="mobile-warning-fold" class="mobile-warning-fold hidden">
-                        <div id="mobile-summary-cards" class="mobile-summary-cards"></div>
-                        <p class="mobile-fold-note">点击预警卡片可直接跳到对应试剂库存。</p>
-                        <div id="mobile-warning-list" class="mobile-card-list"></div>
+                        <div id="mobile-overview-stat-low" class="mobile-overview-stat warning" onclick="mobileApp.openInventoryByStatus('low_or_empty')">
+                            <span>低库存</span>
+                            <strong id="mobile-summary-low">0</strong>
+                        </div>
+                        <div id="mobile-overview-stat-empty" class="mobile-overview-stat danger" onclick="mobileApp.openInventoryByStatus('empty')">
+                            <span>零库存</span>
+                            <strong id="mobile-summary-empty">0</strong>
+                        </div>
                     </div>
                 </section>
 
@@ -349,8 +337,8 @@
 
     <div id="toast" class="toast hidden"></div>
 
-    <script src="/js/api.js?v=20260414-1"></script>
-    <script src="/js/utils.js?v=20260414-1"></script>
-    <script src="/js/mobile.js?v=20260414-1"></script>
+    <script src="/js/api.js?v=20260414-5"></script>
+    <script src="/js/utils.js?v=20260414-5"></script>
+    <script src="/js/mobile.js?v=20260414-5"></script>
 </body>
 </html>

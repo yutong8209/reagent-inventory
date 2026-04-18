@@ -254,7 +254,7 @@ const catalogPage = {
     },
 
     getMobileAppVersion() {
-        return '20260414-1';
+        return '20260418-1';
     },
 
     buildMobileUrl(params = {}) {
@@ -501,26 +501,67 @@ const catalogPage = {
         const body = document.getElementById('catalog-module-body');
         if (this.activeModule === 'structure') {
             body.innerHTML = this.renderStructureModule();
+            this.attachDeleteButtons();
             return;
         }
         if (this.activeModule === 'reagents') {
             body.innerHTML = this.renderReagentModule();
             this.refreshReagentRelationPreview();
+            this.attachDeleteButtons();
             return;
         }
         if (this.activeModule === 'groups') {
             body.innerHTML = this.renderReagentGroupModule();
+            this.attachDeleteButtons();
             return;
         }
         if (this.activeModule === 'operators') {
             body.innerHTML = this.renderOperatorModule();
+            this.attachDeleteButtons();
             return;
         }
         if (this.activeModule === 'units') {
             body.innerHTML = this.renderUnitModule();
+            this.attachDeleteButtons();
             return;
         }
         body.innerHTML = this.renderSystemModule();
+        this.attachDeleteButtons();
+    },
+
+    attachDeleteButtons() {
+        if (this.activeModule === 'structure') {
+            if (this.structureEditor.type === 'workGroup' && this.getWorkGroupById(this.structureEditor.id)) {
+                this.appendDeleteButton('#catalog-structure-work-group-name', 'delete-work-group-btn', '删除工作组', 'deleteWorkGroup');
+            }
+            if (this.structureEditor.type === 'instrument' && this.getInstrumentById(this.structureEditor.id)) {
+                this.appendDeleteButton('#catalog-structure-instrument-name', 'delete-instrument-btn', '删除仪器', 'deleteInstrument');
+            }
+        }
+        if (this.activeModule === 'groups' && this.getSelectedReagentGroup()) {
+            this.appendDeleteButton('#catalog-reagent-group-name', 'delete-reagent-group-btn', '删除项目分组', 'deleteReagentGroup');
+        }
+        if (this.activeModule === 'units' && this.getSelectedUnitOption()) {
+            this.appendDeleteButton('#catalog-unit-name', 'delete-unit-option-btn', '删除单位选项', 'deleteUnitOption');
+        }
+    },
+
+    appendDeleteButton(anchorSelector, buttonId, label, handlerName) {
+        if (document.getElementById(buttonId)) {
+            return;
+        }
+        const anchor = document.querySelector(anchorSelector);
+        const group = anchor?.closest('.settings-panel')?.querySelector('.button-group');
+        if (!group) {
+            return;
+        }
+        const button = document.createElement('button');
+        button.id = buttonId;
+        button.type = 'button';
+        button.className = 'btn btn-danger';
+        button.textContent = label;
+        button.addEventListener('click', () => this[handlerName]());
+        group.appendChild(button);
     },
 
     renderStructureModule() {
@@ -1205,6 +1246,22 @@ const catalogPage = {
         this.render();
     },
 
+    async deleteWorkGroup() {
+        const selected = this.structureEditor.type === 'workGroup' ? this.getWorkGroupById(this.structureEditor.id) : null;
+        if (!selected) {
+            return Utils.showToast('请先选择要删除的工作组', 'warning');
+        }
+        if (!confirm(`确定删除工作组“${selected.name}”吗？`)) {
+            return;
+        }
+        await API.inventory.removeWorkGroup(selected.id);
+        this.structureEditor = { type: 'workGroup', id: null, mode: 'create' };
+        await this.loadCatalog();
+        this.ensureSelections();
+        this.render();
+        Utils.showToast('工作组已删除', 'success');
+    },
+
     async submitInstrument() {
         const selectedBundle = this.structureEditor.id ? this.getInstrumentById(this.structureEditor.id) : null;
         const payload = {
@@ -1229,6 +1286,22 @@ const catalogPage = {
         await this.loadCatalog();
         this.ensureSelections();
         this.render();
+    },
+
+    async deleteInstrument() {
+        const selectedBundle = this.structureEditor.id ? this.getInstrumentById(this.structureEditor.id) : null;
+        if (!selectedBundle?.instrument) {
+            return Utils.showToast('请先选择要删除的仪器', 'warning');
+        }
+        if (!confirm(`确定删除仪器“${selectedBundle.instrument.name}”吗？`)) {
+            return;
+        }
+        await API.inventory.removeInstrument(selectedBundle.instrument.id);
+        this.structureEditor = { type: 'workGroup', id: selectedBundle.group.id, mode: 'edit' };
+        await this.loadCatalog();
+        this.ensureSelections();
+        this.render();
+        Utils.showToast('仪器已删除', 'success');
     },
 
     async batchUpdateStructureInstrumentWarnings() {
@@ -1431,6 +1504,22 @@ const catalogPage = {
         this.render();
     },
 
+    async deleteReagentGroup() {
+        const selected = this.getSelectedReagentGroup();
+        if (!selected) {
+            return Utils.showToast('请先选择要删除的项目分组', 'warning');
+        }
+        if (!confirm(`确定删除项目分组“${selected.name}”吗？`)) {
+            return;
+        }
+        await API.reagentGroups.remove(selected.id);
+        this.selectedReagentGroupId = null;
+        await Promise.all([this.loadReagentGroups(), this.loadReagents()]);
+        this.ensureSelections();
+        this.render();
+        Utils.showToast('项目分组已删除', 'success');
+    },
+
     async restoreSelectedReagent() {
         const selected = this.getSelectedReagent();
         if (!selected || !selected.is_archived) {
@@ -1530,6 +1619,22 @@ const catalogPage = {
         await this.loadUnitOptions();
         this.ensureSelections();
         this.render();
+    },
+
+    async deleteUnitOption() {
+        const selected = this.getSelectedUnitOption();
+        if (!selected) {
+            return Utils.showToast('请先选择要删除的单位选项', 'warning');
+        }
+        if (!confirm(`确定删除单位选项“${selected.name}”吗？`)) {
+            return;
+        }
+        await API.unitOptions.remove(selected.id);
+        this.selectedUnitOptionId = null;
+        await this.loadUnitOptions();
+        this.ensureSelections();
+        this.render();
+        Utils.showToast('单位选项已删除', 'success');
     },
 
     async resetReagentData() {

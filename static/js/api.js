@@ -248,6 +248,11 @@ const API = {
                 body: JSON.stringify(data)
             });
         },
+        removeWorkGroup(id) {
+            return API.request(`/work-groups/${id}`, {
+                method: 'DELETE'
+            });
+        },
         getInstruments(workGroupId = null) {
             const params = workGroupId ? `?work_group_id=${workGroupId}` : '';
             return API.request(`/instruments${params}`);
@@ -262,6 +267,11 @@ const API = {
             return API.request(`/instruments/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data)
+            });
+        },
+        removeInstrument(id) {
+            return API.request(`/instruments/${id}`, {
+                method: 'DELETE'
             });
         },
         updateInstrumentWarningDefaults(id, data) {
@@ -418,6 +428,11 @@ const API = {
                 method: 'PUT',
                 body: JSON.stringify(data)
             });
+        },
+        remove(id) {
+            return API.request(`/reagent-groups/${id}`, {
+                method: 'DELETE'
+            });
         }
     },
 
@@ -442,6 +457,11 @@ const API = {
             return API.request(`/unit-options/${id}`, {
                 method: 'PUT',
                 body: JSON.stringify(data)
+            });
+        },
+        remove(id) {
+            return API.request(`/unit-options/${id}`, {
+                method: 'DELETE'
             });
         }
     }
