@@ -122,12 +122,8 @@ def _resolve_reagent_for_item(item: StockInBatchItem, db: Session) -> Reagent:
         if _normalize_name(reagent.name) == normalized_name:
             return reagent
 
-    warning_days = item.warning_days
-    warning_stock = item.warning_stock
-    if warning_days == 30:
-        warning_days = instrument.default_warning_days or 30
-    if warning_stock == 5:
-        warning_stock = instrument.default_warning_stock or 5
+    warning_days = item.warning_days if item.warning_days is not None else (instrument.default_warning_days or 30)
+    warning_stock = item.warning_stock if item.warning_stock is not None else (instrument.default_warning_stock or 5)
 
     is_calibrator = _is_calibrator_name(reagent_name)
     reagent = Reagent(

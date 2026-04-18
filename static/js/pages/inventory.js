@@ -756,14 +756,20 @@ const inventoryPage = {
     },
 
     renderCompactReagentCard(reagent) {
+        const effectiveWarningStock = Number.isFinite(Number(reagent.effective_warning_stock))
+            ? Number(reagent.effective_warning_stock)
+            : Number(reagent.warning_stock ?? 0);
+        const effectiveWarningDays = Number.isFinite(Number(reagent.effective_warning_days))
+            ? Number(reagent.effective_warning_days)
+            : Number(reagent.warning_days ?? 30);
         const totalStockClass = this.getInventoryMetricClass({
-            normal: reagent.total_min_quantity > reagent.warning_stock,
-            warning: reagent.total_min_quantity > 0 && reagent.total_min_quantity <= reagent.warning_stock,
+            normal: reagent.total_min_quantity > effectiveWarningStock,
+            warning: reagent.total_min_quantity > 0 && reagent.total_min_quantity <= effectiveWarningStock,
             danger: reagent.total_min_quantity <= 0
         });
         const expiryDateClass = this.getInventoryMetricClass({
-            normal: reagent.nearest_expiry_days === null || reagent.nearest_expiry_days > reagent.warning_days,
-            warning: reagent.nearest_expiry_days !== null && reagent.nearest_expiry_days >= 0 && reagent.nearest_expiry_days <= reagent.warning_days,
+            normal: reagent.nearest_expiry_days === null || reagent.nearest_expiry_days > effectiveWarningDays,
+            warning: reagent.nearest_expiry_days !== null && reagent.nearest_expiry_days >= 0 && reagent.nearest_expiry_days <= effectiveWarningDays,
             danger: reagent.nearest_expiry_days !== null && reagent.nearest_expiry_days < 0
         });
         const expiryDaysClass = expiryDateClass;
@@ -825,7 +831,7 @@ const inventoryPage = {
                             </div>
                             <div class="inventory-key-metric compact">
                                 <span>预警值</span>
-                                <strong class="${warningValueClass}">${reagent.warning_stock} / ${reagent.warning_days}</strong>
+                                <strong class="${warningValueClass}">${effectiveWarningStock} / ${effectiveWarningDays}</strong>
                             </div>
                         </div>
                     </div>

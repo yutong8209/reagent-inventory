@@ -245,8 +245,8 @@ def test_usage_query_and_export_include_archived_history(tmp_path):
     workbook = load_workbook(BytesIO(export_response.content))
     sheet = workbook.active
     rows = list(sheet.iter_rows(values_only=True))
-    assert rows[0][0] == "工作组"
-    assert any(row[2] == "归档试剂B" for row in rows[1:])
+    assert rows[0][0] == "工作组 / 仪器"
+    assert any(row[1] == "归档试剂B\n厂家: 厂家乙" for row in rows[1:])
 
 
 def test_reporting_reagent_options_include_archived_records(tmp_path):

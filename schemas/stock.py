@@ -55,8 +55,8 @@ class StockInBatchItem(BaseModel):
     package_unit: str = "鐩?"
     min_unit: Optional[str] = None
     package_to_min_qty: int = Field(default=1, gt=0)
-    warning_days: int = Field(default=30, ge=0)
-    warning_stock: int = Field(default=5, ge=0)
+    warning_days: Optional[int] = Field(default=None, ge=0)
+    warning_stock: Optional[int] = Field(default=None, ge=0)
     raw_barcode: str = ""
     parsed_batch_no: Optional[str] = None
 

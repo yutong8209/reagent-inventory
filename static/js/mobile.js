@@ -218,7 +218,7 @@
   },
 
   getReagentStockTone(item) {
-    return this.getStockTone(item?.total_min_quantity, item?.warning_stock);
+    return this.getStockTone(item?.total_min_quantity, item?.effective_warning_stock ?? item?.warning_stock);
   },
 
   getExpiryTone(days, warningDays = 30) {
@@ -1310,7 +1310,7 @@
                 ${this.renderInventoryMetric('总库存', `${item.total_min_quantity}${this.escapeHtml(item.unit)}`, this.getReagentStockTone(item))}
                 ${this.renderInventoryMetric('最近效期', item.nearest_expiry_date ? this.escapeHtml(item.nearest_expiry_date) : '-', this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
                 ${this.renderInventoryMetric('剩余天数', this.escapeHtml(this.formatDays(item.nearest_expiry_days)), this.getExpiryTone(item.nearest_expiry_days, item.effective_warning_days || item.warning_days || 30))}
-                ${this.renderInventoryMetric('预警值', `${item.warning_stock ?? 0}${this.escapeHtml(item.unit)}`, this.getStockTone(item.warning_stock ?? 0, item.warning_stock ?? 0))}
+                ${this.renderInventoryMetric('预警值', `${item.effective_warning_stock ?? item.warning_stock ?? 0}${this.escapeHtml(item.unit)}`, 'neutral')}
               </div>
               ${this.expandedInventoryIds.has(item.id) ? `<div class="mobile-stock-batches">${(item.batches || []).map((batch) => `
                 <div class="mobile-batch-detail ${this.getBatchDetailTone(batch, item.effective_warning_days || item.warning_days || 30)}">
