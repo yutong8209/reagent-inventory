@@ -228,8 +228,12 @@
     return 'success';
   },
 
-  getBatchStockTone(batch) {
-    return Number(batch?.available_min_quantity || 0) <= 0 ? 'danger' : 'success';
+  getBatchStockTone(batch, warningStock = 0) {
+    const quantity = Number(batch?.available_min_quantity || 0);
+    const normalizedWarningStock = Number(warningStock || 0);
+    if (quantity <= 0) return 'danger';
+    if (quantity <= normalizedWarningStock) return 'batch-warning';
+    return 'success';
   },
 
   getBatchExpiryTone(batch, warningDays = 30) {
@@ -493,30 +497,36 @@
     const expiredCountEl = document.getElementById('mobile-summary-expired');
     const expiringCountEl = document.getElementById('mobile-summary-expiring');
     const lowCountEl = document.getElementById('mobile-summary-low');
+    const batchLowCountEl = document.getElementById('mobile-summary-batch-low');
     const emptyCountEl = document.getElementById('mobile-summary-empty');
     const expiredStatEl = document.getElementById('mobile-overview-stat-expired');
     const expiringStatEl = document.getElementById('mobile-overview-stat-expiring');
     const lowStatEl = document.getElementById('mobile-overview-stat-low');
+    const batchLowStatEl = document.getElementById('mobile-overview-stat-batch-low');
     const emptyStatEl = document.getElementById('mobile-overview-stat-empty');
     if (!summary) {
       if (expiredCountEl) expiredCountEl.textContent = '0';
       if (expiringCountEl) expiringCountEl.textContent = '0';
       if (lowCountEl) lowCountEl.textContent = '0';
+      if (batchLowCountEl) batchLowCountEl.textContent = '0';
       if (emptyCountEl) emptyCountEl.textContent = '0';
       expiredStatEl?.classList.add('danger');
       expiringStatEl?.classList.add('warning');
       lowStatEl?.classList.add('warning');
+      batchLowStatEl?.classList.add('batch-warning');
       emptyStatEl?.classList.add('danger');
       this.showEmpty('mobile-recent-list', '暂无最近出库记录');
       return;
     }
     if (expiredCountEl) expiredCountEl.textContent = String(summary.expired_batch_count || 0);
     if (expiringCountEl) expiringCountEl.textContent = String(summary.expiring_reagent_count || 0);
-    if (lowCountEl) lowCountEl.textContent = String(summary.low_or_empty_reagent_count || 0);
+    if (lowCountEl) lowCountEl.textContent = String(summary.low_stock_reagent_count || 0);
+    if (batchLowCountEl) batchLowCountEl.textContent = String(summary.low_stock_batch_count || 0);
     if (emptyCountEl) emptyCountEl.textContent = String(summary.zero_stock_unarchived_count || 0);
     expiredStatEl?.classList.toggle('danger', (summary.expired_batch_count || 0) > 0);
     expiringStatEl?.classList.toggle('warning', (summary.expiring_reagent_count || 0) > 0);
-    lowStatEl?.classList.toggle('warning', (summary.low_or_empty_reagent_count || 0) > 0);
+    lowStatEl?.classList.toggle('warning', (summary.low_stock_reagent_count || 0) > 0);
+    batchLowStatEl?.classList.toggle('batch-warning', (summary.low_stock_batch_count || 0) > 0);
     emptyStatEl?.classList.toggle('danger', (summary.zero_stock_unarchived_count || 0) > 0);
 
     const rows = this.overview.recent_outbounds || [];
@@ -1269,16 +1279,29 @@
       .sort((left, right) => (left.sortOrder ?? 9999) - (right.sortOrder ?? 9999) || left.name.localeCompare(right.name, 'zh-CN'));
   },
 
+  hasBatchLowWarning(item) {
+    const effectiveWarningStock = Number(item.effective_single_batch_warning_stock ?? item.effective_warning_stock ?? item.warning_stock ?? 0);
+    return (item.batches || []).some((batch) => batch.available_min_quantity > 0 && batch.available_min_quantity <= effectiveWarningStock);
+  },
+
+  isWarningInventoryItem(item) {
+    return item.status_level !== 'normal' || this.hasBatchLowWarning(item);
+  },
+
   matchesInventoryFilter(item) {
     const keyword = this.inventoryFilters.keyword.toLowerCase();
     if (keyword && !item.name.toLowerCase().includes(keyword)) return false;
     const status = this.inventoryFilters.status;
-    if (status === 'low_or_empty') {
+    if (status === 'batch_low') {
+      if (!this.hasBatchLowWarning(item)) {
+        return false;
+      }
+    } else if (status === 'low_or_empty') {
       if (!['low', 'empty'].includes(item.status_level)) return false;
     } else if (status !== 'all' && item.status_level !== status) {
       return false;
     }
-    if (this.inventoryFilters.onlyWarnings && item.status_level === 'normal') return false;
+    if (this.inventoryFilters.onlyWarnings && !this.isWarningInventoryItem(item)) return false;
     return true;
   },
 
@@ -1318,7 +1341,7 @@
                     <span class="mobile-batch-detail-code">批号 ${this.escapeHtml(batch.batch_no)}</span>
                     <span class="mobile-batch-detail-expiry">效期 ${this.escapeHtml(batch.expiry_date || '-')}</span>
                     ${this.renderInlineTone(this.escapeHtml(this.formatDays(batch.expiry_days_left)), this.getBatchExpiryTone(batch, item.effective_warning_days || item.warning_days || 30))}
-                    ${this.renderInlineTone(`库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}`, this.getBatchStockTone(batch))}
+                    ${this.renderInlineTone(`库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}`, this.getBatchStockTone(batch, item.effective_single_batch_warning_stock ?? item.effective_warning_stock ?? item.warning_stock ?? 0))}
                   </div>
                   <div class="mobile-batch-detail-row mobile-batch-detail-row-secondary">
                     <span class="mobile-batch-detail-entry">入库 ${this.escapeHtml(batch.created_at ? Utils.formatDateTime(batch.created_at).slice(0, 10) : '-')}</span>

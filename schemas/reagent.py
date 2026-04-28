@@ -17,6 +17,7 @@ class ReagentCreate(BaseModel):
     package_to_min_qty: int = Field(default=1, gt=0)
     warning_days: int = 30
     warning_stock: int = 5
+    single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
     follow_instrument: bool = True
     is_calibrator: Optional[bool] = None
     calibration_result_unit: Optional[str] = "nmmol/L"
@@ -36,6 +37,7 @@ class ReagentResponse(BaseModel):
     package_to_min_qty: int
     warning_days: int
     warning_stock: int
+    single_batch_warning_stock: Optional[int] = None
     follow_instrument: bool
     is_calibrator: bool = False
     calibration_result_unit: str = "nmmol/L"
@@ -56,6 +58,7 @@ class ReagentUpdate(BaseModel):
     package_to_min_qty: int = Field(default=1, gt=0)
     warning_days: int = 30
     warning_stock: int = 5
+    single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
     follow_instrument: bool = False
     is_calibrator: bool = False
     calibration_result_unit: str = "nmmol/L"

@@ -26,6 +26,7 @@ class Reagent(Base):
     package_to_min_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     warning_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    single_batch_warning_stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
     follow_instrument: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_calibrator: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     calibration_result_unit: Mapped[str] = mapped_column(

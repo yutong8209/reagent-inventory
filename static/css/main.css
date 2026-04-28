@@ -60,12 +60,14 @@ opacity:.9}
 .dashboard-task-card::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.3),transparent 48%)}
 .dashboard-task-danger{border-color:rgba(240,183,176,.92);background:linear-gradient(135deg,rgba(255,248,247,.92),rgba(255,255,255,.52))}
 .dashboard-task-warning{border-color:rgba(240,223,148,.95);background:linear-gradient(135deg,rgba(255,252,239,.95),rgba(255,255,255,.55))}
+.dashboard-task-batch-warning{border-color:rgba(167,196,255,.95);background:linear-gradient(135deg,rgba(239,245,255,.96),rgba(255,255,255,.55))}
 .dashboard-task-card:hover,.dashboard-task-card:focus-visible{transform:translateY(-2px);box-shadow:0 14px 26px rgba(18,39,67,.1)}
 .dashboard-task-copy{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 .dashboard-task-label{font-size:11px;color:#60748c}
 .dashboard-task-value{font-family:var(--font-number);font-size:20px;font-weight:700;line-height:1;color:#17304f;font-variant-numeric:tabular-nums}
 .dashboard-task-danger .dashboard-task-value{color:#b42318}
 .dashboard-task-warning .dashboard-task-value{color:#a35f00}
+.dashboard-task-batch-warning .dashboard-task-value{color:#245fce}
 .dashboard-warning-list,.dashboard-recent-list{display:flex;flex-direction:column;gap:8px;max-height:320px;overflow:auto;scrollbar-gutter:stable;padding-right:4px}
 .dashboard-warning-card,.dashboard-recent-item{position:relative;padding:11px 12px;border:1px solid rgba(255,255,255,.76);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.78),rgba(255,255,255,.56));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);overflow:hidden}
 .dashboard-warning-card::before,.dashboard-recent-item::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.28),transparent 46%)}
@@ -3061,6 +3063,24 @@ font-size:10px;
 .inventory-batch-stock-text{
 padding:2px 6px;
 font-size:10px;
+}
+
+.inventory-batch-row.compact .inventory-batch-stock.inventory-batch-stock-normal,
+.inventory-batch-stock-text.inventory-batch-stock-normal{
+background:rgba(231,251,245,.96);
+color:#0d8b72;
+}
+
+.inventory-batch-row.compact .inventory-batch-stock.inventory-batch-stock-batch-warning,
+.inventory-batch-stock-text.inventory-batch-stock-batch-warning{
+background:rgba(231,241,255,.96);
+color:#245fce;
+}
+
+.inventory-batch-row.compact .inventory-batch-stock.inventory-batch-stock-danger,
+.inventory-batch-stock-text.inventory-batch-stock-danger{
+background:#fff1ef;
+color:#b42318;
 }
 
 @media (min-width: 1560px){

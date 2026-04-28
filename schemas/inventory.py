@@ -34,8 +34,10 @@ class ReagentInfo(BaseModel):
     calibration_result_unit: str = "nmmol/L"
     warning_days: int
     warning_stock: int
+    single_batch_warning_stock: Optional[int] = None
     effective_warning_days: int
     effective_warning_stock: int
+    effective_single_batch_warning_stock: int
     warning_source: Literal["instrument", "reagent"]
     follow_instrument: bool = True
     total_package_quantity: int = 0
@@ -57,6 +59,7 @@ class InstrumentInfo(BaseModel):
     model: Optional[str]
     default_warning_days: int
     default_warning_stock: int
+    default_single_batch_warning_stock: Optional[int] = None
     reagents: List[ReagentInfo]
 
 
@@ -69,6 +72,8 @@ class WorkGroupInfo(BaseModel):
 class DashboardPendingTasks(BaseModel):
     expired_batch_count: int = 0
     expiring_reagent_count: int = 0
+    low_stock_reagent_count: int = 0
+    low_stock_batch_count: int = 0
     low_or_empty_reagent_count: int = 0
     zero_stock_unarchived_count: int = 0
 
@@ -117,10 +122,12 @@ class ReagentCatalogItem(BaseModel):
     package_to_min_qty: int
     warning_days: int
     warning_stock: int
+    single_batch_warning_stock: Optional[int] = None
     follow_instrument: bool
     is_archived: bool = False
     effective_warning_days: int
     effective_warning_stock: int
+    effective_single_batch_warning_stock: int
     warning_source: Literal["instrument", "reagent"]
 
 
@@ -131,6 +138,7 @@ class InstrumentCatalogItem(BaseModel):
     model: Optional[str] = None
     default_warning_days: int = 30
     default_warning_stock: int = 5
+    default_single_batch_warning_stock: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -156,6 +164,7 @@ class InstrumentCreate(BaseModel):
     model: Optional[str] = None
     default_warning_days: int = Field(default=30, ge=0)
     default_warning_stock: int = Field(default=5, ge=0)
+    default_single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
 
 
 class InstrumentUpdate(BaseModel):
@@ -164,17 +173,20 @@ class InstrumentUpdate(BaseModel):
     model: Optional[str] = None
     default_warning_days: int = Field(default=30, ge=0)
     default_warning_stock: int = Field(default=5, ge=0)
+    default_single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
 
 
 class InstrumentWarningDefaultsUpdate(BaseModel):
     default_warning_days: int = Field(default=30, ge=0)
     default_warning_stock: int = Field(default=5, ge=0)
+    default_single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
 
 
 class ReagentWarningSettingsUpdate(BaseModel):
     follow_instrument: bool = True
     warning_days: int = Field(default=30, ge=0)
     warning_stock: int = Field(default=5, ge=0)
+    single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
 
 
 class ReagentGroupCatalogItem(BaseModel):

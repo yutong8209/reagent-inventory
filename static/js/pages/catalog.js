@@ -254,7 +254,7 @@ const catalogPage = {
     },
 
     getMobileAppVersion() {
-        return '20260418-2';
+        return '20260428-8';
     },
 
     buildMobileUrl(params = {}) {
@@ -501,12 +501,21 @@ const catalogPage = {
         const body = document.getElementById('catalog-module-body');
         if (this.activeModule === 'structure') {
             body.innerHTML = this.renderStructureModule();
+            const singleBatchWarningInput = document.getElementById('catalog-structure-instrument-single-batch-warning-stock');
+            if (singleBatchWarningInput) {
+                singleBatchWarningInput.placeholder = '留空则跟随库存预警';
+                const label = body.querySelector('label[for="catalog-structure-instrument-single-batch-warning-stock"]');
+                if (label) {
+                    label.textContent = '单批号预警最小单位数';
+                }
+            }
             this.attachDeleteButtons();
             return;
         }
         if (this.activeModule === 'reagents') {
             body.innerHTML = this.renderReagentModule();
             this.refreshReagentRelationPreview();
+            document.getElementById('catalog-reagent-single-batch-warning-stock')?.closest('.form-group')?.remove();
             this.attachDeleteButtons();
             return;
         }
@@ -603,6 +612,10 @@ const catalogPage = {
                     <div class="form-group">
                         <label for="catalog-structure-instrument-warning-stock">库存预警最小单位数</label>
                         <input type="number" id="catalog-structure-instrument-warning-stock" class="form-input" min="0" value="${selectedInstrument?.default_warning_stock ?? 5}">
+                    </div>
+                    <div class="form-group">
+                        <label for="catalog-structure-instrument-single-batch-warning-stock">鍗曟壒鍙烽璀︽渶灏忓崟浣嶆暟</label>
+                        <input type="number" id="catalog-structure-instrument-single-batch-warning-stock" class="form-input" min="0" value="${selectedInstrument?.default_single_batch_warning_stock ?? ''}" placeholder="鐣欑┖鍒欒窡闅忓簱瀛橀璀?">
                     </div>
                 </div>
                 <div class="button-group">
@@ -818,6 +831,10 @@ const catalogPage = {
                             <div class="form-group">
                                 <label for="catalog-reagent-warning-stock">库存预警最小单位数</label>
                                 <input type="number" id="catalog-reagent-warning-stock" class="form-input" min="0" value="${selected.warning_stock}">
+                            </div>
+                            <div class="form-group">
+                                <label for="catalog-reagent-single-batch-warning-stock">鍗曟壒鍙烽璀︽渶灏忓崟浣嶆暟</label>
+                                <input type="number" id="catalog-reagent-single-batch-warning-stock" class="form-input" min="0" value="${selected.single_batch_warning_stock ?? ''}" placeholder="鐣欑┖鍒欒窡闅忓簱瀛橀璀?">
                             </div>
                         </div>
                         <div class="form-row">
@@ -1269,7 +1286,14 @@ const catalogPage = {
             name: this.normalizeText(document.getElementById('catalog-structure-instrument-name')?.value),
             model: this.normalizeText(document.getElementById('catalog-structure-instrument-model')?.value) || null,
             default_warning_days: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-days')?.value, selectedBundle?.instrument?.default_warning_days ?? 30),
-            default_warning_stock: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-stock')?.value, selectedBundle?.instrument?.default_warning_stock ?? 5)
+            default_warning_stock: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-stock')?.value, selectedBundle?.instrument?.default_warning_stock ?? 5),
+            default_single_batch_warning_stock: (() => {
+                const rawValue = this.normalizeText(document.getElementById('catalog-structure-instrument-single-batch-warning-stock')?.value);
+                if (!rawValue) {
+                    return null;
+                }
+                return this.parseNonNegative(rawValue, 0);
+            })()
         };
         if (!payload.work_group_id || !payload.name) {
             return Utils.showToast('请完整填写所属工作组和仪器名称', 'warning');
@@ -1314,7 +1338,14 @@ const catalogPage = {
         }
         const payload = {
             default_warning_days: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-days')?.value, instrumentBundle.instrument.default_warning_days ?? 30),
-            default_warning_stock: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-stock')?.value, instrumentBundle.instrument.default_warning_stock ?? 5)
+            default_warning_stock: this.parseNonNegative(document.getElementById('catalog-structure-instrument-warning-stock')?.value, instrumentBundle.instrument.default_warning_stock ?? 5),
+            default_single_batch_warning_stock: (() => {
+                const rawValue = this.normalizeText(document.getElementById('catalog-structure-instrument-single-batch-warning-stock')?.value);
+                if (!rawValue) {
+                    return null;
+                }
+                return this.parseNonNegative(rawValue, 0);
+            })()
         };
         if (!confirm(`确定批量更新“${instrumentBundle.instrument.name}”下全部试剂的预警值吗？`)) {
             return;
@@ -1460,6 +1491,13 @@ const catalogPage = {
             package_to_min_qty: Math.max(parseInt(document.getElementById('catalog-reagent-package-to-min-qty')?.value, 10) || 1, 1),
             warning_days: this.parseNonNegative(document.getElementById('catalog-reagent-warning-days')?.value, 30),
             warning_stock: this.parseNonNegative(document.getElementById('catalog-reagent-warning-stock')?.value, 5),
+            single_batch_warning_stock: (() => {
+                const rawValue = this.normalizeText(document.getElementById('catalog-reagent-single-batch-warning-stock')?.value);
+                if (!rawValue) {
+                    return null;
+                }
+                return this.parseNonNegative(rawValue, 0);
+            })(),
             follow_instrument: false,
             is_calibrator: Boolean(document.getElementById('catalog-reagent-is-calibrator')?.checked),
             calibration_result_unit: this.normalizeText(document.getElementById('catalog-reagent-calibration-result-unit')?.value) || 'nmmol/L'

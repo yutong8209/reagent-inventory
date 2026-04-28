@@ -34,7 +34,7 @@ const dashboardPage = {
         const targetOrigin = ['http://127.0.0.1:8000', 'http://localhost:8000'].includes(currentOrigin)
             ? this.mobilePreferredOrigin
             : currentOrigin;
-    const target = `${targetOrigin}/mobile.html?appv=20260418-2`;
+    const target = `${targetOrigin}/mobile.html?appv=20260428-8`;
         qrImage.src = `/api/mobile/qr?target=${encodeURIComponent(target)}`;
     },
 
@@ -127,7 +127,8 @@ const dashboardPage = {
         const cards = [
             { label: '\u5df2\u8fc7\u671f\u6279\u6b21', value: pending.expired_batch_count, type: 'danger', status: 'expired' },
             { label: '\u8fd1\u6548\u671f\u8bd5\u5242', value: pending.expiring_reagent_count, type: 'warning', status: 'expiring' },
-            { label: '\u4f4e\u5e93\u5b58/\u96f6\u5e93\u5b58', value: pending.low_or_empty_reagent_count, type: 'warning', status: 'low_or_empty' },
+            { label: '\u603b\u5e93\u5b58\u9884\u8b66', value: pending.low_stock_reagent_count, type: 'warning', status: 'low' },
+            { label: '\u5355\u6279\u53f7\u9884\u8b66', value: pending.low_stock_batch_count, type: 'batch-warning', status: 'batch_low' },
             { label: '\u96f6\u5e93\u5b58\u672a\u5f52\u6863', value: pending.zero_stock_unarchived_count, type: 'danger', status: 'empty' }
         ];
 

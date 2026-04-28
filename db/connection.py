@@ -35,6 +35,10 @@ def ensure_schema():
                 "default_warning_stock",
                 "ALTER TABLE instruments ADD COLUMN default_warning_stock INTEGER NOT NULL DEFAULT 5",
             ),
+            (
+                "default_single_batch_warning_stock",
+                "ALTER TABLE instruments ADD COLUMN default_single_batch_warning_stock INTEGER",
+            ),
         ],
         "reagents": [
             (
@@ -52,6 +56,10 @@ def ensure_schema():
             (
                 "follow_instrument",
                 "ALTER TABLE reagents ADD COLUMN follow_instrument BOOLEAN NOT NULL DEFAULT 1",
+            ),
+            (
+                "single_batch_warning_stock",
+                "ALTER TABLE reagents ADD COLUMN single_batch_warning_stock INTEGER",
             ),
             (
                 "is_archived",
@@ -147,7 +155,11 @@ def ensure_schema():
                     """
                     UPDATE instruments
                     SET default_warning_days = COALESCE(default_warning_days, 30),
-                        default_warning_stock = COALESCE(default_warning_stock, 5)
+                        default_warning_stock = COALESCE(default_warning_stock, 5),
+                        default_single_batch_warning_stock = CASE
+                            WHEN default_single_batch_warning_stock IS NOT NULL THEN MAX(default_single_batch_warning_stock, 0)
+                            ELSE NULL
+                        END
                     """
                 )
             )
@@ -160,6 +172,10 @@ def ensure_schema():
                     SET package_to_min_qty = COALESCE(NULLIF(package_to_min_qty, 0), 1),
                         warning_days = COALESCE(warning_days, 30),
                         warning_stock = COALESCE(warning_stock, 5),
+                        single_batch_warning_stock = CASE
+                            WHEN single_batch_warning_stock IS NOT NULL THEN MAX(single_batch_warning_stock, 0)
+                            ELSE NULL
+                        END,
                         follow_instrument = COALESCE(follow_instrument, 1),
                         is_archived = COALESCE(is_archived, 0),
                         is_calibrator = COALESCE(is_calibrator, 0),

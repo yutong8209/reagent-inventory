@@ -200,6 +200,13 @@ def _effective_warning_values(reagent: Reagent) -> tuple[int, int, str]:
     )
 
 
+def _effective_single_batch_warning_stock(reagent: Reagent, effective_warning_stock: int) -> int:
+    instrument = reagent.instrument
+    if instrument and instrument.default_single_batch_warning_stock is not None:
+        return _safe_int(instrument.default_single_batch_warning_stock, effective_warning_stock)
+    return effective_warning_stock
+
+
 def _build_status_level(
     *,
     has_expired_batch: bool,
@@ -264,6 +271,9 @@ def _serialize_reagent(reagent: Reagent) -> ReagentCatalogItem:
     work_group = instrument.work_group if instrument else None
     reagent_group = reagent.reagent_group
     effective_warning_days, effective_warning_stock, warning_source = _effective_warning_values(reagent)
+    effective_single_batch_warning_stock = _effective_single_batch_warning_stock(
+        reagent, effective_warning_stock
+    )
     return ReagentCatalogItem(
         id=reagent.id,
         instrument_id=reagent.instrument_id,
@@ -282,10 +292,12 @@ def _serialize_reagent(reagent: Reagent) -> ReagentCatalogItem:
         package_to_min_qty=reagent.package_to_min_qty,
         warning_days=reagent.warning_days,
         warning_stock=reagent.warning_stock,
+        single_batch_warning_stock=reagent.single_batch_warning_stock,
         follow_instrument=reagent.follow_instrument,
         is_archived=bool(reagent.is_archived),
         effective_warning_days=effective_warning_days,
         effective_warning_stock=effective_warning_stock,
+        effective_single_batch_warning_stock=effective_single_batch_warning_stock,
         warning_source=warning_source,
     )
 
@@ -331,6 +343,9 @@ def _build_reagent_info(
     total_min_quantity = sum(batch.available_min_quantity for batch in batch_items)
     nearest_expiry = batch_items[0] if batch_items else None
     effective_warning_days, effective_warning_stock, warning_source = _effective_warning_values(reagent)
+    effective_single_batch_warning_stock = _effective_single_batch_warning_stock(
+        reagent, effective_warning_stock
+    )
     has_expired_batch = any(batch.is_expired for batch in batch_items)
     nearest_expiry_days = nearest_expiry.expiry_days_left if nearest_expiry else None
     has_expiring_soon = (
@@ -363,8 +378,10 @@ def _build_reagent_info(
         calibration_result_unit=_clean_text(reagent.calibration_result_unit) or "nmmol/L",
         warning_days=reagent.warning_days,
         warning_stock=reagent.warning_stock,
+        single_batch_warning_stock=reagent.single_batch_warning_stock,
         effective_warning_days=effective_warning_days,
         effective_warning_stock=effective_warning_stock,
+        effective_single_batch_warning_stock=effective_single_batch_warning_stock,
         warning_source=warning_source,
         follow_instrument=reagent.follow_instrument,
         total_package_quantity=total_package_quantity,
@@ -478,6 +495,7 @@ def _query_inventory_data(
                     model=instrument.model,
                     default_warning_days=_safe_int(instrument.default_warning_days, 30),
                     default_warning_stock=_safe_int(instrument.default_warning_stock, 5),
+                    default_single_batch_warning_stock=instrument.default_single_batch_warning_stock,
                     reagents=reagent_items,
                 )
             )
@@ -496,6 +514,8 @@ def _query_inventory_data(
 def _build_dashboard_pending_tasks(inventory_data: list[WorkGroupInfo]) -> DashboardPendingTasks:
     expired_batch_count = 0
     expiring_reagent_count = 0
+    low_stock_reagent_count = 0
+    low_stock_batch_count = 0
     low_or_empty_reagent_count = 0
     zero_stock_unarchived_count = 0
 
@@ -505,14 +525,23 @@ def _build_dashboard_pending_tasks(inventory_data: list[WorkGroupInfo]) -> Dashb
                 expired_batch_count += sum(1 for batch in reagent.batches if batch.is_expired)
                 if reagent.status_level == "expiring":
                     expiring_reagent_count += 1
+                if reagent.status_level == "low":
+                    low_stock_reagent_count += 1
                 if reagent.status_level in {"low", "empty"}:
                     low_or_empty_reagent_count += 1
                 if reagent.total_min_quantity <= 0:
                     zero_stock_unarchived_count += 1
+                low_stock_batch_count += sum(
+                    1
+                    for batch in reagent.batches
+                    if 0 < batch.available_min_quantity <= reagent.effective_single_batch_warning_stock
+                )
 
     return DashboardPendingTasks(
         expired_batch_count=expired_batch_count,
         expiring_reagent_count=expiring_reagent_count,
+        low_stock_reagent_count=low_stock_reagent_count,
+        low_stock_batch_count=low_stock_batch_count,
         low_or_empty_reagent_count=low_or_empty_reagent_count,
         zero_stock_unarchived_count=zero_stock_unarchived_count,
     )
@@ -969,6 +998,7 @@ def get_instruments(
             "work_group_id": instrument.work_group_id,
             "default_warning_days": _safe_int(instrument.default_warning_days, 30),
             "default_warning_stock": _safe_int(instrument.default_warning_stock, 5),
+            "default_single_batch_warning_stock": instrument.default_single_batch_warning_stock,
         }
         for instrument in instruments
     ]
@@ -998,6 +1028,11 @@ def create_instrument(data: InstrumentCreate, db: Session = Depends(get_db)):
         model=_clean_text(data.model) or None,
         default_warning_days=_safe_int(data.default_warning_days, 30),
         default_warning_stock=_safe_int(data.default_warning_stock, 5),
+        default_single_batch_warning_stock=(
+            _safe_int(data.default_single_batch_warning_stock, data.default_warning_stock)
+            if data.default_single_batch_warning_stock is not None
+            else None
+        ),
     )
     db.add(instrument)
     db.commit()
@@ -1010,6 +1045,7 @@ def create_instrument(data: InstrumentCreate, db: Session = Depends(get_db)):
         model=instrument.model,
         default_warning_days=_safe_int(instrument.default_warning_days, 30),
         default_warning_stock=_safe_int(instrument.default_warning_stock, 5),
+        default_single_batch_warning_stock=instrument.default_single_batch_warning_stock,
     )
 
 
@@ -1059,6 +1095,11 @@ def update_instrument(instrument_id: int, data: InstrumentUpdate, db: Session = 
     instrument.model = _clean_text(data.model) or None
     instrument.default_warning_days = _safe_int(data.default_warning_days, 30)
     instrument.default_warning_stock = _safe_int(data.default_warning_stock, 5)
+    instrument.default_single_batch_warning_stock = (
+        _safe_int(data.default_single_batch_warning_stock, data.default_warning_stock)
+        if data.default_single_batch_warning_stock is not None
+        else None
+    )
     db.commit()
     db.refresh(instrument)
 
@@ -1069,6 +1110,7 @@ def update_instrument(instrument_id: int, data: InstrumentUpdate, db: Session = 
         model=instrument.model,
         default_warning_days=_safe_int(instrument.default_warning_days, 30),
         default_warning_stock=_safe_int(instrument.default_warning_stock, 5),
+        default_single_batch_warning_stock=instrument.default_single_batch_warning_stock,
     )
 
 
@@ -1084,6 +1126,11 @@ def update_instrument_warning_defaults(
 
     instrument.default_warning_days = _safe_int(data.default_warning_days, 30)
     instrument.default_warning_stock = _safe_int(data.default_warning_stock, 5)
+    instrument.default_single_batch_warning_stock = (
+        _safe_int(data.default_single_batch_warning_stock, data.default_warning_stock)
+        if data.default_single_batch_warning_stock is not None
+        else None
+    )
     db.commit()
     db.refresh(instrument)
 
@@ -1094,6 +1141,7 @@ def update_instrument_warning_defaults(
         model=instrument.model,
         default_warning_days=_safe_int(instrument.default_warning_days, 30),
         default_warning_stock=_safe_int(instrument.default_warning_stock, 5),
+        default_single_batch_warning_stock=instrument.default_single_batch_warning_stock,
     )
 
 
@@ -1127,8 +1175,14 @@ def batch_update_instrument_warnings(
 
     warning_days = _safe_int(data.default_warning_days, 30)
     warning_stock = _safe_int(data.default_warning_stock, 5)
+    single_batch_warning_stock = (
+        _safe_int(data.default_single_batch_warning_stock, warning_stock)
+        if data.default_single_batch_warning_stock is not None
+        else None
+    )
     instrument.default_warning_days = warning_days
     instrument.default_warning_stock = warning_stock
+    instrument.default_single_batch_warning_stock = single_batch_warning_stock
 
     updated_count = (
         db.query(Reagent)
@@ -1137,6 +1191,7 @@ def batch_update_instrument_warnings(
             {
                 Reagent.warning_days: warning_days,
                 Reagent.warning_stock: warning_stock,
+                Reagent.single_batch_warning_stock: None,
                 Reagent.follow_instrument: False,
             },
             synchronize_session=False,
@@ -1149,6 +1204,7 @@ def batch_update_instrument_warnings(
         "updated_count": updated_count,
         "default_warning_days": warning_days,
         "default_warning_stock": warning_stock,
+        "default_single_batch_warning_stock": single_batch_warning_stock,
     }
 
 
@@ -1212,6 +1268,7 @@ def update_reagent(reagent_id: int, data: ReagentUpdate, db: Session = Depends(g
     reagent.package_to_min_qty = data.package_to_min_qty
     reagent.warning_days = _safe_int(data.warning_days, 30)
     reagent.warning_stock = _safe_int(data.warning_stock, 5)
+    reagent.single_batch_warning_stock = None
     reagent.follow_instrument = bool(data.follow_instrument)
     (
         db.query(BatchStock)
@@ -1244,6 +1301,7 @@ def update_reagent_warning_settings(
     reagent.follow_instrument = bool(data.follow_instrument)
     reagent.warning_days = _safe_int(data.warning_days, 30)
     reagent.warning_stock = _safe_int(data.warning_stock, 5)
+    reagent.single_batch_warning_stock = None
     db.commit()
     db.refresh(reagent)
 

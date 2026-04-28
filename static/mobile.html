@@ -6,7 +6,7 @@
     <title>试剂移动工作台</title>
     <meta name="description" content="适合微信现场使用的试剂移动工作台，支持快速出库、快速入库和库存查看。">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/css/mobile.css?v=20260418-2">
+    <link rel="stylesheet" href="/css/mobile.css?v=20260428-8">
 </head>
 <body>
     <div id="mobile-app" class="mobile-app">
@@ -42,9 +42,13 @@
                             <span>近效期</span>
                             <strong id="mobile-summary-expiring">0</strong>
                         </div>
-                        <div id="mobile-overview-stat-low" class="mobile-overview-stat warning" onclick="mobileApp.openInventoryByStatus('low_or_empty')">
-                            <span>低库存</span>
+                        <div id="mobile-overview-stat-low" class="mobile-overview-stat warning" onclick="mobileApp.openInventoryByStatus('low')">
+                            <span>总库存预警</span>
                             <strong id="mobile-summary-low">0</strong>
+                        </div>
+                        <div id="mobile-overview-stat-batch-low" class="mobile-overview-stat batch-warning" onclick="mobileApp.openInventoryByStatus('batch_low')">
+                            <span>单批号预警</span>
+                            <strong id="mobile-summary-batch-low">0</strong>
                         </div>
                         <div id="mobile-overview-stat-empty" class="mobile-overview-stat danger" onclick="mobileApp.openInventoryByStatus('empty')">
                             <span>零库存</span>
@@ -186,6 +190,8 @@
                             <option value="all">全部状态</option>
                             <option value="expiring">近效期</option>
                             <option value="low_or_empty">低库存 / 零库存</option>
+                            <option value="low">总库存预警</option>
+                            <option value="batch_low">单批号预警</option>
                             <option value="empty">零库存</option>
                             <option value="expired">已过期</option>
                         </select>
@@ -337,8 +343,8 @@
 
     <div id="toast" class="toast hidden"></div>
 
-    <script src="/js/api.js?v=20260418-2"></script>
-    <script src="/js/utils.js?v=20260418-2"></script>
-    <script src="/js/mobile.js?v=20260418-2"></script>
+    <script src="/js/api.js?v=20260428-8"></script>
+    <script src="/js/utils.js?v=20260428-8"></script>
+    <script src="/js/mobile.js?v=20260428-8"></script>
 </body>
 </html>

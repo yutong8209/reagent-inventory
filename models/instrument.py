@@ -17,6 +17,7 @@ class Instrument(Base):
     model: Mapped[str] = mapped_column(String(100), nullable=True)
     default_warning_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     default_warning_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    default_single_batch_warning_stock: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )

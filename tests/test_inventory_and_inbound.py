@@ -453,15 +453,20 @@ def test_inventory_uses_instrument_defaults_until_reagent_override(tmp_path):
     assert reagent_payload["warning_source"] == "instrument"
     assert reagent_payload["effective_warning_days"] == 20
     assert reagent_payload["effective_warning_stock"] == 10
+    assert reagent_payload["single_batch_warning_stock"] is None
+    assert reagent_payload["effective_single_batch_warning_stock"] == 10
     assert reagent_payload["status_level"] == "expiring"
 
     update_response = client.put(f"/api/reagents/{reagent_id}/warning-settings", json={
         "follow_instrument": False,
         "warning_days": 2,
         "warning_stock": 5,
+        "single_batch_warning_stock": 3,
     })
     assert update_response.status_code == 200
     assert update_response.json()["warning_source"] == "reagent"
+    assert update_response.json()["single_batch_warning_stock"] is None
+    assert update_response.json()["effective_single_batch_warning_stock"] == 5
 
     inventory_response = client.get("/api/inventory")
     reagent_payload = next(
@@ -474,6 +479,8 @@ def test_inventory_uses_instrument_defaults_until_reagent_override(tmp_path):
     assert reagent_payload["warning_source"] == "reagent"
     assert reagent_payload["effective_warning_days"] == 2
     assert reagent_payload["effective_warning_stock"] == 5
+    assert reagent_payload["single_batch_warning_stock"] is None
+    assert reagent_payload["effective_single_batch_warning_stock"] == 5
     assert reagent_payload["status_level"] == "normal"
 
 

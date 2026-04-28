@@ -154,7 +154,7 @@ const inventoryPage = {
                     if (targetStatus && !this.matchesStatusFilter(reagent, targetStatus)) {
                         return false;
                     }
-                    if (context.onlyWarnings && reagent.status_level === 'normal') {
+                    if (context.onlyWarnings && !this.isWarningReagent(reagent)) {
                         return false;
                     }
                     return true;
@@ -171,7 +171,7 @@ const inventoryPage = {
                             if (targetStatus && !this.matchesStatusFilter(reagent, targetStatus)) {
                                 return false;
                             }
-                            if (context.onlyWarnings && reagent.status_level === 'normal') {
+                            if (context.onlyWarnings && !this.isWarningReagent(reagent)) {
                                 return false;
                             }
                             return true;
@@ -189,10 +189,28 @@ const inventoryPage = {
         if (!status || status === 'all') {
             return true;
         }
+        if (status === 'batch_low') {
+            return this.hasBatchLowWarning(reagent);
+        }
         if (status === 'low_or_empty') {
             return reagent.status_level === 'low' || reagent.status_level === 'empty';
         }
         return reagent.status_level === status;
+    },
+
+    hasBatchLowWarning(reagent) {
+        const effectiveSingleBatchWarningStock = Number.isFinite(Number(reagent.effective_single_batch_warning_stock))
+            ? Number(reagent.effective_single_batch_warning_stock)
+            : (
+                Number.isFinite(Number(reagent.effective_warning_stock))
+                    ? Number(reagent.effective_warning_stock)
+                    : Number(reagent.warning_stock ?? 0)
+            );
+        return (reagent.batches || []).some((batch) => batch.available_min_quantity > 0 && batch.available_min_quantity <= effectiveSingleBatchWarningStock);
+    },
+
+    isWarningReagent(reagent) {
+        return reagent.status_level !== 'normal' || this.hasBatchLowWarning(reagent);
     },
 
     ensureSelection() {
@@ -237,7 +255,7 @@ const inventoryPage = {
     },
 
     getInstrumentWarningCount(instrument) {
-        return (instrument.reagents || []).filter((item) => item.status_level !== 'normal').length;
+        return (instrument.reagents || []).filter((item) => this.isWarningReagent(item)).length;
     },
 
     getInstrumentSummary(instrument) {
@@ -319,7 +337,7 @@ const inventoryPage = {
             ))
             .map((group) => ({
                 ...group,
-                warningCount: group.reagents.filter((item) => item.status_level !== 'normal').length,
+                warningCount: group.reagents.filter((item) => this.isWarningReagent(item)).length,
                 reagents: this.getSortedReagents(group.reagents)
             }));
     },
@@ -333,7 +351,7 @@ const inventoryPage = {
             if (!this.matchesStatusFilter(reagent, this.filters.status)) {
                 return false;
             }
-            if (this.filters.onlyWarnings && reagent.status_level === 'normal') {
+            if (this.filters.onlyWarnings && !this.isWarningReagent(reagent)) {
                 return false;
             }
             if (this.filters.onlyCalibrators && !reagent.is_calibrator) {
@@ -794,7 +812,7 @@ const inventoryPage = {
                             <span class="inventory-batch-code">批号 ${this.escapeHtml(batch.batch_no)}</span>
                             <span class="inventory-batch-expiry">效期 ${this.escapeHtml(batch.expiry_date)}</span>
                             <span class="inventory-batch-days">${this.escapeHtml(this.formatDaysLabel(batch.expiry_days_left))}</span>
-                            <span class="inventory-batch-stock">库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit || reagent.unit || '瓶')}</span>
+                            <span class="inventory-batch-stock ${this.getBatchStockClass(batch, reagent)}">库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit || reagent.unit || '瓶')}</span>
                             <span class="inventory-batch-entry">入库 ${this.escapeHtml(Utils.formatDate(batch.created_at) || '')}</span>
                         </div>
                     </div>
@@ -893,6 +911,23 @@ const inventoryPage = {
         return 'normal';
     },
 
+    getBatchStockClass(batch, reagent) {
+        const effectiveWarningStock = Number.isFinite(Number(reagent.effective_single_batch_warning_stock))
+            ? Number(reagent.effective_single_batch_warning_stock)
+            : (
+                Number.isFinite(Number(reagent.effective_warning_stock))
+                    ? Number(reagent.effective_warning_stock)
+                    : Number(reagent.warning_stock ?? 0)
+            );
+        if (batch.available_min_quantity <= 0) {
+            return 'inventory-batch-stock-danger';
+        }
+        if (batch.available_min_quantity <= effectiveWarningStock) {
+            return 'inventory-batch-stock-batch-warning';
+        }
+        return 'inventory-batch-stock-normal';
+    },
+
     renderReagentCard(reagent) {
         const manufacturerHtml = reagent.manufacturer
             ? `<div class="inventory-card-maker">${this.escapeHtml(reagent.manufacturer)}</div>`
@@ -919,7 +954,7 @@ const inventoryPage = {
                             <span class="inventory-batch-days">${this.escapeHtml(this.formatDaysLabel(batch.expiry_days_left))}</span>
                         </div>
                         <div class="inventory-batch-secondary">
-                            <span class="inventory-batch-stock-text">当前库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit)}</span>
+                            <span class="inventory-batch-stock-text ${this.getBatchStockClass(batch, reagent)}">当前库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit)}</span>
                         </div>
                     </div>
                 `).join('')}
