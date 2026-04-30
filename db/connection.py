@@ -91,6 +91,10 @@ def ensure_schema():
                 "package_to_min_qty",
                 "ALTER TABLE batch_stocks ADD COLUMN package_to_min_qty INTEGER NOT NULL DEFAULT 1",
             ),
+            (
+                "is_archived",
+                "ALTER TABLE batch_stocks ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0",
+            ),
         ],
         "transactions": [
             (
@@ -215,7 +219,8 @@ def ensure_schema():
                 text(
                     """
                     UPDATE batch_stocks
-                    SET loose_min_quantity = COALESCE(loose_min_quantity, 0)
+                    SET loose_min_quantity = COALESCE(loose_min_quantity, 0),
+                        is_archived = COALESCE(is_archived, 0)
                     """
                 )
             )

@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Boolean,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -33,6 +34,7 @@ class BatchStock(Base):
     package_unit: Mapped[str] = mapped_column(String(50), nullable=False, default="盒")
     min_unit: Mapped[str] = mapped_column(String(50), nullable=False, default="瓶")
     package_to_min_qty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now
     )

@@ -15,6 +15,7 @@ class BatchInfo(BaseModel):
     package_unit: str
     min_unit: str
     package_to_min_qty: int
+    is_archived: bool = False
     is_expired: bool = False
     created_at: datetime
 

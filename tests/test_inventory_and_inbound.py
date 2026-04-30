@@ -1427,6 +1427,79 @@ def test_bulk_archive_zero_stock_reagents_only_archives_empty_ones(tmp_path):
         assert stocked_reagent.is_archived is False
 
 
+def test_archive_zero_stock_reagents_archives_empty_batches_only(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="TT3",
+            match_mode="exact",
+            match_pattern="ARCHIVE-BATCH-TT3-001",
+            raw_barcode_sample="ARCHIVE-BATCH-TT3-001",
+            manufacturer="TEST",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add(reagent)
+        db.flush()
+
+        empty_batch = BatchStock(
+            reagent_id=reagent.id,
+            batch_no="538621",
+            expiry_date=date(2031, 7, 31),
+            quantity=0,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        stocked_batch = BatchStock(
+            reagent_id=reagent.id,
+            batch_no="538990",
+            expiry_date=date(2031, 9, 30),
+            quantity=3,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        )
+        db.add_all([empty_batch, stocked_batch])
+        db.commit()
+        reagent_id = reagent.id
+        empty_batch_id = empty_batch.id
+
+    archive_response = client.post("/api/reagents/archive-zero-stock")
+    assert archive_response.status_code == 200
+    payload = archive_response.json()
+    assert payload["success"] is True
+    assert reagent_id not in payload["reagent_ids"]
+    assert empty_batch_id in payload["batch_stock_ids"]
+    assert payload["archived_batch_count"] >= 1
+
+    inventory_response = client.get("/api/inventory")
+    assert inventory_response.status_code == 200
+    reagent_payload = next(
+        reagent
+        for group in inventory_response.json()
+        for instrument in group["instruments"]
+        for reagent in instrument["reagents"]
+        if reagent["id"] == reagent_id
+    )
+    assert [batch["batch_no"] for batch in reagent_payload["batches"]] == ["538990"]
+
+    with SessionLocal() as db:
+        empty_batch = db.query(BatchStock).filter(BatchStock.id == empty_batch_id).first()
+        reagent = db.query(Reagent).filter(Reagent.id == reagent_id).first()
+        assert reagent.is_archived is False
+        assert empty_batch.is_archived is True
+
+
 def test_archived_reagent_can_be_scanned_and_reactivated_by_inbound(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     _, instrument_id = get_first_catalog_session(SessionLocal)

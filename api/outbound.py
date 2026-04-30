@@ -67,6 +67,7 @@ def _query_available_batches(db: Session, reagent_id: int) -> list[BatchStock]:
         db.query(BatchStock)
         .filter(
             BatchStock.reagent_id == reagent_id,
+            BatchStock.is_archived.is_(False),
             or_(BatchStock.quantity > 0, BatchStock.loose_min_quantity > 0),
         )
         .order_by(BatchStock.expiry_date.asc(), BatchStock.created_at.asc(), BatchStock.id.asc())
@@ -77,7 +78,10 @@ def _query_available_batches(db: Session, reagent_id: int) -> list[BatchStock]:
 def _query_all_batches(db: Session, reagent_id: int) -> list[BatchStock]:
     return (
         db.query(BatchStock)
-        .filter(BatchStock.reagent_id == reagent_id)
+        .filter(
+            BatchStock.reagent_id == reagent_id,
+            BatchStock.is_archived.is_(False),
+        )
         .order_by(BatchStock.expiry_date.desc(), BatchStock.created_at.desc(), BatchStock.id.desc())
         .all()
     )
@@ -481,7 +485,14 @@ def stock_out_batch(request: StockOutBatchRequest, db: Session = Depends(get_db)
 @router.post("/outbound", response_model=StockOutResponse)
 def stock_out(request: StockOutRequest, db: Session = Depends(get_db)):
     if request.batch_stock_id:
-        batch_stock = db.query(BatchStock).filter(BatchStock.id == request.batch_stock_id).first()
+        batch_stock = (
+            db.query(BatchStock)
+            .filter(
+                BatchStock.id == request.batch_stock_id,
+                BatchStock.is_archived.is_(False),
+            )
+            .first()
+        )
         if not batch_stock:
             raise HTTPException(status_code=404, detail="批次不存在")
 

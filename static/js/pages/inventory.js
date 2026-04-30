@@ -14,13 +14,15 @@ const inventoryPage = {
     lastLoadedAt: null,
     isExporting: false,
     focusReagentId: null,
+    defaultWorkGroupKeyword: '免疫',
+    defaultInstrumentKeyword: 'DXI800',
 
     async init() {
         if (!this.initialized) {
             this.bindEvents();
             this.initialized = true;
         }
-        await this.loadInventory();
+        await this.loadInventory({ preferDefaultSelection: true });
         this.consumeNavigationContext();
     },
 
@@ -86,10 +88,10 @@ const inventoryPage = {
             .replace(/'/g, '&#39;');
     },
 
-    async loadInventory() {
+    async loadInventory(options = {}) {
         this.inventoryData = await API.inventory.get();
         this.lastLoadedAt = new Date();
-        this.ensureSelection();
+        this.ensureSelection(options);
         this.syncFilterControls();
         this.render();
     },
@@ -213,12 +215,40 @@ const inventoryPage = {
         return reagent.status_level !== 'normal' || this.hasBatchLowWarning(reagent);
     },
 
-    ensureSelection() {
+    findDefaultInstrumentSelection() {
+        const groupKeyword = this.defaultWorkGroupKeyword.toLowerCase();
+        const instrumentKeyword = this.defaultInstrumentKeyword.toLowerCase();
+        for (const group of this.inventoryData) {
+            const groupName = String(group.name || '').toLowerCase();
+            if (!groupName.includes(groupKeyword)) {
+                continue;
+            }
+            const matchedInstrument = (group.instruments || []).find((instrument) => {
+                const instrumentText = `${instrument.name || ''} ${instrument.model || ''}`.toLowerCase();
+                return instrumentText.includes(instrumentKeyword.toLowerCase());
+            });
+            if (matchedInstrument) {
+                return { workGroupId: group.id, instrumentId: matchedInstrument.id };
+            }
+        }
+        return null;
+    },
+
+    ensureSelection(options = {}) {
         const allInstruments = this.inventoryData.flatMap((group) => group.instruments || []);
         if (!allInstruments.length) {
             this.selectedWorkGroupId = null;
             this.selectedInstrumentId = null;
             return;
+        }
+
+        if (options.preferDefaultSelection) {
+            const defaultSelection = this.findDefaultInstrumentSelection();
+            if (defaultSelection) {
+                this.selectedWorkGroupId = defaultSelection.workGroupId;
+                this.selectedInstrumentId = defaultSelection.instrumentId;
+                return;
+            }
         }
 
         if (!this.inventoryData.some((group) => group.id === this.selectedWorkGroupId)) {
@@ -504,17 +534,19 @@ const inventoryPage = {
     },
 
     async archiveZeroStockReagents() {
-        if (!confirm('确定一键归档所有零库存试剂吗？归档后它们将不再出现在库存页面。')) {
+        if (!confirm('确定一键归档所有零库存试剂和零库存批号吗？归档后它们将不再出现在库存页面。')) {
             return;
         }
 
         const result = await API.inventory.archiveZeroStockReagents();
-        if (!result.archived_count) {
-            Utils.showToast('当前没有可归档的零库存试剂', 'warning');
+        const reagentCount = result.archived_count || 0;
+        const batchCount = result.archived_batch_count || 0;
+        if (!reagentCount && !batchCount) {
+            Utils.showToast('当前没有可归档的零库存试剂或零库存批号', 'warning');
             return;
         }
 
-        Utils.showToast(`已归档 ${result.archived_count} 个零库存试剂`, 'success');
+        Utils.showToast(`已归档 ${reagentCount} 个零库存试剂、${batchCount} 个零库存批号`, 'success');
         await this.loadInventory();
     },
 

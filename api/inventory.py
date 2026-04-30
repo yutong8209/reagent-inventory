@@ -180,7 +180,11 @@ def _set_batch_total_min_units(batch: BatchStock, total_min_units: int):
 
 
 def _reagent_total_min_units(db: Session, reagent_id: int) -> int:
-    batches = db.query(BatchStock).filter(BatchStock.reagent_id == reagent_id).all()
+    batches = (
+        db.query(BatchStock)
+        .filter(BatchStock.reagent_id == reagent_id, BatchStock.is_archived.is_(False))
+        .all()
+    )
     return sum(_batch_total_min_units(batch) for batch in batches)
 
 
@@ -261,6 +265,7 @@ def _serialize_batch(batch: BatchStock) -> BatchInfo:
         package_unit=batch.package_unit,
         min_unit=batch.min_unit,
         package_to_min_qty=batch.package_to_min_qty,
+        is_archived=bool(batch.is_archived),
         is_expired=batch.expiry_date < date.today(),
         created_at=batch.created_at,
     )
@@ -471,7 +476,10 @@ def _query_inventory_data(
             for reagent in reagents:
                 batches = (
                     db.query(BatchStock)
-                    .filter(BatchStock.reagent_id == reagent.id)
+                    .filter(
+                        BatchStock.reagent_id == reagent.id,
+                        BatchStock.is_archived.is_(False),
+                    )
                     .order_by(BatchStock.expiry_date.asc(), BatchStock.created_at.asc(), BatchStock.id.asc())
                     .all()
                 )
@@ -1346,14 +1354,35 @@ def restore_reagent(reagent_id: int, db: Session = Depends(get_db)):
 def archive_zero_stock_reagents(db: Session = Depends(get_db)):
     reagents = db.query(Reagent).filter(Reagent.is_archived.is_(False)).all()
     archived_ids: list[int] = []
+    archived_batch_ids: list[int] = []
 
     for reagent in reagents:
         if _reagent_total_min_units(db, reagent.id) <= 0:
             reagent.is_archived = True
             archived_ids.append(reagent.id)
+            continue
+
+        zero_batches = (
+            db.query(BatchStock)
+            .filter(
+                BatchStock.reagent_id == reagent.id,
+                BatchStock.is_archived.is_(False),
+            )
+            .all()
+        )
+        for batch in zero_batches:
+            if _batch_total_min_units(batch) <= 0:
+                batch.is_archived = True
+                archived_batch_ids.append(batch.id)
 
     db.commit()
-    return {"success": True, "archived_count": len(archived_ids), "reagent_ids": archived_ids}
+    return {
+        "success": True,
+        "archived_count": len(archived_ids),
+        "archived_batch_count": len(archived_batch_ids),
+        "reagent_ids": archived_ids,
+        "batch_stock_ids": archived_batch_ids,
+    }
 
 
 @router.get("/reagent-groups", response_model=List[ReagentGroupResponse])
@@ -1592,6 +1621,7 @@ def apply_stock_adjustments(data: BatchStockAdjustmentRequest, db: Session = Dep
         .join(Reagent, BatchStock.reagent_id == Reagent.id)
         .filter(
             BatchStock.id.in_(list(normalized_items.keys())),
+            BatchStock.is_archived.is_(False),
             Reagent.is_archived.is_(False),
         )
         .all()

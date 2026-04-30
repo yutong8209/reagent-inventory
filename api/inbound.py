@@ -167,6 +167,8 @@ def _upsert_batch_stock(
     )
 
     if batch_stock:
+        if batch_stock.is_archived:
+            batch_stock.is_archived = False
         if (
             batch_stock.package_unit != package_unit
             or batch_stock.min_unit != min_unit

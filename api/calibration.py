@@ -122,7 +122,10 @@ def _serialize_batch_candidate(batch: BatchStock) -> CalibrationBatchCandidate:
 def _load_target_batch_candidates(db: Session, reagent_id: int) -> list[CalibrationBatchCandidate]:
     batches = (
         db.query(BatchStock)
-        .filter(BatchStock.reagent_id == reagent_id)
+        .filter(
+            BatchStock.reagent_id == reagent_id,
+            BatchStock.is_archived.is_(False),
+        )
         .order_by(BatchStock.expiry_date.desc(), BatchStock.created_at.desc(), BatchStock.id.desc())
         .all()
     )
@@ -144,6 +147,7 @@ def _load_available_batches(
         db.query(BatchStock)
         .filter(
             BatchStock.reagent_id == reagent_id,
+            BatchStock.is_archived.is_(False),
             or_(BatchStock.quantity > 0, BatchStock.loose_min_quantity > 0),
         )
         .order_by(*order_by)
@@ -235,7 +239,10 @@ def _match_calibrator_batch(
     batch_no: str | None,
     expiry_date: date | None,
 ) -> BatchStock | None:
-    query = db.query(BatchStock).filter(BatchStock.reagent_id == calibrator_id)
+    query = db.query(BatchStock).filter(
+        BatchStock.reagent_id == calibrator_id,
+        BatchStock.is_archived.is_(False),
+    )
     cleaned_batch_no = _clean_text(batch_no)
     if cleaned_batch_no:
         query = query.filter(BatchStock.batch_no == cleaned_batch_no)
@@ -251,7 +258,10 @@ def _match_calibrator_batch(
 
     return (
         db.query(BatchStock)
-        .filter(BatchStock.reagent_id == calibrator_id)
+        .filter(
+            BatchStock.reagent_id == calibrator_id,
+            BatchStock.is_archived.is_(False),
+        )
         .order_by(BatchStock.expiry_date.desc(), BatchStock.created_at.desc(), BatchStock.id.desc())
         .first()
     )
@@ -793,7 +803,14 @@ def create_calibration_record(data: CalibrationRecordCreate, db: Session = Depen
     if not calibrator.is_calibrator and calibrator.id != target.id:
         raise HTTPException(status_code=400, detail="普通试剂扫码校准时，被校准试剂必须是当前扫码试剂")
 
-    calibrator_batch = db.query(BatchStock).filter(BatchStock.id == data.calibrator_batch_stock_id).first()
+    calibrator_batch = (
+        db.query(BatchStock)
+        .filter(
+            BatchStock.id == data.calibrator_batch_stock_id,
+            BatchStock.is_archived.is_(False),
+        )
+        .first()
+    )
     if not calibrator_batch or calibrator_batch.reagent_id != calibrator.id:
         raise HTTPException(status_code=400, detail="校准来源批号不存在或与扫码试剂不匹配")
 
