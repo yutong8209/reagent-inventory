@@ -23,6 +23,17 @@ from schemas import (
 
 router = APIRouter()
 
+INFECTIOUS_REAGENT_ORDER = {
+    "hbsag": 0,
+    "hbsab": 1,
+    "hbeag": 2,
+    "hbeab": 3,
+    "hbcab": 4,
+    "hcv": 5,
+    "syphilis": 6,
+    "hiv": 7,
+}
+
 
 def _require_operator(operator_name: str, db: Session) -> str:
     cleaned_operator = _clean_text(operator_name)
@@ -60,6 +71,16 @@ def _set_batch_total_min_units(batch: BatchStock, total_min_units: int):
 
 def _is_batch_expired(batch: BatchStock) -> bool:
     return batch.expiry_date < date.today()
+
+
+def _normalized_reagent_order_name(name: str | None) -> str:
+    return "".join((name or "").lower().replace("质控品", "").split())
+
+
+def _custom_reagent_order(item: OutboundReagentItem) -> int:
+    if item.reagent_group_name not in {"传染病标志物", "MAGLUMI X8质控品"}:
+        return 999
+    return INFECTIOUS_REAGENT_ORDER.get(_normalized_reagent_order_name(item.reagent_name), 999)
 
 
 def _query_available_batches(db: Session, reagent_id: int) -> list[BatchStock]:
@@ -469,6 +490,15 @@ def search_outbound_reagents(
             )
         )
 
+    items.sort(key=lambda item: (
+        item.work_group_id,
+        item.instrument_id,
+        item.reagent_group_sort_order,
+        item.reagent_group_name or "",
+        _custom_reagent_order(item),
+        item.reagent_name,
+        item.reagent_id,
+    ))
     return items
 
 

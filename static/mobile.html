@@ -6,7 +6,7 @@
     <title>试剂移动工作台</title>
     <meta name="description" content="适合微信现场使用的试剂移动工作台，支持快速出库、快速入库和库存查看。">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/css/mobile.css?v=20260428-8">
+    <link rel="stylesheet" href="/css/mobile.css?v=20260501-3">
 </head>
 <body>
     <div id="mobile-app" class="mobile-app">
@@ -236,10 +236,11 @@
                 </label>
                 <label class="mobile-field">
                     <span>出库单位</span>
-                    <select id="mobile-outbound-unit" class="mobile-select">
-                        <option value="min">最小单位</option>
-                        <option value="package">包装单位</option>
-                    </select>
+                    <input id="mobile-outbound-unit" type="hidden" value="min">
+                    <div id="mobile-outbound-unit-toggle" class="mobile-unit-toggle" role="group" aria-label="出库单位">
+                        <button id="mobile-outbound-unit-min" class="mobile-unit-option active" type="button" data-outbound-unit="min">最小单位</button>
+                        <button id="mobile-outbound-unit-package" class="mobile-unit-option" type="button" data-outbound-unit="package">包装单位</button>
+                    </div>
                 </label>
                 <label class="mobile-field mobile-field-span-full">
                     <span>操作人</span>
@@ -343,8 +344,8 @@
 
     <div id="toast" class="toast hidden"></div>
 
-    <script src="/js/api.js?v=20260428-8"></script>
-    <script src="/js/utils.js?v=20260428-8"></script>
-    <script src="/js/mobile.js?v=20260428-8"></script>
+    <script src="/js/api.js?v=20260501-3"></script>
+    <script src="/js/utils.js?v=20260501-3"></script>
+    <script src="/js/mobile.js?v=20260501-3"></script>
 </body>
 </html>

@@ -71,7 +71,9 @@
       if (event.target.classList.contains('mobile-sheet-backdrop')) this.closeOutboundSheet();
     });
     document.getElementById('mobile-outbound-quantity')?.addEventListener('input', () => this.refreshOutboundPreview());
-    document.getElementById('mobile-outbound-unit')?.addEventListener('change', () => this.refreshOutboundPreview());
+    document.querySelectorAll('[data-outbound-unit]')?.forEach((button) => {
+      button.addEventListener('click', () => this.setOutboundUnit(button.dataset.outboundUnit || 'min'));
+    });
     document.getElementById('mobile-outbound-submit')?.addEventListener('click', () => this.submitOutbound());
     document.getElementById('mobile-inbound-submit')?.addEventListener('click', () => this.submitInbound());
     document.getElementById('mobile-calibration-close')?.addEventListener('click', () => this.closeCalibrationSheet());
@@ -273,6 +275,27 @@
     return `<div class="mobile-preview-line mobile-preview-line-${tone}">${content}</div>`;
   },
 
+  getNormalizedReagentOrderName(name) {
+    return String(name || '').toLowerCase().replace('质控品', '').replace(/\s+/g, '');
+  },
+
+  getCustomReagentOrder(item) {
+    if (!['传染病标志物', 'MAGLUMI X8质控品'].includes(item.reagent_group_name || '')) {
+      return 999;
+    }
+    const order = {
+      hbsag: 0,
+      hbsab: 1,
+      hbeag: 2,
+      hbeab: 3,
+      hbcab: 4,
+      hcv: 5,
+      syphilis: 6,
+      hiv: 7,
+    };
+    return order[this.getNormalizedReagentOrderName(item.reagent_name || item.name)] ?? 999;
+  },
+
   mapReagentToInboundItem(item) {
     return {
       reagent_id: item.id,
@@ -326,7 +349,10 @@
     return [...groups.values()]
       .map((group) => ({
         ...group,
-        items: [...group.items].sort((left, right) => left.reagent_name.localeCompare(right.reagent_name, 'zh-CN'))
+        items: [...group.items].sort((left, right) => (
+          this.getCustomReagentOrder(left) - this.getCustomReagentOrder(right)
+          || left.reagent_name.localeCompare(right.reagent_name, 'zh-CN')
+        ))
       }))
       .sort((left, right) => (left.sortOrder ?? 9999) - (right.sortOrder ?? 9999) || left.name.localeCompare(right.name, 'zh-CN'));
   },
@@ -612,10 +638,8 @@
       this.selectedOutboundBatchId = preferredBatch.id;
       document.getElementById('mobile-outbound-selected-meta').textContent = `${reagent.work_group_name} / ${reagent.instrument_name} · 默认推荐最早有效批号`;
       document.getElementById('mobile-outbound-quantity').value = '1';
-      document.getElementById('mobile-outbound-unit').innerHTML = `
-        <option value="min">${this.escapeHtml(reagent.min_unit)}</option>
-        <option value="package">${this.escapeHtml(reagent.package_unit)}</option>
-      `;
+      this.renderOutboundUnitToggle(reagent);
+      this.setOutboundUnit('min', { skipPreview: true });
       await Utils.populateOperatorSelect('mobile-outbound-operator', { allowEmpty: false, defaultValue: this.getPreferredOperator() });
       this.renderOutboundBatches();
       document.getElementById('mobile-outbound-sheet').classList.remove('hidden');
@@ -649,6 +673,32 @@
     this.selectedOutboundBatchId = batchId;
     this.renderOutboundBatches();
     this.refreshOutboundPreview();
+  },
+
+  renderOutboundUnitToggle(reagent) {
+    const minButton = document.getElementById('mobile-outbound-unit-min');
+    const packageButton = document.getElementById('mobile-outbound-unit-package');
+    const toggle = document.getElementById('mobile-outbound-unit-toggle');
+    const minUnit = reagent.min_unit || '最小单位';
+    const packageUnit = reagent.package_unit || '包装单位';
+    if (minButton) minButton.textContent = reagent.min_unit || '最小单位';
+    if (packageButton) packageButton.textContent = reagent.package_unit || '包装单位';
+    const hasSameUnit = String(minUnit).trim() === String(packageUnit).trim();
+    toggle?.classList.toggle('single-option', hasSameUnit);
+    packageButton?.classList.toggle('hidden', hasSameUnit);
+  },
+
+  setOutboundUnit(unit, options = {}) {
+    const normalizedUnit = unit === 'package' ? 'package' : 'min';
+    const input = document.getElementById('mobile-outbound-unit');
+    if (input) input.value = normalizedUnit;
+    document.querySelectorAll('[data-outbound-unit]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.outboundUnit === normalizedUnit);
+      button.setAttribute('aria-pressed', button.dataset.outboundUnit === normalizedUnit ? 'true' : 'false');
+    });
+    if (!options.skipPreview) {
+      this.refreshOutboundPreview();
+    }
   },
 
   async refreshOutboundPreview() {
@@ -1271,7 +1321,8 @@
         ...group,
         items: [...group.items].sort((left, right) => {
           const priority = { empty: 0, expired: 1, expiring: 2, low: 3, normal: 4 };
-          return (priority[left.status_level] ?? 99) - (priority[right.status_level] ?? 99)
+          return this.getCustomReagentOrder(left) - this.getCustomReagentOrder(right)
+            || (priority[left.status_level] ?? 99) - (priority[right.status_level] ?? 99)
             || (left.nearest_expiry_days ?? 10 ** 9) - (right.nearest_expiry_days ?? 10 ** 9)
             || left.name.localeCompare(right.name, 'zh-CN');
         }),

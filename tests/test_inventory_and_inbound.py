@@ -305,7 +305,7 @@ def test_unknown_barcode_infers_instrument_from_product_family(tmp_path):
             ),
             Reagent(
                 instrument_id=maglumi.id,
-                name="HbsAg",
+                name="HBsAg",
                 match_mode="prefix",
                 match_pattern="0106947145508814",
                 raw_barcode_sample="0106947145508814112511201727052010123250711240130210009M",

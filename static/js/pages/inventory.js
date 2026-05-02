@@ -314,7 +314,8 @@ const inventoryPage = {
         next.sort((left, right) => {
             if (this.filters.sort === 'group') {
                 return (
-                    levelPriority[left.status_level] - levelPriority[right.status_level]
+                    this.getCustomReagentOrder(left) - this.getCustomReagentOrder(right)
+                    || levelPriority[left.status_level] - levelPriority[right.status_level]
                     || (left.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER) - (right.nearest_expiry_days ?? Number.MAX_SAFE_INTEGER)
                     || left.name.localeCompare(right.name, 'zh-CN')
                 );
@@ -342,6 +343,27 @@ const inventoryPage = {
             );
         });
         return next;
+    },
+
+    getNormalizedReagentOrderName(name) {
+        return String(name || '').toLowerCase().replace('质控品', '').replace(/\s+/g, '');
+    },
+
+    getCustomReagentOrder(reagent) {
+        if (!['传染病标志物', 'MAGLUMI X8质控品'].includes(reagent.reagent_group_name || '')) {
+            return 999;
+        }
+        const order = {
+            hbsag: 0,
+            hbsab: 1,
+            hbeag: 2,
+            hbeab: 3,
+            hbcab: 4,
+            hcv: 5,
+            syphilis: 6,
+            hiv: 7,
+        };
+        return order[this.getNormalizedReagentOrderName(reagent.name)] ?? 999;
     },
 
     getGroupedReagents(reagents) {

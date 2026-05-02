@@ -137,7 +137,7 @@ def test_product_specific_batch_rule_does_not_bleed_into_other_x8_product(tmp_pa
         )
         reagent_hbsag = Reagent(
             instrument_id=instrument_id,
-            name="HbsAg",
+            name="HBsAg",
             match_mode="prefix",
             match_pattern="0106947145508814",
             raw_barcode_sample=barcode_hbsag,
@@ -151,7 +151,7 @@ def test_product_specific_batch_rule_does_not_bleed_into_other_x8_product(tmp_pa
         )
         reagent_hbsab = Reagent(
             instrument_id=instrument_id,
-            name="HbsAb",
+            name="HBsAb",
             match_mode="prefix",
             match_pattern="0106947145508838",
             raw_barcode_sample=barcode_hbsab,
@@ -178,7 +178,7 @@ def test_product_specific_batch_rule_does_not_bleed_into_other_x8_product(tmp_pa
         "items": [{
             "source": "scan",
             "reagent_id": reagent_hbsag_id,
-            "reagent_name": "HbsAg",
+            "reagent_name": "HBsAg",
             "batch_no": "123250711",
             "parsed_batch_no": learned_payload["extracted_batch_no"],
             "expiry_date": "2027-05-20",

@@ -419,10 +419,34 @@ def _status_sort_key(reagent: ReagentInfo):
     )
 
 
+INFECTIOUS_REAGENT_ORDER = {
+    "hbsag": 0,
+    "hbsab": 1,
+    "hbeag": 2,
+    "hbeab": 3,
+    "hbcab": 4,
+    "hcv": 5,
+    "syphilis": 6,
+    "hiv": 7,
+}
+
+
+def _normalized_reagent_order_name(name: str | None) -> str:
+    return "".join((name or "").lower().replace("质控品", "").split())
+
+
+def _custom_reagent_order(reagent: ReagentInfo) -> int:
+    group_name = reagent.reagent_group_name or ""
+    if group_name not in {"传染病标志物", "MAGLUMI X8质控品"}:
+        return 999
+    return INFECTIOUS_REAGENT_ORDER.get(_normalized_reagent_order_name(reagent.name), 999)
+
+
 def _reagent_grouped_sort_key(reagent: ReagentInfo):
     return (
         reagent.reagent_group_sort_order if reagent.reagent_group_sort_order is not None else 9999,
         reagent.reagent_group_name or "未分组",
+        _custom_reagent_order(reagent),
         reagent.name,
         reagent.id,
     )
