@@ -30,6 +30,7 @@
   isSubmittingBatchOutbound: false,
   isSubmittingInbound: false,
   isSubmittingCalibration: false,
+  isInitialized: false,
 
   async init() {
     this.parseInstrumentContext();
@@ -39,6 +40,7 @@
     await Utils.loadOperators();
     await Promise.all([this.populateOperatorSelects(), this.refreshData()]);
     this.switchPage('outbound');
+    this.isInitialized = true;
   },
 
   parseInstrumentContext() {

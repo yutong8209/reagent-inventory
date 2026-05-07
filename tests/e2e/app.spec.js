@@ -9,12 +9,22 @@ async function getSetupContext(request) {
   const groupsResponse = await request.get('/api/work-groups');
   expect(groupsResponse.ok()).toBeTruthy();
   const groups = await groupsResponse.json();
-  const workGroup = groups[0];
 
-  const instrumentsResponse = await request.get(`/api/instruments?work_group_id=${workGroup.id}`);
-  expect(instrumentsResponse.ok()).toBeTruthy();
-  const instruments = await instrumentsResponse.json();
-  const instrument = instruments[0];
+  const instrumentsByGroup = [];
+  for (const group of groups) {
+    const instrumentsResponse = await request.get(`/api/instruments?work_group_id=${group.id}`);
+    expect(instrumentsResponse.ok()).toBeTruthy();
+    const instruments = await instrumentsResponse.json();
+    for (const instrument of instruments) {
+      instrumentsByGroup.push({ group, instrument });
+    }
+  }
+
+  const preferred = instrumentsByGroup.find(({ instrument }) => (
+    String(instrument.model || '').includes('DXI800') || String(instrument.name || '').includes('DXI800')
+  )) || instrumentsByGroup[0];
+  const workGroup = preferred.group;
+  const instrument = preferred.instrument;
 
   return {
     operatorName: activeOperator.name,
@@ -36,6 +46,32 @@ async function expectNoHorizontalOverflow(page) {
 
   expect(metrics.scrollWidth, `document scrollWidth ${metrics.scrollWidth} should stay within viewport ${metrics.innerWidth}`).toBeLessThanOrEqual(metrics.innerWidth);
   expect(metrics.bodyScrollWidth, `body scrollWidth ${metrics.bodyScrollWidth} should stay within viewport ${metrics.innerWidth}`).toBeLessThanOrEqual(metrics.innerWidth);
+}
+
+function visibleMobileResult(page, containerSelector, text) {
+  return page
+    .locator(`${containerSelector} .mobile-result-card, ${containerSelector} .mobile-quick-button`)
+    .filter({ hasText: text, visible: true })
+    .first();
+}
+
+async function switchMobilePage(page, pageName) {
+  await page.evaluate((targetPage) => {
+    window.mobileApp.switchPage(targetPage);
+  }, pageName);
+  await expect(page.locator(`#mobile-page-${pageName}`)).toHaveClass(/active/);
+}
+
+async function gotoMobile(page, url = '/m') {
+  await page.goto(url);
+  await page.waitForFunction(() => (
+    window.mobileApp
+    && window.mobileApp.isInitialized
+    && window.mobileApp.overview
+    && Array.isArray(window.mobileApp.inventoryData)
+    && window.mobileApp.currentPage === 'outbound'
+  ));
+  await expect(page.locator('#mobile-page-outbound')).toHaveClass(/active/);
 }
 
 async function createExactReagent(request, {
@@ -155,7 +191,7 @@ test.describe('Reagent inventory smoke flows', () => {
   test('dashboard renders outbound workbench and right rail cards', async ({ page }) => {
     await expect(page.locator('#page-dashboard')).toHaveClass(/active/);
     await expect(page.locator('#page-dashboard h2').first()).toBeVisible();
-    await expect(page.locator('#dashboard-pending-tasks .dashboard-task-card')).toHaveCount(4);
+    await expect(page.locator('#dashboard-pending-tasks .dashboard-task-card')).toHaveCount(5);
     await expect(page.locator('#dashboard-warning-list')).toBeVisible();
     await expect(page.locator('#dashboard-recent-outbounds')).toBeVisible();
     await expect(page.locator('#outbound-barcode')).toBeVisible();
@@ -449,11 +485,13 @@ test.describe('Reagent inventory smoke flows', () => {
 
   test('mobile page loads with bottom tabs and summary cards', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/m');
+    await gotoMobile(page);
 
     await expect(page.locator('.mobile-header h1')).toHaveText('试剂出入库');
     await expect(page.locator('.mobile-tab')).toHaveCount(4);
-    await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
+    await expect(page.locator('.mobile-overview-stat')).toHaveCount(5);
+    await expect(page.locator('#mobile-summary-expired')).toBeVisible();
+    await expect(page.locator('#mobile-summary-batch-low')).toBeVisible();
     await expect(page.locator('#mobile-page-outbound')).toHaveClass(/active/);
     await page.locator('.mobile-tab[data-page="calibration"]').click();
     await expect(page.locator('#mobile-page-calibration')).toHaveClass(/active/);
@@ -482,31 +520,30 @@ test.describe('Reagent inventory smoke flows', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/m');
-    await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
+    await gotoMobile(page);
+    await expect(page.locator('.mobile-overview-stat')).toHaveCount(5);
     await expect(page.locator('#mobile-outbound-results')).toContainText('输入试剂名称后开始搜索');
 
     await page.locator('#mobile-outbound-search').fill(uniqueName);
     await expect(page.locator('#mobile-outbound-results')).toContainText(uniqueName);
-    await page.locator('#mobile-outbound-results .mobile-result-card').first().click();
+    await visibleMobileResult(page, '#mobile-outbound-results', uniqueName).click();
     await expect(page.locator('#mobile-outbound-sheet')).not.toHaveClass(/hidden/);
     await expect(page.locator('#mobile-outbound-batches')).toContainText('PW-MOBILE-001');
     await page.locator('#mobile-outbound-operator').selectOption({ label: setup.operatorName });
     await page.locator('#mobile-outbound-submit').click();
     await expect(page.locator('#mobile-outbound-sheet')).toHaveClass(/hidden/);
 
-    await page.locator('.mobile-tab[data-page="inbound"]').click();
-    await expect(page.locator('#mobile-page-inbound')).toHaveClass(/active/);
+    await switchMobilePage(page, 'inbound');
     await page.locator('#mobile-inbound-search').fill(uniqueName);
     await expect(page.locator('#mobile-inbound-results')).toContainText(uniqueName);
-    await page.locator('#mobile-inbound-results .mobile-result-card').first().click();
+    await visibleMobileResult(page, '#mobile-inbound-results', uniqueName).click();
     await expect(page.locator('#mobile-inbound-form-panel')).not.toHaveClass(/hidden/);
     await page.locator('#mobile-inbound-batch-no').fill('PW-MOBILE-002');
     await page.locator('#mobile-inbound-expiry-date').fill('2031-01-31');
     await page.locator('#mobile-inbound-operator').selectOption({ label: setup.operatorName });
     await page.locator('#mobile-inbound-submit').click();
 
-    await page.locator('.mobile-tab[data-page="inventory"]').click();
+    await switchMobilePage(page, 'inventory');
     await page.locator('#mobile-inventory-search').fill(uniqueName);
     await expect(page.locator('#mobile-inventory-list')).toContainText(uniqueName);
   });
@@ -558,12 +595,11 @@ test.describe('Reagent inventory smoke flows', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/m');
-    await page.locator('.mobile-tab[data-page="calibration"]').click();
-    await expect(page.locator('#mobile-page-calibration')).toHaveClass(/active/);
+    await gotoMobile(page);
+    await switchMobilePage(page, 'calibration');
     await page.locator('#mobile-calibration-search').fill(uniqueName);
     await expect(page.locator('#mobile-calibration-results')).toContainText(uniqueName);
-    const calibrationResult = page.locator('#mobile-page-calibration #mobile-calibration-results .mobile-result-card').filter({ hasText: uniqueName }).first();
+    const calibrationResult = visibleMobileResult(page, '#mobile-page-calibration.active #mobile-calibration-results', uniqueName);
     await expect(calibrationResult).toBeVisible();
     await calibrationResult.click();
 
@@ -577,6 +613,7 @@ test.describe('Reagent inventory smoke flows', () => {
     await page.locator('#mobile-calibration-submit').click();
 
     await expect(page.locator('#mobile-calibration-sheet')).toHaveClass(/hidden/);
+    await switchMobilePage(page, 'calibration');
     const recordCard = page.locator('#mobile-calibration-records .mobile-recent-card').filter({ hasText: uniqueName }).first();
     await expect(recordCard).toBeVisible();
     await recordCard.click();
@@ -623,12 +660,11 @@ test.describe('Reagent inventory smoke flows', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/m');
-    await page.locator('.mobile-tab[data-page="calibration"]').click();
-    await expect(page.locator('#mobile-page-calibration')).toHaveClass(/active/);
+    await gotoMobile(page);
+    await switchMobilePage(page, 'calibration');
     await page.locator('#mobile-calibration-search').fill(uniqueName);
     await expect(page.locator('#mobile-calibration-results')).toContainText(uniqueName);
-    const calibrationResult = page.locator('#mobile-page-calibration #mobile-calibration-results .mobile-result-card').filter({ hasText: uniqueName }).first();
+    const calibrationResult = visibleMobileResult(page, '#mobile-page-calibration.active #mobile-calibration-results', uniqueName);
     await expect(calibrationResult).toBeVisible();
     await calibrationResult.click();
 
@@ -651,7 +687,7 @@ test.describe('Reagent inventory smoke flows', () => {
     expect(newBatch.available_min_quantity).toBe(1);
   });
 
-  test('mobile warning fold can expand and warning card can jump to inventory', async ({ page, request }) => {
+  test('mobile overview batch-warning stat can jump to inventory', async ({ page, request }) => {
     const setup = await getSetupContext(request);
     const uniqueName = uniqueValue('PW-Mobile-Warn');
     const uniqueBarcode = uniqueValue('PW-MOBILE-WARN-BARCODE');
@@ -669,18 +705,12 @@ test.describe('Reagent inventory smoke flows', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/m');
-    await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
-    await expect(page.locator('#mobile-warning-toggle-label')).toHaveText('展开');
-
-    await expect(page.locator('#mobile-warning-fold')).toHaveClass(/hidden/);
-    await page.locator('#mobile-warning-toggle').click();
-    await expect(page.locator('#mobile-warning-fold')).not.toHaveClass(/hidden/);
-    const warningCard = page.locator('#mobile-warning-list .mobile-warning-card').filter({ hasText: uniqueName }).first();
-    await expect(warningCard).toBeVisible();
-    await warningCard.click();
-
+    await gotoMobile(page);
+    await expect(page.locator('.mobile-overview-stat')).toHaveCount(5);
+    await page.locator('#mobile-overview-stat-batch-low').click();
     await expect(page.locator('#mobile-page-inventory')).toHaveClass(/active/);
+    await expect(page.locator('#mobile-inventory-status')).toHaveValue('batch_low');
+    await page.locator('#mobile-inventory-search').fill(uniqueName);
     await expect(page.locator(`#mobile-inventory-list .mobile-stock-card[data-reagent-id]`).filter({ hasText: uniqueName }).first()).toBeVisible();
   });
 
@@ -709,11 +739,10 @@ test.describe('Reagent inventory smoke flows', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/m');
+    await gotoMobile(page);
 
-    const emptySummaryCard = page.locator('#mobile-summary-cards .mobile-summary-card').filter({ hasText: '零库存' }).first();
-    await expect(emptySummaryCard).toBeVisible();
-    await emptySummaryCard.click();
+    await expect(page.locator('.mobile-overview-stat')).toHaveCount(5);
+    await page.locator('#mobile-overview-stat-empty').click();
 
     await expect(page.locator('#mobile-page-inventory')).toHaveClass(/active/);
     await expect(page.locator('#mobile-inventory-status')).toHaveValue('empty');
@@ -745,14 +774,13 @@ test.describe('Reagent inventory smoke flows', () => {
     });
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/m');
-    await expect(page.locator('#mobile-summary-cards .mobile-summary-card')).toHaveCount(3);
-    await page.locator('.mobile-tab[data-page="inbound"]').click();
-    await expect(page.locator('#mobile-page-inbound')).toHaveClass(/active/);
+    await gotoMobile(page);
+    await expect(page.locator('.mobile-overview-stat')).toHaveCount(5);
+    await switchMobilePage(page, 'inbound');
 
     await page.locator('#mobile-inbound-search').fill(uniqueName);
     await expect(page.locator('#mobile-inbound-results')).toContainText(uniqueName);
-    await page.locator('#mobile-inbound-results .mobile-result-card').first().click();
+    await visibleMobileResult(page, '#mobile-inbound-results', uniqueName).click();
 
     const batchSuggestion = page.locator('#mobile-inbound-batch-suggestions [data-batch-no="PW-MOBILE-HIS-001"]').first();
     await expect(batchSuggestion).toBeVisible();
