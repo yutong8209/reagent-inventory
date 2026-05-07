@@ -334,6 +334,42 @@ def test_unknown_barcode_infers_instrument_from_product_family(tmp_path):
     assert payload["extracted_expiry_date"] == "2026-09-30"
 
 
+def test_dxi_ft4_calibrator_barcode_uses_lot_after_ai_10(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+
+    barcode = "0115099590225810112507311726073110538615"
+    with SessionLocal() as db:
+        work_group = WorkGroup(name="DXI")
+        instrument = Instrument(name="DXI800", model="DXI800", work_group=work_group)
+        db.add_all([work_group, instrument])
+        db.flush()
+        db.add(
+            Reagent(
+                instrument_id=instrument.id,
+                name="FT4 CAL",
+                match_mode="prefix",
+                match_pattern="0115099590225810",
+                raw_barcode_sample=barcode,
+                unit="次",
+                package_unit="盒",
+                package_to_min_qty=10,
+                warning_days=30,
+                warning_stock=5,
+                is_calibrator=True,
+            )
+        )
+        db.commit()
+
+    response = client.post("/api/barcode/parse", json={"barcode": barcode})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reagent_name"] == "FT4 CAL"
+    assert payload["extracted_production_date"] == "2025-07-31"
+    assert payload["extracted_expiry_date"] == "2026-07-31"
+    assert payload["extracted_batch_no"] == "538615"
+    assert payload["extracted_batch_no"] != "112507"
+
+
 def test_reset_reagent_data_keeps_catalog_and_operators(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     work_group_id, instrument_id = get_first_catalog_session(SessionLocal)
@@ -648,7 +684,22 @@ def test_dashboard_overview_returns_pending_tasks_warnings_and_recent_outbounds(
             warning_stock=1,
             follow_instrument=False,
         )
-        db.add_all([reagent_expired, reagent_empty, reagent_normal])
+        reagent_zero_batch_calibrator = Reagent(
+            instrument_id=instrument_id,
+            name="DASH-ZERO-BATCH-CAL",
+            match_mode="exact",
+            match_pattern="DASH-ZERO-BATCH-CAL",
+            raw_barcode_sample="DASH-ZERO-BATCH-CAL",
+            manufacturer="Maker D",
+            unit="次",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=5,
+            warning_stock=1,
+            follow_instrument=False,
+            is_calibrator=True,
+        )
+        db.add_all([reagent_expired, reagent_empty, reagent_normal, reagent_zero_batch_calibrator])
         db.flush()
 
         expired_batch = BatchStock(
@@ -681,7 +732,27 @@ def test_dashboard_overview_returns_pending_tasks_warnings_and_recent_outbounds(
             min_unit="瓶",
             package_to_min_qty=1,
         )
-        db.add_all([expired_batch, empty_batch, normal_batch])
+        zero_calibrator_batch = BatchStock(
+            reagent_id=reagent_zero_batch_calibrator.id,
+            batch_no="DASH-ZERO-CAL-001",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 40),
+            quantity=0,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="次",
+            package_to_min_qty=1,
+        )
+        stocked_calibrator_batch = BatchStock(
+            reagent_id=reagent_zero_batch_calibrator.id,
+            batch_no="DASH-ZERO-CAL-002",
+            expiry_date=date.today().fromordinal(date.today().toordinal() + 40),
+            quantity=10,
+            loose_min_quantity=0,
+            package_unit="盒",
+            min_unit="次",
+            package_to_min_qty=1,
+        )
+        db.add_all([expired_batch, empty_batch, normal_batch, zero_calibrator_batch, stocked_calibrator_batch])
         db.flush()
 
         db.add(Transaction(
@@ -704,11 +775,13 @@ def test_dashboard_overview_returns_pending_tasks_warnings_and_recent_outbounds(
     payload = response.json()
 
     assert payload["pending_tasks"]["expired_batch_count"] == 1
+    assert payload["pending_tasks"]["low_stock_batch_count"] == 3
     assert payload["pending_tasks"]["low_or_empty_reagent_count"] == 1
     assert payload["pending_tasks"]["zero_stock_unarchived_count"] == 1
 
     warning_names = [item["reagent_name"] for item in payload["warning_reagents"]]
     assert warning_names[:2] == ["DASH-EXPIRED", "DASH-EMPTY"]
+    assert "DASH-ZERO-BATCH-CAL" in warning_names
 
     assert len(payload["recent_outbounds"]) == 1
     assert payload["recent_outbounds"][0]["type"] == "OUT"

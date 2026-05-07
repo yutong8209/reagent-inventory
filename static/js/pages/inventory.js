@@ -208,7 +208,8 @@ const inventoryPage = {
                     ? Number(reagent.effective_warning_stock)
                     : Number(reagent.warning_stock ?? 0)
             );
-        return (reagent.batches || []).some((batch) => batch.available_min_quantity > 0 && batch.available_min_quantity <= effectiveSingleBatchWarningStock);
+        const threshold = Math.max(Number(effectiveSingleBatchWarningStock) || 0, 0);
+        return (reagent.batches || []).some((batch) => Number(batch.available_min_quantity ?? 0) <= threshold);
     },
 
     isWarningReagent(reagent) {

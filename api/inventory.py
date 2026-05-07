@@ -211,6 +211,11 @@ def _effective_single_batch_warning_stock(reagent: Reagent, effective_warning_st
     return effective_warning_stock
 
 
+def _has_single_batch_warning(batch_items: list[BatchInfo], warning_stock: int) -> bool:
+    threshold = max(_safe_int(warning_stock, 0), 0)
+    return any(batch.available_min_quantity <= threshold for batch in batch_items)
+
+
 def _build_status_level(
     *,
     has_expired_batch: bool,
@@ -566,7 +571,8 @@ def _build_dashboard_pending_tasks(inventory_data: list[WorkGroupInfo]) -> Dashb
                 low_stock_batch_count += sum(
                     1
                     for batch in reagent.batches
-                    if 0 < batch.available_min_quantity <= reagent.effective_single_batch_warning_stock
+                    if batch.available_min_quantity
+                    <= max(_safe_int(reagent.effective_single_batch_warning_stock, 0), 0)
                 )
 
     return DashboardPendingTasks(
@@ -584,7 +590,11 @@ def _build_dashboard_warning_reagents(inventory_data: list[WorkGroupInfo]) -> li
     for group in inventory_data:
         for instrument in group.instruments:
             for reagent in instrument.reagents:
-                if reagent.status_level == "normal":
+                has_single_batch_warning = _has_single_batch_warning(
+                    reagent.batches,
+                    reagent.effective_single_batch_warning_stock,
+                )
+                if reagent.status_level == "normal" and not has_single_batch_warning:
                     continue
                 items.append(
                     DashboardWarningReagent(

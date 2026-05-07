@@ -254,7 +254,7 @@ const catalogPage = {
     },
 
     getMobileAppVersion() {
-        return '20260501-3';
+        return '20260506-3';
     },
 
     buildMobileUrl(params = {}) {

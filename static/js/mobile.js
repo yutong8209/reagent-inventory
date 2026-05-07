@@ -14,6 +14,9 @@
   calibrationRecords: [],
   selectedOutboundReagent: null,
   selectedOutboundBatchId: null,
+  isOutboundBatchMode: false,
+  batchOutboundSelection: new Set(),
+  batchOutboundItems: [],
   selectedInboundReagent: null,
   selectedInboundBatchNo: '',
   selectedCalibrationPreview: null,
@@ -24,6 +27,7 @@
   expandedInventoryIds: new Set(),
   isWarningFoldExpanded: false,
   isSubmittingOutbound: false,
+  isSubmittingBatchOutbound: false,
   isSubmittingInbound: false,
   isSubmittingCalibration: false,
 
@@ -54,6 +58,15 @@
     document.getElementById('mobile-instrument-toggle')?.addEventListener('click', () => this.toggleInstrumentMode());
     document.getElementById('mobile-refresh-btn')?.addEventListener('click', async () => {
       await this.refreshData();
+    });
+    document.getElementById('mobile-batch-outbound-toggle')?.addEventListener('click', () => this.toggleBatchOutboundMode());
+    document.getElementById('mobile-batch-outbound-cancel')?.addEventListener('click', () => this.exitBatchOutboundMode());
+    document.getElementById('mobile-batch-outbound-next')?.addEventListener('click', () => this.openBatchOutboundSheet());
+    document.getElementById('mobile-batch-outbound-close')?.addEventListener('click', () => this.closeBatchOutboundSheet({ keepSelection: true }));
+    document.getElementById('mobile-batch-outbound-add-more')?.addEventListener('click', () => this.closeBatchOutboundSheet({ keepSelection: true }));
+    document.getElementById('mobile-batch-outbound-submit')?.addEventListener('click', () => this.submitBatchOutbound());
+    document.getElementById('mobile-batch-outbound-sheet')?.addEventListener('click', (event) => {
+      if (event.target.classList.contains('mobile-sheet-backdrop')) this.closeBatchOutboundSheet({ keepSelection: true });
     });
     document.getElementById('mobile-warning-toggle')?.addEventListener('click', () => this.toggleWarningFold());
     document.getElementById('mobile-outbound-search')?.addEventListener('input', Utils.debounce((event) => this.searchOutboundReagents(event.target.value.trim()), 220));
@@ -134,6 +147,7 @@
     const defaultValue = this.getPreferredOperator();
     await Promise.all([
       Utils.populateOperatorSelect('mobile-outbound-operator', { allowEmpty: false, defaultValue }),
+      Utils.populateOperatorSelect('mobile-batch-outbound-operator', { allowEmpty: false, defaultValue }),
       Utils.populateOperatorSelect('mobile-inbound-operator', { allowEmpty: false, defaultValue }),
       Utils.populateOperatorSelect('mobile-calibration-operator', { allowEmpty: false, defaultValue })
     ]);
@@ -364,6 +378,7 @@
     compact = false,
     hideMeta = false,
     showGroupCount = true,
+    batchSelectable = false,
   } = {}) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -379,12 +394,19 @@
           ${showGroupCount ? `<span>${group.items.length} 个试剂</span>` : ''}
         </div>
         <div class="mobile-quick-grid ${compact ? 'compact' : ''}">
-          ${group.items.map((item) => `
-            <button class="mobile-quick-button ${compact ? 'compact' : ''}" type="button" onclick="mobileApp.${action}(${item.reagent_id})">
+          ${group.items.map((item) => {
+            const isSelected = batchSelectable && this.isBatchOutboundSelected(item.reagent_id);
+            const clickAction = batchSelectable
+              ? `mobileApp.toggleBatchOutboundSelection(${item.reagent_id})`
+              : `mobileApp.${action}(${item.reagent_id})`;
+            return `
+            <button class="mobile-quick-button ${compact ? 'compact' : ''} ${isSelected ? 'selected' : ''}" type="button" onclick="${clickAction}" aria-pressed="${isSelected ? 'true' : 'false'}">
               <strong>${this.escapeHtml(item.reagent_name)}</strong>
+              ${isSelected ? '<em>已选</em>' : ''}
               ${hideMeta ? '' : `<span>${this.escapeHtml(metaText(item))}</span>`}
             </button>
-          `).join('')}
+          `;
+          }).join('')}
         </div>
       </section>
     `).join('');
@@ -404,6 +426,7 @@
           compact: true,
           hideMeta: true,
           showGroupCount: false,
+          batchSelectable: this.isOutboundBatchMode,
         });
       } else {
         this.showEmpty('mobile-outbound-results', '输入试剂名称后开始搜索');
@@ -497,6 +520,248 @@
       ...this.inboundResults,
       ...this.defaultInboundResults
     ].find((item) => Number(item.reagent_id) === Number(reagentId)) || null;
+  },
+
+  isBatchOutboundSelected(reagentId) {
+    return this.batchOutboundSelection.has(Number(reagentId));
+  },
+
+  refreshOutboundListView() {
+    const keyword = document.getElementById('mobile-outbound-search')?.value.trim() || '';
+    if (keyword) {
+      this.renderOutboundResults();
+      return;
+    }
+    this.renderSearchDefaults();
+  },
+
+  toggleBatchOutboundMode() {
+    if (this.isOutboundBatchMode) {
+      this.exitBatchOutboundMode();
+      return;
+    }
+    this.isOutboundBatchMode = true;
+    this.batchOutboundSelection.clear();
+    this.batchOutboundItems = [];
+    this.renderBatchOutboundBar();
+    this.refreshOutboundListView();
+  },
+
+  exitBatchOutboundMode() {
+    this.isOutboundBatchMode = false;
+    this.batchOutboundSelection.clear();
+    this.batchOutboundItems = [];
+    this.closeBatchOutboundSheet({ keepSelection: false });
+    this.renderBatchOutboundBar();
+    this.refreshOutboundListView();
+  },
+
+  toggleBatchOutboundSelection(reagentId) {
+    const id = Number(reagentId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (this.batchOutboundSelection.has(id)) {
+      this.batchOutboundSelection.delete(id);
+      this.batchOutboundItems = this.batchOutboundItems.filter((item) => Number(item.reagent_id) !== id);
+    } else {
+      this.batchOutboundSelection.add(id);
+    }
+    this.renderBatchOutboundBar();
+    this.refreshOutboundListView();
+  },
+
+  renderBatchOutboundBar() {
+    const toggleButton = document.getElementById('mobile-batch-outbound-toggle');
+    const bar = document.getElementById('mobile-batch-outbound-bar');
+    const countEl = document.getElementById('mobile-batch-outbound-count');
+    const nextButton = document.getElementById('mobile-batch-outbound-next');
+    const count = this.batchOutboundSelection.size;
+
+    toggleButton?.classList.toggle('active', this.isOutboundBatchMode);
+    if (toggleButton) toggleButton.textContent = this.isOutboundBatchMode ? '退出批量' : '批量出库';
+    bar?.classList.toggle('hidden', !this.isOutboundBatchMode);
+    if (countEl) countEl.textContent = `已选 ${count} 个试剂`;
+    if (nextButton) nextButton.disabled = count === 0;
+  },
+
+  async openBatchOutboundSheet() {
+    if (!this.isOutboundBatchMode || !this.batchOutboundSelection.size) return;
+    const selectedIds = [...this.batchOutboundSelection];
+    const existingById = new Map(this.batchOutboundItems.map((item) => [Number(item.reagent_id), item]));
+    try {
+      const items = await Promise.all(selectedIds.map(async (reagentId) => {
+        const existing = existingById.get(Number(reagentId));
+        const reagent = existing?.reagent || this.getOutboundReagentById(reagentId);
+        if (!reagent) return null;
+        const batches = existing?.batches || (await API.outbound.getStock(reagentId)).filter((batch) => batch.available_min_quantity > 0);
+        if (!batches.length) {
+          return { reagent, batches: [], reagent_id: reagentId, error: '无可用库存批号' };
+        }
+        const selectedBatchId = existing?.selectedBatchId && batches.some((batch) => Number(batch.id) === Number(existing.selectedBatchId))
+          ? existing.selectedBatchId
+          : (batches.find((batch) => !batch.is_expired) || batches[0]).id;
+        return {
+          reagent_id: reagentId,
+          reagent,
+          batches,
+          selectedBatchId,
+          outboundUnit: existing?.outboundUnit || 'min',
+          quantity: existing?.quantity || 1,
+          error: ''
+        };
+      }));
+
+      this.batchOutboundItems = items.filter(Boolean);
+      await Utils.populateOperatorSelect('mobile-batch-outbound-operator', { allowEmpty: false, defaultValue: this.getPreferredOperator() });
+      this.renderBatchOutboundSheet();
+      document.getElementById('mobile-batch-outbound-sheet')?.classList.remove('hidden');
+    } catch (error) {
+      Utils.showToast(`批量出库加载失败：${error.message}`, 'error');
+    }
+  },
+
+  renderBatchOutboundSheet() {
+    const container = document.getElementById('mobile-batch-outbound-items');
+    const meta = document.getElementById('mobile-batch-outbound-meta');
+    if (meta) meta.textContent = `共 ${this.batchOutboundItems.length} 个试剂，逐项确认后一次提交。`;
+    if (!container) return;
+    if (!this.batchOutboundItems.length) {
+      container.innerHTML = '<div class="mobile-empty">还没有选择试剂</div>';
+      return;
+    }
+    container.innerHTML = this.batchOutboundItems.map((item, index) => {
+      const reagent = item.reagent || {};
+      const minUnit = reagent.min_unit || item.batches?.[0]?.min_unit || '最小单位';
+      const packageUnit = reagent.package_unit || item.batches?.[0]?.package_unit || '包装单位';
+      const sameUnit = String(minUnit).trim() === String(packageUnit).trim();
+      return `
+        <section class="mobile-batch-outbound-item ${item.error ? 'has-error' : ''}">
+          <div class="mobile-batch-outbound-head">
+            <div>
+              <strong>${this.escapeHtml(reagent.reagent_name || reagent.name || `试剂 #${item.reagent_id}`)}</strong>
+              <span>${this.escapeHtml(reagent.work_group_name || '-')} / ${this.escapeHtml(reagent.instrument_name || '-')}</span>
+            </div>
+            <button class="mobile-danger-btn compact" type="button" onclick="mobileApp.removeBatchOutboundItem(${index})">删除</button>
+          </div>
+          ${item.error ? `<div class="mobile-inline-error">${this.escapeHtml(item.error)}</div>` : `
+            <div class="mobile-batch-outbound-batches" role="group" aria-label="批号">
+              ${item.batches.map((batch) => {
+                const isActive = Number(batch.id) === Number(item.selectedBatchId);
+                const days = Utils.getDaysUntilExpiry(batch.expiry_date);
+                return `
+                  <button class="mobile-batch-pick ${isActive ? 'active' : ''}" type="button" onclick="mobileApp.updateBatchOutboundItem(${index}, 'selectedBatchId', ${batch.id})" aria-pressed="${isActive ? 'true' : 'false'}">
+                    <strong>${this.escapeHtml(batch.batch_no)}</strong>
+                    <span>${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)} · ${this.escapeHtml(this.formatDays(days))}</span>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+            <div class="mobile-batch-outbound-grid">
+              <label class="mobile-field">
+                <span>数量</span>
+                <input class="mobile-input" type="number" min="1" value="${this.escapeHtml(item.quantity)}" oninput="mobileApp.updateBatchOutboundItem(${index}, 'quantity', this.value)">
+              </label>
+              <label class="mobile-field mobile-batch-outbound-unit-field">
+                <span>单位</span>
+                <div class="mobile-unit-toggle ${sameUnit ? 'single-option' : ''}" role="group" aria-label="出库单位">
+                  <button class="mobile-unit-option ${item.outboundUnit !== 'package' ? 'active' : ''}" type="button" onclick="mobileApp.updateBatchOutboundItem(${index}, 'outboundUnit', 'min')">${this.escapeHtml(minUnit)}</button>
+                  ${sameUnit ? '' : `<button class="mobile-unit-option ${item.outboundUnit === 'package' ? 'active' : ''}" type="button" onclick="mobileApp.updateBatchOutboundItem(${index}, 'outboundUnit', 'package')">${this.escapeHtml(packageUnit)}</button>`}
+                </div>
+              </label>
+            </div>
+          `}
+        </section>
+      `;
+    }).join('');
+  },
+
+  updateBatchOutboundItem(index, field, value) {
+    const item = this.batchOutboundItems[index];
+    if (!item) return;
+    if (field === 'quantity') {
+      item.quantity = this.normalizePositiveInteger(value, 1);
+      return;
+    } else if (field === 'selectedBatchId') {
+      item.selectedBatchId = Number(value);
+    } else if (field === 'outboundUnit') {
+      item.outboundUnit = value === 'package' ? 'package' : 'min';
+    }
+    this.renderBatchOutboundSheet();
+  },
+
+  removeBatchOutboundItem(index) {
+    const item = this.batchOutboundItems[index];
+    if (!item) return;
+    this.batchOutboundSelection.delete(Number(item.reagent_id));
+    this.batchOutboundItems.splice(index, 1);
+    this.renderBatchOutboundBar();
+    this.renderBatchOutboundSheet();
+    this.refreshOutboundListView();
+  },
+
+  closeBatchOutboundSheet({ keepSelection = true } = {}) {
+    document.getElementById('mobile-batch-outbound-sheet')?.classList.add('hidden');
+    this.isSubmittingBatchOutbound = false;
+    if (!keepSelection) {
+      this.batchOutboundItems = [];
+    }
+  },
+
+  async submitBatchOutbound() {
+    if (this.isSubmittingBatchOutbound || !this.batchOutboundItems.length) return;
+    const operator = Utils.getValidOperator(document.getElementById('mobile-batch-outbound-operator')?.value);
+    if (!operator) {
+      Utils.showToast('请选择操作人', 'warning');
+      return;
+    }
+    const invalid = this.batchOutboundItems.find((item) => (
+      item.error
+      || !item.selectedBatchId
+      || !this.normalizePositiveInteger(item.quantity, 0)
+      || !item.batches.find((batchItem) => Number(batchItem.id) === Number(item.selectedBatchId))
+    ));
+    if (invalid) {
+      Utils.showToast('请确认每个试剂都有批号和出库数量', 'warning');
+      return;
+    }
+
+    const payloadItems = this.batchOutboundItems.map((item) => {
+      const batch = item.batches.find((batchItem) => Number(batchItem.id) === Number(item.selectedBatchId));
+      return {
+        source: 'manual',
+        reagent_id: item.reagent_id,
+        quantity: this.normalizePositiveInteger(item.quantity, 1),
+        outbound_unit: item.outboundUnit === 'package' ? 'package' : 'min',
+        deduction_mode: 'scanned_batch',
+        raw_barcode: `MOBILE::BATCH_OUTBOUND::${item.reagent_id}`,
+        scanned_batch_no: batch.batch_no,
+        scanned_expiry_date: batch.expiry_date
+      };
+    });
+
+    const submitButton = document.getElementById('mobile-batch-outbound-submit');
+    this.isSubmittingBatchOutbound = true;
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = '提交中...';
+    }
+    try {
+      await API.outbound.stockOutBatch({ operator, items: payloadItems });
+      this.rememberOperator(operator);
+      Utils.showToast(`批量出库成功：${payloadItems.length} 个试剂`, 'success');
+      this.exitBatchOutboundMode();
+      await Promise.all([this.refreshOverview(), this.loadInventory(), this.loadDefaultQuickLists()]);
+      this.renderSearchDefaults();
+      const keyword = document.getElementById('mobile-outbound-search')?.value.trim() || '';
+      if (keyword) await this.searchOutboundReagents(keyword);
+    } catch (error) {
+      Utils.showToast(`批量出库失败：${error.message}`, 'error');
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = '全部确认出库';
+      }
+      this.isSubmittingBatchOutbound = false;
+    }
   },
 
   getInboundReagentById(reagentId) {
@@ -597,14 +862,18 @@
     }
     container.innerHTML = this.outboundResults.map((item) => {
       const status = this.getMobileSearchStatus(item);
+      const isSelected = this.isBatchOutboundSelected(item.reagent_id);
+      const clickAction = this.isOutboundBatchMode
+        ? `mobileApp.toggleBatchOutboundSelection(${item.reagent_id})`
+        : `mobileApp.openOutboundSheet(${item.reagent_id})`;
       return `
-        <article class="mobile-result-card ${status}" onclick="mobileApp.openOutboundSheet(${item.reagent_id})">
+        <article class="mobile-result-card ${status} ${isSelected ? 'selected' : ''}" onclick="${clickAction}" aria-pressed="${isSelected ? 'true' : 'false'}">
           <div class="mobile-card-head">
             <div>
               <div class="mobile-card-title">${this.escapeHtml(item.reagent_name)}</div>
               <div class="mobile-card-meta">${this.escapeHtml(item.work_group_name)} / ${this.escapeHtml(item.instrument_name)}</div>
             </div>
-            <span class="mobile-status mobile-status-${status}">${this.getStatusLabel(status)}</span>
+            <span class="mobile-status mobile-status-${status}">${isSelected ? '已选' : this.getStatusLabel(status)}</span>
           </div>
           <div class="mobile-card-metrics">
             ${this.renderMetricChip(`库存 ${item.total_min_quantity}${this.escapeHtml(item.min_unit)}`, this.getReagentStockTone(item))}
@@ -624,6 +893,10 @@
     return 'normal';
   },
   async openOutboundSheet(reagentId) {
+    if (this.isOutboundBatchMode) {
+      this.toggleBatchOutboundSelection(reagentId);
+      return;
+    }
     const reagent = this.getOutboundReagentById(reagentId);
     if (!reagent) return;
     try {
@@ -1332,7 +1605,8 @@
 
   hasBatchLowWarning(item) {
     const effectiveWarningStock = Number(item.effective_single_batch_warning_stock ?? item.effective_warning_stock ?? item.warning_stock ?? 0);
-    return (item.batches || []).some((batch) => batch.available_min_quantity > 0 && batch.available_min_quantity <= effectiveWarningStock);
+    const threshold = Math.max(effectiveWarningStock || 0, 0);
+    return (item.batches || []).some((batch) => Number(batch.available_min_quantity ?? 0) <= threshold);
   },
 
   isWarningInventoryItem(item) {
