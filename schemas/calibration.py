@@ -69,6 +69,9 @@ class CalibrationRecordCreate(BaseModel):
     operator: str
     raw_barcode: Optional[str] = None
     auto_outbound_package: bool = False
+    outbound_batch_stock_id: Optional[int] = None
+    outbound_quantity: int = Field(default=1, ge=1)
+    outbound_unit: str = Field(default="package", pattern="^(package|min)$")
     old_result_1: Optional[str] = None
     old_result_2: Optional[str] = None
     old_result_3: Optional[str] = None

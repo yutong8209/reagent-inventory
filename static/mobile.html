@@ -366,14 +366,40 @@
                 </section>
             </div>
 
-            <div id="mobile-calibration-fallback-confirm" class="mobile-confirm-card hidden">
-                <h3>是否同步出库？</h3>
-                <p>当前没有独立校准品，将使用试剂自带校准。可只保存校准记录，也可同步出库 1 个包装单位。</p>
-                <div class="mobile-confirm-actions">
-                    <button id="mobile-calibration-save-only" class="mobile-ghost-btn" type="button">仅保存校准</button>
-                    <button id="mobile-calibration-save-outbound" class="mobile-primary-btn compact" type="button">保存并同步出库</button>
+            <section id="mobile-calibration-outbound-section" class="mobile-cal-outbound-section hidden">
+                <button id="mobile-calibration-outbound-toggle" class="mobile-cal-outbound-toggle" type="button" aria-expanded="false">
+                    <span class="mobile-cal-outbound-toggle-text">
+                        <strong>本次同步出库</strong>
+                        <span id="mobile-cal-outbound-toggle-hint">校准完成同时出库该试剂</span>
+                    </span>
+                    <span class="mobile-cal-outbound-toggle-state">
+                        <span class="mobile-cal-outbound-toggle-badge" id="mobile-cal-outbound-badge">关闭</span>
+                        <span class="mobile-cal-outbound-switch" aria-hidden="true"></span>
+                    </span>
+                </button>
+                <div id="mobile-calibration-outbound-controls" class="mobile-cal-outbound-body hidden">
+                    <div class="mobile-cal-outbound-subhead">
+                        <div id="mobile-cal-outbound-batch-label" class="mobile-cal-outbound-label">出库批号</div>
+                        <div id="mobile-cal-outbound-batch-count" class="mobile-cal-outbound-count"></div>
+                    </div>
+                    <div id="mobile-calibration-outbound-batches" class="mobile-batch-list"></div>
+                    <div class="mobile-cal-outbound-row">
+                        <label class="mobile-field mobile-cal-outbound-qty">
+                            <span>数量</span>
+                            <input id="mobile-calibration-outbound-quantity" class="mobile-input" type="number" min="1" value="1">
+                        </label>
+                        <label class="mobile-field mobile-cal-outbound-unit">
+                            <span>单位</span>
+                            <input id="mobile-calibration-outbound-unit" type="hidden" value="package">
+                            <div id="mobile-calibration-outbound-unit-toggle" class="mobile-unit-toggle" role="group" aria-label="出库单位">
+                                <button id="mobile-calibration-outbound-unit-package" class="mobile-unit-option active" type="button" data-cal-outbound-unit="package">包装单位</button>
+                                <button id="mobile-calibration-outbound-unit-min" class="mobile-unit-option" type="button" data-cal-outbound-unit="min">最小单位</button>
+                            </div>
+                        </label>
+                    </div>
+                    <div id="mobile-calibration-outbound-preview" class="mobile-preview-card"></div>
                 </div>
-            </div>
+            </section>
 
             <button id="mobile-calibration-submit" class="mobile-primary-btn" type="button">保存本次校准</button>
         </div>
@@ -381,8 +407,8 @@
 
     <div id="toast" class="toast hidden"></div>
 
-    <script src="/js/api.js?v=20260507-1"></script>
-    <script src="/js/utils.js?v=20260507-1"></script>
-    <script src="/js/mobile.js?v=20260507-1"></script>
+    <script src="/js/api.js?v=20260512-1"></script>
+    <script src="/js/utils.js?v=20260512-1"></script>
+    <script src="/js/mobile.js?v=20260512-1"></script>
 </body>
 </html>

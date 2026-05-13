@@ -22,6 +22,9 @@
   selectedCalibrationPreview: null,
   selectedCalibrationRecordId: null,
   calibrationMode: 'create',
+  calibrationOutboundBatches: [],
+  calibrationOutboundBatchId: null,
+  calibrationOutboundEnabled: false,
   inboundBatchSuggestions: [],
   inventoryFilters: { keyword: '', status: 'all', onlyWarnings: false },
   expandedInventoryIds: new Set(),
@@ -96,8 +99,11 @@
       if (event.target.classList.contains('mobile-sheet-backdrop')) this.closeCalibrationSheet();
     });
     document.getElementById('mobile-calibration-submit')?.addEventListener('click', () => this.handleCalibrationSubmit());
-    document.getElementById('mobile-calibration-save-only')?.addEventListener('click', () => this.submitCalibration(false));
-    document.getElementById('mobile-calibration-save-outbound')?.addEventListener('click', () => this.submitCalibration(true));
+    document.getElementById('mobile-calibration-outbound-toggle')?.addEventListener('click', () => this.toggleCalibrationOutboundSection());
+    document.getElementById('mobile-calibration-outbound-quantity')?.addEventListener('input', () => this.refreshCalibrationOutboundPreview());
+    document.querySelectorAll('[data-cal-outbound-unit]')?.forEach((button) => {
+      button.addEventListener('click', () => this.setCalibrationOutboundUnit(button.dataset.calOutboundUnit || 'package'));
+    });
     document.getElementById('mobile-calibration-result-unit')?.addEventListener('input', () => this.syncCalibrationResultUnitNotes());
     document.getElementById('mobile-calibration-result-grid')?.addEventListener('paste', (event) => this.handleCalibrationResultPaste(event));
     document.getElementById('mobile-calibration-result-grid')?.addEventListener('keydown', (event) => this.handleCalibrationResultKeydown(event));
@@ -1374,13 +1380,17 @@
     this.syncCalibrationResultUnitNotes(data.result_unit || 'nmmol/L');
     document.getElementById('mobile-calibration-usage-times').value = String(data.usage_times || data.default_usage_times || 1);
     this.fillCalibrationResults(data);
-    document.getElementById('mobile-calibration-fallback-confirm')?.classList.add('hidden');
     document.getElementById('mobile-calibration-submit').classList.toggle('hidden', false);
     document.getElementById('mobile-calibration-submit').textContent = mode === 'edit' ? '保存校准记录' : '保存本次校准';
     await Utils.populateOperatorSelect('mobile-calibration-operator', {
       allowEmpty: false,
       defaultValue: data.operator || this.getPreferredOperator()
     });
+    if (mode === 'create') {
+      await this.loadCalibrationOutboundBatches(data.target_reagent_id);
+    } else {
+      document.getElementById('mobile-calibration-outbound-section')?.classList.add('hidden');
+    }
     document.getElementById('mobile-calibration-sheet').classList.remove('hidden');
     requestAnimationFrame(() => document.getElementById('mobile-calibration-usage-times')?.focus());
   },
@@ -1496,9 +1506,8 @@
       Utils.showToast('请先确认被校准试剂和操作人', 'warning');
       return;
     }
-    if (this.calibrationMode === 'create' && this.selectedCalibrationPreview.calibration_source === 'reagent') {
-      document.getElementById('mobile-calibration-fallback-confirm')?.classList.remove('hidden');
-      document.getElementById('mobile-calibration-submit')?.classList.add('hidden');
+    if (this.calibrationMode === 'create') {
+      this.submitCalibration(Boolean(this.calibrationOutboundEnabled));
       return;
     }
     this.submitCalibration(false);
@@ -1510,6 +1519,13 @@
     if (!payload.target_reagent_id || !payload.operator) {
       Utils.showToast('请先确认被校准试剂和操作人', 'warning');
       return;
+    }
+    if (autoOutboundPackage) {
+      if (this.calibrationOutboundEnabled && this.calibrationOutboundBatchId) {
+        payload.outbound_batch_stock_id = this.calibrationOutboundBatchId;
+        payload.outbound_quantity = this.normalizePositiveInteger(document.getElementById('mobile-calibration-outbound-quantity')?.value, 1);
+        payload.outbound_unit = document.getElementById('mobile-calibration-outbound-unit')?.value || 'package';
+      }
     }
     this.isSubmittingCalibration = true;
     const submitButton = document.getElementById('mobile-calibration-submit');
@@ -1533,19 +1549,195 @@
       Utils.showToast(`校准保存失败：${error.message}`, 'error');
     } finally {
       submitButton.disabled = false;
-      submitButton.textContent = this.calibrationMode === 'edit' ? '保存校准记录' : '保存本次校准';
+      this.syncCalibrationSubmitLabel();
       this.isSubmittingCalibration = false;
     }
   },
 
   closeCalibrationSheet() {
     document.getElementById('mobile-calibration-sheet')?.classList.add('hidden');
-    document.getElementById('mobile-calibration-fallback-confirm')?.classList.add('hidden');
+    document.getElementById('mobile-calibration-outbound-section')?.classList.add('hidden');
+    document.getElementById('mobile-calibration-outbound-section')?.classList.remove('active', 'unavailable');
+    document.getElementById('mobile-calibration-outbound-toggle')?.setAttribute('aria-expanded', 'false');
     document.getElementById('mobile-calibration-submit')?.classList.remove('hidden');
     this.selectedCalibrationPreview = null;
     this.selectedCalibrationRecordId = null;
     this.calibrationMode = 'create';
     this.isSubmittingCalibration = false;
+    this.calibrationOutboundBatches = [];
+    this.calibrationOutboundBatchId = null;
+    this.calibrationOutboundEnabled = false;
+  },
+
+  async loadCalibrationOutboundBatches(reagentId) {
+    const section = document.getElementById('mobile-calibration-outbound-section');
+    const controls = document.getElementById('mobile-calibration-outbound-controls');
+    const badge = document.getElementById('mobile-cal-outbound-badge');
+    const hint = document.getElementById('mobile-cal-outbound-toggle-hint');
+    const batchesContainer = document.getElementById('mobile-calibration-outbound-batches');
+    const count = document.getElementById('mobile-cal-outbound-batch-count');
+    const toggle = document.getElementById('mobile-calibration-outbound-toggle');
+    if (!section || !reagentId) {
+      section?.classList.add('hidden');
+      return;
+    }
+    this.calibrationOutboundEnabled = false;
+    section.classList.remove('active', 'unavailable');
+    toggle?.setAttribute('aria-expanded', 'false');
+    this.syncCalibrationSubmitLabel();
+    try {
+      const batches = await API.outbound.getStock(reagentId);
+      const available = batches.filter((item) => item.available_min_quantity > 0);
+      this.calibrationOutboundBatches = available;
+      if (!available.length) {
+        section.classList.remove('hidden');
+        section.classList.add('unavailable');
+        controls?.classList.add('hidden');
+        if (badge) { badge.textContent = '无库存'; badge.classList.remove('active', 'danger'); badge.classList.add('warning'); }
+        if (hint) hint.textContent = '该试剂暂无可用库存';
+        if (count) count.textContent = '';
+        batchesContainer.innerHTML = '';
+        return;
+      }
+      this.calibrationOutboundBatchId = available[0].id;
+      section.classList.remove('hidden');
+      controls?.classList.add('hidden');
+      if (badge) { badge.textContent = '关闭'; badge.classList.remove('active', 'warning', 'danger'); }
+      if (hint) hint.textContent = `可选 ${available.length} 个批号，点击开启`;
+      if (count) count.textContent = `${available.length} 个可用`;
+      this.renderCalibrationOutboundBatches();
+      this.setCalibrationOutboundUnit('package', { skipPreview: true });
+      document.getElementById('mobile-calibration-outbound-quantity').value = '1';
+      this.renderCalibrationOutboundUnitLabels(available[0]);
+      this.refreshCalibrationOutboundPreview();
+    } catch (error) {
+      section.classList.remove('hidden');
+      section.classList.add('unavailable');
+      controls?.classList.add('hidden');
+      if (badge) { badge.textContent = '错误'; badge.classList.remove('active', 'warning'); badge.classList.add('danger'); }
+      if (hint) hint.textContent = `加载失败：${error.message}`;
+      if (count) count.textContent = '';
+      batchesContainer.innerHTML = '';
+    }
+  },
+
+  renderCalibrationOutboundBatches() {
+    const container = document.getElementById('mobile-calibration-outbound-batches');
+    if (!container) return;
+    container.innerHTML = this.calibrationOutboundBatches.map((batch) => {
+      const days = Utils.getDaysUntilExpiry(batch.expiry_date);
+      const tone = this.getExpiryTone(days, 30);
+      return `
+        <label class="mobile-batch-card mobile-batch-card-${tone} ${batch.id === this.calibrationOutboundBatchId ? 'active' : ''}">
+          <input type="radio" name="mobile-cal-outbound-batch" ${batch.id === this.calibrationOutboundBatchId ? 'checked' : ''} onchange="mobileApp.selectCalibrationOutboundBatch(${batch.id})">
+          <div class="mobile-outbound-batch-main">
+            <div class="mobile-outbound-batch-top">
+              <div class="mobile-card-title">${this.escapeHtml(batch.batch_no)}</div>
+              <span class="mobile-outbound-batch-stock mobile-metric-chip mobile-metric-${this.getBatchStockTone(batch)}">库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit)}</span>
+            </div>
+            <div class="mobile-card-meta">有效期 ${this.escapeHtml(batch.expiry_date)} · ${this.renderInlineTone(this.escapeHtml(this.formatDays(days)), tone)}</div>
+          </div>
+        </label>
+      `;
+    }).join('');
+  },
+
+  selectCalibrationOutboundBatch(batchId) {
+    this.calibrationOutboundBatchId = batchId;
+    this.renderCalibrationOutboundBatches();
+    const batch = this.calibrationOutboundBatches.find((item) => item.id === this.calibrationOutboundBatchId);
+    if (batch) this.renderCalibrationOutboundUnitLabels(batch);
+    this.refreshCalibrationOutboundPreview();
+  },
+
+  toggleCalibrationOutboundSection() {
+    const section = document.getElementById('mobile-calibration-outbound-section');
+    const controls = document.getElementById('mobile-calibration-outbound-controls');
+    const badge = document.getElementById('mobile-cal-outbound-badge');
+    const hint = document.getElementById('mobile-cal-outbound-toggle-hint');
+    const toggle = document.getElementById('mobile-calibration-outbound-toggle');
+    const noBatches = !this.calibrationOutboundBatches.length;
+    if (noBatches) return;
+    this.calibrationOutboundEnabled = !this.calibrationOutboundEnabled;
+    const enabled = this.calibrationOutboundEnabled;
+    if (controls) controls.classList.toggle('hidden', !enabled);
+    if (badge) {
+      badge.textContent = enabled ? '已开启' : '关闭';
+      badge.classList.toggle('active', enabled);
+      badge.classList.remove('warning', 'danger');
+    }
+    if (hint) {
+      hint.textContent = enabled
+        ? '保存时将同步扣减所选批号库存'
+        : `可选 ${this.calibrationOutboundBatches.length} 个批号，点击开启`;
+    }
+    section?.classList.toggle('active', enabled);
+    if (toggle) toggle.setAttribute('aria-expanded', String(enabled));
+    this.syncCalibrationSubmitLabel();
+    if (enabled) {
+      this.refreshCalibrationOutboundPreview();
+    }
+  },
+
+  syncCalibrationSubmitLabel() {
+    const submitButton = document.getElementById('mobile-calibration-submit');
+    if (!submitButton) return;
+    submitButton.textContent = this.calibrationMode === 'edit'
+      ? '保存校准记录'
+      : this.calibrationOutboundEnabled
+        ? '保存并同步出库'
+        : '保存本次校准';
+  },
+
+  renderCalibrationOutboundUnitLabels(batch) {
+    const packageBtn = document.getElementById('mobile-calibration-outbound-unit-package');
+    const minBtn = document.getElementById('mobile-calibration-outbound-unit-min');
+    if (packageBtn) packageBtn.textContent = batch.package_unit || '包装单位';
+    if (minBtn) minBtn.textContent = batch.min_unit || '最小单位';
+    const toggle = document.getElementById('mobile-calibration-outbound-unit-toggle');
+    const hasSameUnit = String(batch.min_unit || '').trim() === String(batch.package_unit || '').trim();
+    toggle?.classList.toggle('single-option', hasSameUnit);
+    minBtn?.classList.toggle('hidden', hasSameUnit);
+  },
+
+  setCalibrationOutboundUnit(unit, options = {}) {
+    const normalizedUnit = unit === 'min' ? 'min' : 'package';
+    const input = document.getElementById('mobile-calibration-outbound-unit');
+    if (input) input.value = normalizedUnit;
+    document.querySelectorAll('[data-cal-outbound-unit]').forEach((button) => {
+      button.classList.toggle('active', button.dataset.calOutboundUnit === normalizedUnit);
+      button.setAttribute('aria-pressed', button.dataset.calOutboundUnit === normalizedUnit ? 'true' : 'false');
+    });
+    if (!options.skipPreview) {
+      this.refreshCalibrationOutboundPreview();
+    }
+  },
+
+  async refreshCalibrationOutboundPreview() {
+    const previewEl = document.getElementById('mobile-calibration-outbound-preview');
+    if (!previewEl || !this.calibrationOutboundBatchId || !this.selectedCalibrationPreview) return;
+    const batch = this.calibrationOutboundBatches.find((item) => item.id === this.calibrationOutboundBatchId);
+    if (!batch) return;
+    const quantity = this.normalizePositiveInteger(document.getElementById('mobile-calibration-outbound-quantity')?.value, 1);
+    const outboundUnit = document.getElementById('mobile-calibration-outbound-unit')?.value || 'package';
+    try {
+      const preview = await API.outbound.preview({
+        source: 'manual',
+        reagent_id: this.selectedCalibrationPreview.target_reagent_id,
+        quantity,
+        outbound_unit: outboundUnit,
+        deduction_mode: 'scanned_batch',
+        raw_barcode: `MOBILE::CALIBRATION::${this.selectedCalibrationPreview.target_reagent_id}`,
+        scanned_batch_no: batch.batch_no,
+        scanned_expiry_date: batch.expiry_date
+      });
+      previewEl.innerHTML = `
+        ${this.renderPreviewLine(`出库 ${preview.requested_quantity}${this.escapeHtml(outboundUnit === 'package' ? preview.package_unit : preview.min_unit)}`, 'warning')}
+        ${this.renderPreviewLine(`折合最小单位 ${preview.requested_min_quantity}${this.escapeHtml(preview.min_unit)}`, 'success')}
+      `;
+    } catch (error) {
+      previewEl.innerHTML = this.renderPreviewLine(this.escapeHtml(error.message), 'danger');
+    }
   },
 
   async loadInventory() {

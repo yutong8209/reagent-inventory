@@ -544,41 +544,73 @@ def _create_linked_outbound_transaction(
     raw_barcode: str | None,
     calibration_record_id: int,
     db: Session,
+    outbound_reagent_id: int | None = None,
+    outbound_batch_stock_id: int | None = None,
+    outbound_quantity: int = 1,
+    outbound_unit: str = "package",
 ):
-    package_to_min_qty = _safe_ratio(source_batch.package_to_min_qty)
-    available_min_quantity = _batch_total_min_units(source_batch)
-    if available_min_quantity < package_to_min_qty:
+    outbound_reagent = source_reagent
+    if outbound_reagent_id:
+        found = db.query(Reagent).filter(Reagent.id == outbound_reagent_id, Reagent.is_archived.is_(False)).first()
+        if not found:
+            raise HTTPException(status_code=400, detail="出库试剂不存在或已归档")
+        outbound_reagent = found
+
+    if outbound_batch_stock_id:
+        target_batch = (
+            db.query(BatchStock)
+            .filter(
+                BatchStock.id == outbound_batch_stock_id,
+                BatchStock.reagent_id == outbound_reagent.id,
+                BatchStock.is_archived.is_(False),
+            )
+            .first()
+        )
+        if not target_batch:
+            raise HTTPException(status_code=400, detail="出库批号不存在或与试剂不匹配")
+    else:
+        target_batch = source_batch
+
+    package_to_min_qty = _safe_ratio(target_batch.package_to_min_qty)
+    if outbound_unit == "package":
+        requested_min_quantity = outbound_quantity * package_to_min_qty
+    else:
+        requested_min_quantity = outbound_quantity
+
+    available_min_quantity = _batch_total_min_units(target_batch)
+    if available_min_quantity < requested_min_quantity:
+        unit_label = target_batch.package_unit or "盒" if outbound_unit == "package" else target_batch.min_unit or "最小单位"
         raise HTTPException(
             status_code=400,
-            detail=f"{source_reagent.name} 当前批号库存不足，不能同时出库 1{source_batch.package_unit or '盒'}",
+            detail=f"{outbound_reagent.name} 批号 {target_batch.batch_no} 库存不足，不能同时出库 {outbound_quantity}{unit_label}",
         )
 
-    _set_batch_total_min_units(source_batch, available_min_quantity - package_to_min_qty)
+    _set_batch_total_min_units(target_batch, available_min_quantity - requested_min_quantity)
     db.add(
         Transaction(
-            reagent_id=source_reagent.id,
-            batch_stock_id=source_batch.id,
+            reagent_id=outbound_reagent.id,
+            batch_stock_id=target_batch.id,
             type="OUT",
-            quantity=package_to_min_qty,
+            quantity=requested_min_quantity,
             operator=operator,
             source="scan",
-            raw_barcode=_clean_text(raw_barcode) or f"CAL-OUT::{source_reagent.id}",
-            package_unit=source_batch.package_unit,
-            min_unit=source_batch.min_unit,
+            raw_barcode=_clean_text(raw_barcode) or f"CAL-OUT::{outbound_reagent.id}",
+            package_unit=target_batch.package_unit,
+            min_unit=target_batch.min_unit,
             package_to_min_qty=package_to_min_qty,
             remark=json.dumps(
                 {
                     "from_calibration": True,
                     "calibration_record_id": calibration_record_id,
-                    "outbound_unit": "package",
-                    "requested_quantity": 1,
-                    "requested_min_quantity": package_to_min_qty,
+                    "outbound_unit": outbound_unit,
+                    "requested_quantity": outbound_quantity,
+                    "requested_min_quantity": requested_min_quantity,
                     "deduction_mode": "scanned_batch",
-                    "scanned_batch_no": source_batch.batch_no,
-                    "scanned_expiry_date": source_batch.expiry_date.isoformat()
-                    if source_batch.expiry_date
+                    "scanned_batch_no": target_batch.batch_no,
+                    "scanned_expiry_date": target_batch.expiry_date.isoformat()
+                    if target_batch.expiry_date
                     else None,
-                    "deducted_min_quantity": package_to_min_qty,
+                    "deducted_min_quantity": requested_min_quantity,
                 },
                 ensure_ascii=False,
             ),
@@ -870,7 +902,7 @@ def create_calibration_record(data: CalibrationRecordCreate, db: Session = Depen
     db.add(record)
     db.flush()
 
-    if (not calibrator.is_calibrator) and data.auto_outbound_package:
+    if data.auto_outbound_package:
         _create_linked_outbound_transaction(
             source_reagent=calibrator,
             source_batch=calibrator_batch,
@@ -878,6 +910,10 @@ def create_calibration_record(data: CalibrationRecordCreate, db: Session = Depen
             raw_barcode=data.raw_barcode,
             calibration_record_id=record.id,
             db=db,
+            outbound_reagent_id=target.id,
+            outbound_batch_stock_id=data.outbound_batch_stock_id,
+            outbound_quantity=data.outbound_quantity,
+            outbound_unit=data.outbound_unit,
         )
 
     db.commit()
