@@ -20,8 +20,9 @@ const calibrationPage = {
         await this.loadFilterSelectors();
         await this.loadManualSelectors();
         await this.loadRecentRecords();
+        this.switchMode('manual', { preserveForm: true });
         window.setTimeout(() => {
-            document.getElementById('calibration-barcode')?.focus();
+            document.getElementById('calibration-manual-search')?.focus();
         }, 0);
     },
 
@@ -122,7 +123,7 @@ const calibrationPage = {
         });
     },
 
-    switchMode(mode) {
+    switchMode(mode, options = {}) {
         const nextMode = mode === 'manual' ? 'manual' : 'scan';
         document.querySelectorAll('[data-calibration-mode]').forEach((button) => {
             button.classList.toggle('active', button.dataset.calibrationMode === nextMode);
@@ -132,9 +133,11 @@ const calibrationPage = {
         document.getElementById('calibration-manual-search').value = '';
         document.getElementById('calibration-manual-search-results').innerHTML = '';
         document.getElementById('calibration-manual-search-results').classList.add('hidden');
-        document.getElementById('calibration-form-panel')?.classList.add('hidden');
-        this.preview = null;
-        this.resetOutboundControls();
+        if (!options.preserveForm) {
+            document.getElementById('calibration-form-panel')?.classList.add('hidden');
+            this.preview = null;
+            this.resetOutboundControls();
+        }
         if (nextMode === 'manual') {
             this.loadManualSelectors();
         } else {

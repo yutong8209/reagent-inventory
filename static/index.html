@@ -488,12 +488,12 @@
 
                     <div class="form-section">
                         <div class="mode-tabs">
-                            <button class="mode-tab active" data-calibration-mode="scan" type="button">扫码校准</button>
-                            <button class="mode-tab" data-calibration-mode="manual" type="button">手动选择校准品</button>
+                            <button class="mode-tab" data-calibration-mode="scan" type="button">扫码校准</button>
+                            <button class="mode-tab active" data-calibration-mode="manual" type="button">手动选择校准品</button>
                         </div>
                     </div>
 
-                    <div id="calibration-scan-mode" class="form-section">
+                    <div id="calibration-scan-mode" class="form-section hidden">
                         <div class="form-group form-group-inline">
                             <label for="calibration-barcode">扫码校准</label>
                             <input type="text" id="calibration-barcode" class="form-input" placeholder="扫描校准品或试剂条码后按回车" autocomplete="off">
@@ -502,9 +502,16 @@
                         <p class="hint">独立校准品会自动匹配被校准试剂；普通试剂条码会按“当前扫码批号为新批号、上一批号为旧批号”带出默认值。</p>
                     </div>
 
-                    <div id="calibration-manual-mode" class="form-section hidden">
+                    <div id="calibration-manual-mode" class="form-section">
                         <h3>手动选择校准品</h3>
                         <p class="hint">适合条码不方便扫描时使用。先选择校准品和库存批号，再生成本次校准表单。</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-manual-search">关键词快速选择</label>
+                                <input type="text" id="calibration-manual-search" class="form-input" placeholder="输入校准品、仪器或工作组关键词">
+                            </div>
+                        </div>
+                        <div id="calibration-manual-search-results" class="candidate-list hidden"></div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="calibration-manual-work-group">工作组</label>
@@ -521,17 +528,12 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="calibration-manual-search">关键词快速选择</label>
-                                <input type="text" id="calibration-manual-search" class="form-input" placeholder="输入校准品、仪器或工作组关键词">
-                            </div>
-                            <div class="form-group">
                                 <label for="calibration-manual-calibrator">校准品</label>
                                 <select id="calibration-manual-calibrator" class="form-select">
                                     <option value="">请选择校准品</option>
                                 </select>
                             </div>
                         </div>
-                        <div id="calibration-manual-search-results" class="candidate-list hidden"></div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="calibration-manual-batch">校准品批号</label>
