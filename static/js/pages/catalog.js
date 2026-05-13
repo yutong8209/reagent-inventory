@@ -1151,7 +1151,7 @@ const catalogPage = {
                 <div class="settings-panel danger-section">
                     <div class="settings-editor-header">
                         <h4>清空流水</h4>
-                        <p class="hint">只删除流水记录，不回滚库存。可按工作组、仪器、试剂和时间范围清空，也可全部清空。</p>
+                        <p class="hint">删除匹配流水，并同步清除对应校准记录，不回滚库存。可按工作组、仪器、试剂和时间范围清空，也可全部清空。</p>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
@@ -1848,8 +1848,8 @@ const catalogPage = {
         };
         const hasFilters = Object.values(payload).some((value) => value);
         const confirmMessage = hasFilters
-            ? '确定按当前筛选条件清空流水吗？此操作只删除流水记录，不会回滚库存。'
-            : '确定清空全部流水吗？此操作只删除流水记录，不会回滚库存。';
+            ? '确定按当前筛选条件清空流水吗？对应校准记录也会同步清除，不会回滚库存。'
+            : '确定清空全部流水吗？对应校准记录也会同步清除，不会回滚库存。';
         if (!confirm(confirmMessage)) {
             return;
         }
@@ -1859,6 +1859,12 @@ const catalogPage = {
         }
         payload.password = password;
         const result = await API.inventory.clearTransactions(payload);
-        Utils.showToast(result.deleted_count ? `已清空 ${result.deleted_count} 条流水` : '当前条件下没有可清空的流水', result.deleted_count ? 'success' : 'warning');
+        const calibrationCount = Number(result.deleted_calibration_record_count || 0);
+        Utils.showToast(
+            result.deleted_count || calibrationCount
+                ? `已清空 ${result.deleted_count} 条流水，${calibrationCount} 条校准记录`
+                : '当前条件下没有可清空的流水或校准记录',
+            result.deleted_count || calibrationCount ? 'success' : 'warning'
+        );
     }
 };

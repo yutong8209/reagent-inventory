@@ -4,6 +4,10 @@ const calibrationPage = {
     workGroups: [],
     instruments: [],
     preview: null,
+    manualCalibrators: [],
+    manualBatches: [],
+    manualSearchResults: [],
+    outboundBatches: [],
     recentRecords: [],
     editRecordId: null,
 
@@ -14,6 +18,7 @@ const calibrationPage = {
         }
         await this.loadOperators();
         await this.loadFilterSelectors();
+        await this.loadManualSelectors();
         await this.loadRecentRecords();
         window.setTimeout(() => {
             document.getElementById('calibration-barcode')?.focus();
@@ -21,6 +26,9 @@ const calibrationPage = {
     },
 
     bindEvents() {
+        document.querySelectorAll('[data-calibration-mode]').forEach((button) => {
+            button.addEventListener('click', () => this.switchMode(button.dataset.calibrationMode || 'scan'));
+        });
         document.getElementById('calibration-preview-btn')?.addEventListener('click', () => this.scanPreview());
         document.getElementById('calibration-barcode')?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
@@ -31,7 +39,27 @@ const calibrationPage = {
         document.getElementById('calibration-target-reagent')?.addEventListener('change', (event) => {
             this.loadTargetPreview(event.target.value, false);
         });
+        document.getElementById('calibration-result-unit')?.addEventListener('input', (event) => {
+            this.syncCreateResultUnitNotes(event.target.value);
+        });
         document.getElementById('calibration-save-btn')?.addEventListener('click', () => this.saveCalibration());
+        document.getElementById('calibration-manual-work-group')?.addEventListener('change', async () => {
+            await this.loadManualInstruments();
+            await this.loadManualCalibrators();
+        });
+        document.getElementById('calibration-manual-instrument')?.addEventListener('change', () => this.loadManualCalibrators());
+        document.getElementById('calibration-manual-calibrator')?.addEventListener('change', () => this.selectManualCalibrator());
+        document.getElementById('calibration-manual-search')?.addEventListener('input', () => this.searchManualCalibrators());
+        document.getElementById('calibration-manual-batch')?.addEventListener('change', () => this.renderManualSummary());
+        document.getElementById('calibration-manual-preview-btn')?.addEventListener('click', () => this.generateManualPreview());
+        document.getElementById('calibration-manual-clear-btn')?.addEventListener('click', () => this.clearManualSelection());
+        document.getElementById('calibration-outbound-enabled')?.addEventListener('change', () => this.toggleOutboundControls());
+        document.getElementById('calibration-outbound-batch')?.addEventListener('change', () => {
+            this.updateOutboundUnitOptions();
+            this.refreshOutboundPreview();
+        });
+        document.getElementById('calibration-outbound-quantity')?.addEventListener('change', () => this.refreshOutboundPreview());
+        document.getElementById('calibration-outbound-unit')?.addEventListener('change', () => this.refreshOutboundPreview());
 
         document.getElementById('calibration-record-modal-close')?.addEventListener('click', () => this.closeRecordModal());
         document.getElementById('calibration-record-modal-cancel')?.addEventListener('click', () => this.closeRecordModal());
@@ -94,6 +122,26 @@ const calibrationPage = {
         });
     },
 
+    switchMode(mode) {
+        const nextMode = mode === 'manual' ? 'manual' : 'scan';
+        document.querySelectorAll('[data-calibration-mode]').forEach((button) => {
+            button.classList.toggle('active', button.dataset.calibrationMode === nextMode);
+        });
+        document.getElementById('calibration-scan-mode')?.classList.toggle('hidden', nextMode !== 'scan');
+        document.getElementById('calibration-manual-mode')?.classList.toggle('hidden', nextMode !== 'manual');
+        document.getElementById('calibration-manual-search').value = '';
+        document.getElementById('calibration-manual-search-results').innerHTML = '';
+        document.getElementById('calibration-manual-search-results').classList.add('hidden');
+        document.getElementById('calibration-form-panel')?.classList.add('hidden');
+        this.preview = null;
+        this.resetOutboundControls();
+        if (nextMode === 'manual') {
+            this.loadManualSelectors();
+        } else {
+            window.setTimeout(() => document.getElementById('calibration-barcode')?.focus(), 0);
+        }
+    },
+
     async loadFilterSelectors() {
         this.workGroups = await API.inventory.getWorkGroups();
         const workGroupSelect = document.getElementById('calibration-filter-work-group');
@@ -127,6 +175,190 @@ const calibrationPage = {
             .join('');
         this.selectValues('calibration-filter-instrument', selectedInstruments);
         Utils.syncCheckboxSelect('calibration-filter-instrument', '全部仪器');
+    },
+
+    async loadManualSelectors() {
+        const workGroupSelect = document.getElementById('calibration-manual-work-group');
+        if (!workGroupSelect) return;
+        const selectedWorkGroup = workGroupSelect.value || '';
+        if (!this.workGroups.length) {
+            this.workGroups = await API.inventory.getWorkGroups();
+        }
+        workGroupSelect.innerHTML = '<option value="">全部工作组</option>' + this.workGroups
+            .map((group) => `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`)
+            .join('');
+        workGroupSelect.value = selectedWorkGroup;
+        await this.loadManualInstruments(false);
+        await this.loadManualCalibrators();
+    },
+
+    async loadManualInstruments(resetCalibrator = true) {
+        const workGroupId = document.getElementById('calibration-manual-work-group')?.value || '';
+        const instrumentSelect = document.getElementById('calibration-manual-instrument');
+        if (!instrumentSelect) return;
+        const selectedInstrument = resetCalibrator ? '' : instrumentSelect.value || '';
+        const instruments = await API.inventory.getInstruments(workGroupId || null);
+        instrumentSelect.innerHTML = '<option value="">全部仪器</option>' + instruments
+            .map((instrument) => `<option value="${instrument.id}">${this.escapeHtml(instrument.name)}</option>`)
+            .join('');
+        if (selectedInstrument && instruments.some((item) => String(item.id) === String(selectedInstrument))) {
+            instrumentSelect.value = selectedInstrument;
+        }
+    },
+
+    async loadManualCalibrators() {
+        const calibratorSelect = document.getElementById('calibration-manual-calibrator');
+        const batchSelect = document.getElementById('calibration-manual-batch');
+        if (!calibratorSelect || !batchSelect) return;
+        const previousCalibrator = calibratorSelect.value || '';
+        const reagents = await API.reagents.list({
+            status: 'active',
+            work_group_id: document.getElementById('calibration-manual-work-group')?.value || null,
+            instrument_id: document.getElementById('calibration-manual-instrument')?.value || null,
+        });
+        this.manualCalibrators = reagents.filter((item) => item.is_calibrator);
+        calibratorSelect.innerHTML = '<option value="">请选择校准品</option>' + this.manualCalibrators
+            .map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)} / ${this.escapeHtml(item.instrument_name || '')}</option>`)
+            .join('');
+        if (previousCalibrator && this.manualCalibrators.some((item) => String(item.id) === String(previousCalibrator))) {
+            calibratorSelect.value = previousCalibrator;
+            await this.selectManualCalibrator(false);
+            return;
+        }
+        this.manualBatches = [];
+        batchSelect.innerHTML = '<option value="">请先选择校准品</option>';
+        this.renderManualSummary();
+    },
+
+    async selectManualCalibrator(clearBatch = true) {
+        const calibratorId = document.getElementById('calibration-manual-calibrator')?.value || '';
+        const batchSelect = document.getElementById('calibration-manual-batch');
+        if (!batchSelect) return;
+        if (!calibratorId) {
+            this.manualBatches = [];
+            batchSelect.innerHTML = '<option value="">请先选择校准品</option>';
+            this.renderManualSummary();
+            return;
+        }
+        try {
+            const previousBatch = clearBatch ? '' : batchSelect.value || '';
+            const batches = await API.outbound.getStock(calibratorId);
+            this.manualBatches = batches.filter((item) => Number(item.available_min_quantity || 0) > 0);
+            if (!this.manualBatches.length) {
+                batchSelect.innerHTML = '<option value="">暂无可用库存批号</option>';
+                this.renderManualSummary();
+                return;
+            }
+            batchSelect.innerHTML = this.manualBatches.map((batch) => `
+                <option value="${batch.id}">
+                    ${this.escapeHtml(batch.batch_no)} / ${this.escapeHtml(batch.expiry_date || '-')} / 库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit || '')}
+                </option>
+            `).join('');
+            if (previousBatch && this.manualBatches.some((item) => String(item.id) === String(previousBatch))) {
+                batchSelect.value = previousBatch;
+            }
+            this.renderManualSummary();
+        } catch (error) {
+            Utils.showToast(error.message || '校准品批号加载失败', 'error');
+        }
+    },
+
+    renderManualSummary() {
+        const summary = document.getElementById('calibration-manual-summary');
+        if (!summary) return;
+        const calibratorId = document.getElementById('calibration-manual-calibrator')?.value || '';
+        const batchId = document.getElementById('calibration-manual-batch')?.value || '';
+        const calibrator = this.manualCalibrators.find((item) => String(item.id) === String(calibratorId));
+        const batch = this.manualBatches.find((item) => String(item.id) === String(batchId));
+        if (!calibrator || !batch) {
+            summary.classList.add('hidden');
+            summary.innerHTML = '';
+            return;
+        }
+        summary.classList.remove('hidden');
+        summary.innerHTML = `
+            <div class="outbound-preview-title">${this.escapeHtml(calibrator.name)}</div>
+            <div class="item-card-meta">${this.escapeHtml(calibrator.work_group_name || '')} / ${this.escapeHtml(calibrator.instrument_name || '')}</div>
+            <div class="item-card-submeta">批号 ${this.escapeHtml(batch.batch_no)} / 有效期 ${this.escapeHtml(batch.expiry_date || '-')} / 可用 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit || '')}</div>
+        `;
+    },
+
+    searchManualCalibrators() {
+        const input = document.getElementById('calibration-manual-search');
+        const results = document.getElementById('calibration-manual-search-results');
+        if (!input || !results) return;
+        const keyword = input.value.trim().toLowerCase();
+        if (!keyword) {
+            this.manualSearchResults = [];
+            results.innerHTML = '';
+            results.classList.add('hidden');
+            return;
+        }
+        this.manualSearchResults = this.manualCalibrators
+            .filter((item) => [item.name, item.work_group_name, item.instrument_name]
+                .some((value) => String(value || '').toLowerCase().includes(keyword)))
+            .slice(0, 8);
+        if (!this.manualSearchResults.length) {
+            results.innerHTML = '<div class="inventory-empty">没有匹配的校准品</div>';
+            results.classList.remove('hidden');
+            return;
+        }
+        results.innerHTML = this.manualSearchResults.map((item) => `
+            <button class="candidate-item" type="button" onclick="calibrationPage.selectManualCalibratorFromSearch(${item.id})">
+                <span>${this.escapeHtml(item.name)}</span>
+                <small>${this.escapeHtml(item.work_group_name || '')} / ${this.escapeHtml(item.instrument_name || '')}</small>
+            </button>
+        `).join('');
+        results.classList.remove('hidden');
+    },
+
+    async selectManualCalibratorFromSearch(calibratorId) {
+        const select = document.getElementById('calibration-manual-calibrator');
+        if (!select) return;
+        select.value = String(calibratorId);
+        document.getElementById('calibration-manual-search-results')?.classList.add('hidden');
+        await this.selectManualCalibrator();
+        const firstBatch = this.manualBatches[0];
+        if (firstBatch) {
+            document.getElementById('calibration-manual-batch').value = String(firstBatch.id);
+            this.renderManualSummary();
+        }
+    },
+
+    clearManualSelection() {
+        document.getElementById('calibration-manual-work-group').value = '';
+        document.getElementById('calibration-manual-instrument').innerHTML = '<option value="">全部仪器</option>';
+        document.getElementById('calibration-manual-calibrator').innerHTML = '<option value="">请选择校准品</option>';
+        document.getElementById('calibration-manual-batch').innerHTML = '<option value="">请先选择校准品</option>';
+        document.getElementById('calibration-manual-search').value = '';
+        document.getElementById('calibration-manual-search-results').innerHTML = '';
+        document.getElementById('calibration-manual-search-results').classList.add('hidden');
+        document.getElementById('calibration-form-panel')?.classList.add('hidden');
+        this.preview = null;
+        this.resetOutboundControls();
+        this.manualCalibrators = [];
+        this.manualBatches = [];
+        this.renderManualSummary();
+        this.loadManualSelectors();
+    },
+
+    async generateManualPreview() {
+        const calibratorId = document.getElementById('calibration-manual-calibrator')?.value || '';
+        const batchId = document.getElementById('calibration-manual-batch')?.value || '';
+        if (!calibratorId || !batchId) {
+            return Utils.showToast('请先选择校准品和校准品批号', 'warning');
+        }
+        try {
+            const preview = await API.calibration.manualPreview({
+                calibrator_reagent_id: calibratorId,
+                calibrator_batch_stock_id: batchId,
+            });
+            this.preview = preview;
+            this.applyPreview(preview);
+            Utils.showToast('已生成校准表单，可继续填写本次校准信息', 'success');
+        } catch (error) {
+            Utils.showToast(error.message || '生成校准表单失败', 'error');
+        }
     },
 
     getRecordFilterParams(includeLimit = true) {
@@ -229,7 +461,11 @@ const calibrationPage = {
         document.getElementById('calibration-form-panel').classList.remove('hidden');
         document.getElementById('calibration-calibrator-name').value = preview.calibrator_name || '';
         document.getElementById('calibration-calibrator-batch').value = preview.calibrator_batch_no || '';
-        const sourceLabel = preview.calibration_source === 'reagent' ? '当前扫码试剂' : '当前校准品';
+        const sourceLabel = preview.raw_barcode?.startsWith('MANUAL::')
+            ? '手动选择校准品'
+            : preview.calibration_source === 'reagent'
+                ? '当前扫码试剂'
+                : '当前校准品';
         document.getElementById('calibration-preview-meta').textContent = `${sourceLabel}可用库存 ${preview.calibrator_available_min_quantity} ${preview.calibrator_min_unit || '次'}`;
         document.getElementById('calibration-usage-times').value = String(preview.default_usage_times || 1);
 
@@ -240,8 +476,12 @@ const calibrationPage = {
             </option>
         `).join('');
         document.getElementById('calibration-result-unit').value = preview.result_unit || 'nmmol/L';
+        this.syncCreateResultUnitNotes(preview.result_unit || 'nmmol/L');
+        this.clearCreateResults();
         this.populateBatchSelect('calibration-old-batch', preview.old_batch_candidates || [], preview.default_old_batch_no);
         this.populateBatchSelect('calibration-new-batch', preview.new_batch_candidates || [], preview.default_new_batch_no);
+        this.resetOutboundControls();
+        this.loadOutboundBatches(preview.target_reagent_id);
     },
 
     populateBatchSelect(selectId, candidates, selectedBatchNo) {
@@ -255,11 +495,141 @@ const calibrationPage = {
         ).join('');
     },
 
+    syncCreateResultUnitNotes(unitValue) {
+        const unit = String(unitValue ?? '').trim() || '-';
+        const text = `录入单位：${unit}`;
+        const oldNote = document.getElementById('calibration-old-result-unit-note');
+        const newNote = document.getElementById('calibration-new-result-unit-note');
+        if (oldNote) oldNote.textContent = text;
+        if (newNote) newNote.textContent = text;
+    },
+
+    clearCreateResults() {
+        for (let i = 1; i <= 5; i += 1) {
+            const oldInput = document.getElementById(`calibration-old-result-${i}`);
+            const newInput = document.getElementById(`calibration-new-result-${i}`);
+            if (oldInput) oldInput.value = '';
+            if (newInput) newInput.value = '';
+        }
+    },
+
+    normalizePositiveInteger(value, fallback = 1) {
+        const parsed = parseInt(value, 10);
+        if (Number.isNaN(parsed) || parsed <= 0) {
+            return fallback;
+        }
+        return parsed;
+    },
+
+    resetOutboundControls() {
+        this.outboundBatches = [];
+        const checkbox = document.getElementById('calibration-outbound-enabled');
+        if (checkbox) checkbox.checked = false;
+        document.getElementById('calibration-outbound-controls')?.classList.add('hidden');
+        const batchSelect = document.getElementById('calibration-outbound-batch');
+        if (batchSelect) batchSelect.innerHTML = '<option value="">请先选择被校准试剂</option>';
+        const quantityInput = document.getElementById('calibration-outbound-quantity');
+        if (quantityInput) quantityInput.value = '1';
+        const unitSelect = document.getElementById('calibration-outbound-unit');
+        if (unitSelect) unitSelect.innerHTML = '<option value="package">盒</option><option value="min">最小单位</option>';
+        const preview = document.getElementById('calibration-outbound-preview');
+        if (preview) {
+            preview.innerHTML = '';
+            preview.classList.add('hidden');
+        }
+    },
+
+    toggleOutboundControls() {
+        const enabled = Boolean(document.getElementById('calibration-outbound-enabled')?.checked);
+        document.getElementById('calibration-outbound-controls')?.classList.toggle('hidden', !enabled);
+        if (enabled) {
+            const targetId = document.getElementById('calibration-target-reagent')?.value;
+            if (targetId && !this.outboundBatches.length) {
+                this.loadOutboundBatches(targetId);
+            } else {
+                this.refreshOutboundPreview();
+            }
+        }
+    },
+
+    async loadOutboundBatches(targetReagentId) {
+        const batchSelect = document.getElementById('calibration-outbound-batch');
+        if (!batchSelect || !targetReagentId) return;
+        try {
+            const batches = await API.outbound.getStock(targetReagentId);
+            this.outboundBatches = batches.filter((item) => Number(item.available_min_quantity || 0) > 0);
+            if (!this.outboundBatches.length) {
+                batchSelect.innerHTML = '<option value="">暂无可出库库存</option>';
+                this.updateOutboundUnitOptions();
+                return;
+            }
+            batchSelect.innerHTML = this.outboundBatches.map((batch) => `
+                <option value="${batch.id}">
+                    ${this.escapeHtml(batch.batch_no)} / ${this.escapeHtml(batch.expiry_date || '-')} / 库存 ${batch.available_min_quantity}${this.escapeHtml(batch.min_unit || '')}
+                </option>
+            `).join('');
+            this.updateOutboundUnitOptions();
+            this.refreshOutboundPreview();
+        } catch (error) {
+            Utils.showToast(error.message || '出库批号加载失败', 'warning');
+        }
+    },
+
+    updateOutboundUnitOptions() {
+        const unitSelect = document.getElementById('calibration-outbound-unit');
+        const batchId = document.getElementById('calibration-outbound-batch')?.value || '';
+        if (!unitSelect) return;
+        const batch = this.outboundBatches.find((item) => String(item.id) === String(batchId));
+        const selected = unitSelect.value || 'package';
+        unitSelect.innerHTML = `
+            <option value="package">${this.escapeHtml(batch?.package_unit || '盒')}</option>
+            <option value="min">${this.escapeHtml(batch?.min_unit || '最小单位')}</option>
+        `;
+        unitSelect.value = selected === 'min' ? 'min' : 'package';
+    },
+
+    async refreshOutboundPreview() {
+        const enabled = Boolean(document.getElementById('calibration-outbound-enabled')?.checked);
+        const previewEl = document.getElementById('calibration-outbound-preview');
+        if (!enabled || !previewEl) return;
+        const batchId = document.getElementById('calibration-outbound-batch')?.value || '';
+        const targetId = document.getElementById('calibration-target-reagent')?.value || '';
+        const batch = this.outboundBatches.find((item) => String(item.id) === String(batchId));
+        if (!targetId || !batch) {
+            previewEl.innerHTML = '';
+            previewEl.classList.add('hidden');
+            return;
+        }
+        try {
+            const outboundPreview = await API.outbound.preview({
+                source: 'manual',
+                reagent_id: targetId,
+                quantity: this.normalizePositiveInteger(document.getElementById('calibration-outbound-quantity')?.value, 1),
+                outbound_unit: document.getElementById('calibration-outbound-unit')?.value || 'package',
+                deduction_mode: 'scanned_batch',
+                raw_barcode: `DESKTOP_CALIBRATION_OUTBOUND::${targetId}`,
+                scanned_batch_no: batch.batch_no,
+                scanned_expiry_date: batch.expiry_date || null,
+            });
+            previewEl.innerHTML = `
+                <div class="outbound-preview-title">${this.escapeHtml(outboundPreview.reagent_name || '')}</div>
+                <div class="item-card-meta">将同步出库 ${this.escapeHtml(String(outboundPreview.requested_quantity))}${this.escapeHtml(outboundPreview.outbound_unit === 'package' ? outboundPreview.package_unit : outboundPreview.min_unit)}</div>
+                <div class="item-card-submeta">批号 ${this.escapeHtml(outboundPreview.selected_batch_no || batch.batch_no)} / 剩余库存将按当前批号扣减</div>
+            `;
+            previewEl.classList.remove('hidden');
+        } catch (error) {
+            previewEl.innerHTML = `<div class="item-card-submeta">${this.escapeHtml(error.message || '出库预览失败')}</div>`;
+            previewEl.classList.remove('hidden');
+        }
+    },
+
     async loadTargetPreview(targetReagentId, preserveSelection = true) {
         if (!targetReagentId) {
             this.populateBatchSelect('calibration-old-batch', [], '');
             this.populateBatchSelect('calibration-new-batch', [], '');
             document.getElementById('calibration-result-unit').value = '';
+            this.syncCreateResultUnitNotes('');
+            this.resetOutboundControls();
             return;
         }
 
@@ -267,6 +637,7 @@ const calibrationPage = {
         const newValue = preserveSelection ? document.getElementById('calibration-new-batch').value : '';
         const payload = await API.calibration.targetPreview(targetReagentId);
         document.getElementById('calibration-result-unit').value = payload.result_unit || 'nmmol/L';
+        this.syncCreateResultUnitNotes(payload.result_unit || 'nmmol/L');
         this.populateBatchSelect(
             'calibration-old-batch',
             payload.old_batch_candidates || [],
@@ -277,11 +648,13 @@ const calibrationPage = {
             payload.new_batch_candidates || [],
             newValue || payload.default_new_batch_no
         );
+        this.resetOutboundControls();
+        await this.loadOutboundBatches(targetReagentId);
     },
 
     async saveCalibration() {
         if (!this.preview) {
-            return Utils.showToast('请先扫描校准条码', 'warning');
+            return Utils.showToast('请先扫码识别或手动生成校准表单', 'warning');
         }
 
         const payload = {
@@ -290,34 +663,40 @@ const calibrationPage = {
             target_reagent_id: parseInt(document.getElementById('calibration-target-reagent').value, 10),
             target_old_batch_no: document.getElementById('calibration-old-batch').value || null,
             target_new_batch_no: document.getElementById('calibration-new-batch').value || null,
-            usage_times: Math.max(parseInt(document.getElementById('calibration-usage-times').value, 10) || 1, 1),
+            usage_times: this.normalizePositiveInteger(document.getElementById('calibration-usage-times').value, 1),
             result_unit: document.getElementById('calibration-result-unit').value || 'nmmol/L',
             operator: document.getElementById('calibration-operator').value || '',
             raw_barcode: this.preview.raw_barcode,
             auto_outbound_package: false,
         };
 
+        for (let i = 1; i <= 5; i += 1) {
+            payload[`old_result_${i}`] = document.getElementById(`calibration-old-result-${i}`)?.value.trim() || null;
+            payload[`new_result_${i}`] = document.getElementById(`calibration-new-result-${i}`)?.value.trim() || null;
+        }
+
         if (!payload.target_reagent_id || !payload.operator) {
             return Utils.showToast('请先确认被校准试剂和操作人', 'warning');
         }
 
-        if (this.preview.calibration_source === 'reagent') {
-            const packageUnit = '盒';
-            payload.auto_outbound_package = window.confirm(
-                `是否同时出库 1${packageUnit}该试剂？\n\n` +
-                `试剂：${this.preview.calibrator_name || ''}\n` +
-                `批号：${this.preview.calibrator_batch_no || ''}\n` +
-                `操作人：${payload.operator}\n\n` +
-                '确认后会保存本次校准记录，并同步生成一条出库流水。'
-            );
+        if (document.getElementById('calibration-outbound-enabled')?.checked) {
+            const outboundBatchId = document.getElementById('calibration-outbound-batch')?.value || '';
+            if (!outboundBatchId) {
+                return Utils.showToast('请选择要同步出库的试剂批号', 'warning');
+            }
+            payload.auto_outbound_package = true;
+            payload.outbound_batch_stock_id = parseInt(outboundBatchId, 10);
+            payload.outbound_quantity = this.normalizePositiveInteger(document.getElementById('calibration-outbound-quantity')?.value, 1);
+            payload.outbound_unit = document.getElementById('calibration-outbound-unit')?.value || 'package';
         }
 
         try {
             await API.calibration.createRecord(payload);
-            Utils.showToast(payload.auto_outbound_package ? '校准记录已保存，并已同步出库 1 盒' : '校准记录已保存', 'success');
+            Utils.showToast(payload.auto_outbound_package ? '校准记录已保存，并已同步出库' : '校准记录已保存', 'success');
             document.getElementById('calibration-barcode').value = '';
             document.getElementById('calibration-form-panel').classList.add('hidden');
             this.preview = null;
+            this.resetOutboundControls();
             await this.loadRecentRecords();
             if (typeof inventoryPage !== 'undefined' && inventoryPage.initialized) {
                 inventoryPage.loadInventory();

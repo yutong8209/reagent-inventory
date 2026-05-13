@@ -220,6 +220,29 @@ def test_mobile_calibration_preview_prefers_matching_calibrator_stock(tmp_path):
     assert payload["raw_barcode"] == f"MOBILE::CALIBRATION::{ids['target_id']}"
 
 
+def test_manual_calibration_preview_uses_selected_calibrator_batch(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    ids = seed_tt4_calibration_case(SessionLocal)
+
+    response = client.get(
+        "/api/calibration/manual-preview",
+        params={
+            "calibrator_reagent_id": ids["calibrator_id"],
+            "calibrator_batch_stock_id": ids["calibrator_batch_id"],
+            "target_reagent_id": ids["target_id"],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["calibration_source"] == "calibrator"
+    assert payload["calibrator_reagent_id"] == ids["calibrator_id"]
+    assert payload["calibrator_batch_stock_id"] == ids["calibrator_batch_id"]
+    assert payload["target_reagent_id"] == ids["target_id"]
+    assert payload["raw_barcode"].startswith("MANUAL::CALIBRATION::")
+    assert payload["calibrator_available_min_quantity"] == 5
+
+
 def test_mobile_calibration_preview_falls_back_to_target_reagent_stock(tmp_path):
     client, SessionLocal = build_client(tmp_path)
     ids = seed_tt4_calibration_case(SessionLocal)

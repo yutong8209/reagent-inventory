@@ -9,11 +9,11 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 import qrcode
 from qrcode.image.svg import SvgPathImage
-from sqlalchemy import func, text
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, text
+from sqlalchemy.orm import Session, aliased
 
 from db import get_db
-from models import BatchStock, Instrument, Operator, ParseLog, Reagent, ReagentGroup, Transaction, UnitOption, WorkGroup
+from models import BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, ReagentGroup, Transaction, UnitOption, WorkGroup
 from schemas import (
     AdminPasswordRequest,
     BatchInfo,
@@ -254,6 +254,59 @@ def _apply_transaction_filters(query, filters: ClearTransactionsRequest):
 
     if filters.end_date is not None:
         query = query.filter(Transaction.created_at < datetime.combine(filters.end_date + timedelta(days=1), time.min))
+
+    return query
+
+
+def _apply_calibration_record_clear_filters(query, filters: ClearTransactionsRequest):
+    source_reagent = aliased(Reagent)
+    target_reagent = aliased(Reagent)
+    source_instrument = aliased(Instrument)
+    target_instrument = aliased(Instrument)
+
+    query = (
+        query
+        .join(source_reagent, CalibrationRecord.calibrator_reagent_id == source_reagent.id)
+        .join(target_reagent, CalibrationRecord.target_reagent_id == target_reagent.id)
+    )
+
+    needs_instrument_scope = filters.work_group_id is not None or filters.instrument_id is not None
+    if needs_instrument_scope:
+        query = (
+            query
+            .join(source_instrument, source_reagent.instrument_id == source_instrument.id)
+            .join(target_instrument, target_reagent.instrument_id == target_instrument.id)
+        )
+
+    if filters.work_group_id is not None:
+        query = query.filter(
+            or_(
+                source_instrument.work_group_id == filters.work_group_id,
+                target_instrument.work_group_id == filters.work_group_id,
+            )
+        )
+
+    if filters.instrument_id is not None:
+        query = query.filter(
+            or_(
+                source_reagent.instrument_id == filters.instrument_id,
+                target_reagent.instrument_id == filters.instrument_id,
+            )
+        )
+
+    if filters.reagent_id is not None:
+        query = query.filter(
+            or_(
+                CalibrationRecord.calibrator_reagent_id == filters.reagent_id,
+                CalibrationRecord.target_reagent_id == filters.reagent_id,
+            )
+        )
+
+    if filters.start_date is not None:
+        query = query.filter(CalibrationRecord.created_at >= datetime.combine(filters.start_date, time.min))
+
+    if filters.end_date is not None:
+        query = query.filter(CalibrationRecord.created_at < datetime.combine(filters.end_date + timedelta(days=1), time.min))
 
     return query
 
@@ -1690,6 +1743,7 @@ def apply_stock_adjustments(data: BatchStockAdjustmentRequest, db: Session = Dep
 @router.post("/admin/reset-reagent-data")
 def reset_reagent_data(data: AdminPasswordRequest, db: Session = Depends(get_db)):
     _require_admin_action_password(data.password)
+    db.query(CalibrationRecord).delete(synchronize_session=False)
     db.query(Transaction).delete(synchronize_session=False)
     db.query(BatchStock).delete(synchronize_session=False)
     db.query(ParseLog).delete(synchronize_session=False)
@@ -1699,7 +1753,7 @@ def reset_reagent_data(data: AdminPasswordRequest, db: Session = Depends(get_db)
     try:
         db.execute(
             text(
-                "DELETE FROM sqlite_sequence WHERE name IN ('transactions', 'batch_stocks', 'parse_logs', 'reagents')"
+                "DELETE FROM sqlite_sequence WHERE name IN ('calibration_records', 'transactions', 'batch_stocks', 'parse_logs', 'reagents')"
             )
         )
         db.commit()
@@ -1743,8 +1797,38 @@ def clear_transactions(data: ClearTransactionsRequest, db: Session = Depends(get
     query = _apply_transaction_filters(query, data)
 
     transaction_ids = [item.id for item in query.with_entities(Transaction.id).all()]
+    calibration_record_ids = {
+        item.id
+        for item in _apply_calibration_record_clear_filters(
+            db.query(CalibrationRecord),
+            data,
+        )
+        .with_entities(CalibrationRecord.id)
+        .all()
+    }
+    if transaction_ids:
+        linked_record_ids = (
+            db.query(CalibrationRecord.id)
+            .filter(CalibrationRecord.transaction_id.in_(transaction_ids))
+            .all()
+        )
+        calibration_record_ids.update(item.id for item in linked_record_ids)
+
+    deleted_calibration_record_count = 0
+    if calibration_record_ids:
+        deleted_calibration_record_count = (
+            db.query(CalibrationRecord)
+            .filter(CalibrationRecord.id.in_(calibration_record_ids))
+            .delete(synchronize_session=False)
+        )
+
     if not transaction_ids:
-        return {"success": True, "deleted_count": 0}
+        db.commit()
+        return {
+            "success": True,
+            "deleted_count": 0,
+            "deleted_calibration_record_count": deleted_calibration_record_count,
+        }
 
     deleted_count = (
         db.query(Transaction)
@@ -1753,4 +1837,8 @@ def clear_transactions(data: ClearTransactionsRequest, db: Session = Depends(get
     )
     db.commit()
 
-    return {"success": True, "deleted_count": deleted_count}
+    return {
+        "success": True,
+        "deleted_count": deleted_count,
+        "deleted_calibration_record_count": deleted_calibration_record_count,
+    }

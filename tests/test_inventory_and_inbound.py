@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from api import barcode, inbound, inventory
 from db import get_db
 from db.base import Base
-from models import BarcodeBatchRule, BatchStock, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
+from models import BarcodeBatchRule, BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
 from services import ensure_default_catalog, ensure_default_operators, ensure_default_unit_options
 
 
@@ -1189,6 +1189,60 @@ def test_clear_transactions_with_filters_only_removes_matching_rows(tmp_path):
                 created_at=datetime(2026, 4, 5, 9, 0, 0),
             ),
         ])
+        calibration_transaction = Transaction(
+            reagent_id=reagent.id,
+            batch_stock_id=batch.id,
+            type="CALIBRATION",
+            quantity=1,
+            operator="operator",
+            source="scan",
+            raw_barcode="CLEAR-CAL-001",
+            package_unit="box",
+            min_unit="bottle",
+            package_to_min_qty=1,
+            remark=None,
+            created_at=datetime(2026, 4, 1, 10, 0, 0),
+        )
+        db.add(calibration_transaction)
+        db.flush()
+        db.add_all([
+            CalibrationRecord(
+                calibrator_reagent_id=reagent.id,
+                calibrator_batch_stock_id=batch.id,
+                target_reagent_id=reagent.id,
+                transaction_id=calibration_transaction.id,
+                target_old_batch_no="OLD-CLEAR",
+                target_new_batch_no="NEW-CLEAR",
+                usage_times=1,
+                result_unit="nmmol/L",
+                operator="operator",
+                created_at=datetime(2026, 4, 1, 10, 0, 0),
+            ),
+            CalibrationRecord(
+                calibrator_reagent_id=reagent.id,
+                calibrator_batch_stock_id=batch.id,
+                target_reagent_id=reagent.id,
+                transaction_id=None,
+                target_old_batch_no="OLD-ORPHAN",
+                target_new_batch_no="NEW-ORPHAN",
+                usage_times=1,
+                result_unit="nmmol/L",
+                operator="operator",
+                created_at=datetime(2026, 4, 1, 11, 0, 0),
+            ),
+            CalibrationRecord(
+                calibrator_reagent_id=keep_reagent.id,
+                calibrator_batch_stock_id=batch.id,
+                target_reagent_id=keep_reagent.id,
+                transaction_id=None,
+                target_old_batch_no="OLD-KEEP",
+                target_new_batch_no="NEW-KEEP",
+                usage_times=1,
+                result_unit="nmmol/L",
+                operator="operator",
+                created_at=datetime(2026, 4, 5, 10, 0, 0),
+            ),
+        ])
         db.commit()
         reagent_id = reagent.id
         keep_reagent_id = keep_reagent.id
@@ -1202,11 +1256,14 @@ def test_clear_transactions_with_filters_only_removes_matching_rows(tmp_path):
         "end_date": "2026-04-02",
     })
     assert response.status_code == 200
-    assert response.json()["deleted_count"] == 1
+    assert response.json()["deleted_count"] == 2
+    assert response.json()["deleted_calibration_record_count"] == 2
 
     with SessionLocal() as db:
         assert db.query(Transaction).filter(Transaction.reagent_id == reagent_id).count() == 0
         assert db.query(Transaction).filter(Transaction.reagent_id == keep_reagent_id).count() == 1
+        assert db.query(CalibrationRecord).filter(CalibrationRecord.target_reagent_id == reagent_id).count() == 0
+        assert db.query(CalibrationRecord).filter(CalibrationRecord.target_reagent_id == keep_reagent_id).count() == 1
         assert db.query(BatchStock).count() == 1
 
 

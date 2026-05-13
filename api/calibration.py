@@ -758,6 +758,67 @@ def calibration_target_preview(reagent_id: int = Query(..., ge=1), db: Session =
     return _build_target_preview_payload(target, db)
 
 
+@router.get("/calibration/manual-preview", response_model=CalibrationScanPreviewResponse)
+def calibration_manual_preview(
+    calibrator_reagent_id: int = Query(..., ge=1),
+    calibrator_batch_stock_id: int = Query(..., ge=1),
+    target_reagent_id: int | None = Query(None, ge=1),
+    db: Session = Depends(get_db),
+):
+    calibrator = db.query(Reagent).filter(Reagent.id == calibrator_reagent_id).first()
+    if not calibrator or calibrator.is_archived or not calibrator.is_calibrator:
+        raise HTTPException(status_code=404, detail="校准品不存在或已归档")
+
+    calibrator_batch = (
+        db.query(BatchStock)
+        .filter(
+            BatchStock.id == calibrator_batch_stock_id,
+            BatchStock.reagent_id == calibrator.id,
+            BatchStock.is_archived.is_(False),
+        )
+        .first()
+    )
+    if not calibrator_batch:
+        raise HTTPException(status_code=404, detail="校准品批号不存在或与校准品不匹配")
+
+    if _batch_total_min_units(calibrator_batch) <= 0:
+        raise HTTPException(status_code=400, detail="所选校准品批号暂无可用库存")
+
+    target_candidates = _build_target_candidates(db, calibrator)
+    if not target_candidates:
+        raise HTTPException(status_code=404, detail="当前校准品没有可匹配的被校准试剂")
+
+    target = target_candidates[0]
+    if target_reagent_id is not None:
+        target = next((item for item in target_candidates if item.id == target_reagent_id), None)
+        if not target:
+            raise HTTPException(status_code=400, detail="被校准试剂与当前校准品不匹配")
+
+    batch_candidates = _load_target_batch_candidates(db, target.id)
+    default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
+
+    return CalibrationScanPreviewResponse(
+        calibration_source="calibrator",
+        calibrator_reagent_id=calibrator.id,
+        calibrator_name=calibrator.name,
+        calibrator_batch_stock_id=calibrator_batch.id,
+        calibrator_batch_no=calibrator_batch.batch_no,
+        calibrator_expiry_date=calibrator_batch.expiry_date.isoformat() if calibrator_batch.expiry_date else None,
+        calibrator_available_min_quantity=_batch_total_min_units(calibrator_batch),
+        calibrator_min_unit=_clean_text(calibrator_batch.min_unit) or "次",
+        target_reagent_id=target.id,
+        target_reagent_name=target.name,
+        target_options=[_serialize_target_candidate(item) for item in target_candidates],
+        old_batch_candidates=batch_candidates,
+        new_batch_candidates=batch_candidates,
+        default_old_batch_no=default_old_batch_no,
+        default_new_batch_no=default_new_batch_no,
+        default_usage_times=1,
+        result_unit=_clean_text(target.calibration_result_unit) or "nmmol/L",
+        raw_barcode=f"MANUAL::CALIBRATION::{calibrator.id}::{calibrator_batch.id}",
+    )
+
+
 @router.get("/calibration/records", response_model=list[CalibrationRecordItem])
 def list_calibration_records(
     work_group_ids: Optional[str] = Query(None),

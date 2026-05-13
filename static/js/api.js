@@ -183,6 +183,15 @@ const API = {
         targetPreview(reagentId) {
             return API.request(`/calibration/target-preview?reagent_id=${reagentId}`);
         },
+        manualPreview(params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            return API.request(`/calibration/manual-preview?${query.toString()}`);
+        },
         mobilePreview(targetReagentId) {
             return API.request(`/calibration/mobile/preview?target_reagent_id=${targetReagentId}`);
         },

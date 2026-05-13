@@ -487,12 +487,64 @@
                     </div>
 
                     <div class="form-section">
+                        <div class="mode-tabs">
+                            <button class="mode-tab active" data-calibration-mode="scan" type="button">扫码校准</button>
+                            <button class="mode-tab" data-calibration-mode="manual" type="button">手动选择校准品</button>
+                        </div>
+                    </div>
+
+                    <div id="calibration-scan-mode" class="form-section">
                         <div class="form-group form-group-inline">
                             <label for="calibration-barcode">扫码校准</label>
                             <input type="text" id="calibration-barcode" class="form-input" placeholder="扫描校准品或试剂条码后按回车" autocomplete="off">
                             <button id="calibration-preview-btn" class="btn btn-primary">识别校准</button>
                         </div>
                         <p class="hint">独立校准品会自动匹配被校准试剂；普通试剂条码会按“当前扫码批号为新批号、上一批号为旧批号”带出默认值。</p>
+                    </div>
+
+                    <div id="calibration-manual-mode" class="form-section hidden">
+                        <h3>手动选择校准品</h3>
+                        <p class="hint">适合条码不方便扫描时使用。先选择校准品和库存批号，再生成本次校准表单。</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-manual-work-group">工作组</label>
+                                <select id="calibration-manual-work-group" class="form-select">
+                                    <option value="">全部工作组</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-manual-instrument">仪器</label>
+                                <select id="calibration-manual-instrument" class="form-select">
+                                    <option value="">全部仪器</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-manual-search">关键词快速选择</label>
+                                <input type="text" id="calibration-manual-search" class="form-input" placeholder="输入校准品、仪器或工作组关键词">
+                            </div>
+                            <div class="form-group">
+                                <label for="calibration-manual-calibrator">校准品</label>
+                                <select id="calibration-manual-calibrator" class="form-select">
+                                    <option value="">请选择校准品</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="calibration-manual-search-results" class="candidate-list hidden"></div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-manual-batch">校准品批号</label>
+                                <select id="calibration-manual-batch" class="form-select">
+                                    <option value="">请先选择校准品</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="calibration-manual-summary" class="outbound-preview-card hidden"></div>
+                        <div class="button-group">
+                            <button id="calibration-manual-clear-btn" class="btn btn-secondary" type="button">清空</button>
+                            <button id="calibration-manual-preview-btn" class="btn btn-primary" type="button">生成校准表单</button>
+                        </div>
                     </div>
 
                     <div id="calibration-form-panel" class="form-section hidden">
@@ -538,6 +590,61 @@
                             <div class="form-group">
                                 <label for="calibration-operator">操作人</label>
                                 <select id="calibration-operator" class="form-select"></select>
+                            </div>
+                        </div>
+                        <div class="calibration-result-groups">
+                            <section class="calibration-result-group">
+                                <div class="calibration-section-head">
+                                    <div>
+                                        <h4>旧批次结果</h4>
+                                        <p id="calibration-old-result-unit-note">录入单位：-</p>
+                                    </div>
+                                </div>
+                                <div class="calibration-result-grid">
+                                    <input type="text" id="calibration-old-result-1" class="form-input" placeholder="结果 1">
+                                    <input type="text" id="calibration-old-result-2" class="form-input" placeholder="结果 2">
+                                    <input type="text" id="calibration-old-result-3" class="form-input" placeholder="结果 3">
+                                    <input type="text" id="calibration-old-result-4" class="form-input" placeholder="结果 4">
+                                    <input type="text" id="calibration-old-result-5" class="form-input" placeholder="结果 5">
+                                </div>
+                            </section>
+                            <section class="calibration-result-group">
+                                <div class="calibration-section-head">
+                                    <div>
+                                        <h4>新批次结果</h4>
+                                        <p id="calibration-new-result-unit-note">录入单位：-</p>
+                                    </div>
+                                </div>
+                                <div class="calibration-result-grid">
+                                    <input type="text" id="calibration-new-result-1" class="form-input" placeholder="结果 1">
+                                    <input type="text" id="calibration-new-result-2" class="form-input" placeholder="结果 2">
+                                    <input type="text" id="calibration-new-result-3" class="form-input" placeholder="结果 3">
+                                    <input type="text" id="calibration-new-result-4" class="form-input" placeholder="结果 4">
+                                    <input type="text" id="calibration-new-result-5" class="form-input" placeholder="结果 5">
+                                </div>
+                            </section>
+                        </div>
+                        <div class="form-section">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="calibration-outbound-enabled">
+                                同时出库对应被校准试剂
+                            </label>
+                            <div id="calibration-outbound-controls" class="hidden">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="calibration-outbound-batch">出库批号</label>
+                                        <select id="calibration-outbound-batch" class="form-select"></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="calibration-outbound-quantity">出库数量</label>
+                                        <input type="number" id="calibration-outbound-quantity" class="form-input" min="1" value="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="calibration-outbound-unit">出库单位</label>
+                                        <select id="calibration-outbound-unit" class="form-select"></select>
+                                    </div>
+                                </div>
+                                <div id="calibration-outbound-preview" class="outbound-preview-card hidden"></div>
                             </div>
                         </div>
                         <div class="button-group">
