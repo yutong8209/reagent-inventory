@@ -575,7 +575,7 @@ class BarcodeParser:
             start = index + 1
 
     def _extract_expiry_date(self, barcode: str) -> Optional[date]:
-        for ai_match in re.finditer(r"17(\d{6})", barcode):
+        for ai_match in re.finditer(r"(?=17(\d{6}))", barcode):
             ai_date = self._parse_ai_date(ai_match.group(1))
             if ai_date:
                 return ai_date

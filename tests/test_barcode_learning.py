@@ -280,3 +280,40 @@ def test_x8_batch_with_internal_17_sequence_keeps_full_batch(tmp_path):
     payload = parse_result.json()
     assert payload["instrument_name"] == "MAGLUMI X8化学发光分析仪"
     assert payload["extracted_batch_no"] == "217250111"
+
+
+def test_x8_expiry_after_production_date_suffix_17_is_detected(tmp_path):
+    client, session_local = build_client(tmp_path)
+    barcode = "0106947145512385112512171727061710223250211240130201036M"
+
+    with session_local() as db:
+        x8_instrument = (
+            db.query(Instrument)
+            .filter(Instrument.name == "MAGLUMI X8化学发光分析仪")
+            .first()
+        )
+        db.add(
+            Reagent(
+                instrument_id=x8_instrument.id,
+                name="CA50",
+                match_mode="prefix",
+                match_pattern="0106947145512385",
+                raw_barcode_sample=barcode,
+                manufacturer="Snibe",
+                unit="盒",
+                package_unit="盒",
+                package_to_min_qty=1,
+                warning_days=30,
+                warning_stock=5,
+                follow_instrument=False,
+            )
+        )
+        db.commit()
+
+    parse_result = client.post("/api/barcode/parse", json={"barcode": barcode})
+    assert parse_result.status_code == 200
+    payload = parse_result.json()
+    assert payload["reagent_name"] == "CA50"
+    assert payload["extracted_production_date"] == "2025-12-17"
+    assert payload["extracted_expiry_date"] == "2027-06-17"
+    assert payload["extracted_batch_no"] == "223250211"
