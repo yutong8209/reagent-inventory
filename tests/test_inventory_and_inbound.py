@@ -1638,7 +1638,7 @@ def test_archived_reagent_can_be_scanned_and_reactivated_by_inbound(tmp_path):
         operator_name = db.query(Operator).filter(Operator.is_active.is_(True)).order_by(Operator.id.asc()).first().name
         reagent = Reagent(
             instrument_id=instrument_id,
-            name="CA-125",
+            name="CA125",
             match_mode="exact",
             match_pattern="SCAN-ARCHIVE-001",
             raw_barcode_sample="SCAN-ARCHIVE-001",
@@ -1659,7 +1659,7 @@ def test_archived_reagent_can_be_scanned_and_reactivated_by_inbound(tmp_path):
     assert parse_response.status_code == 200
     parse_payload = parse_response.json()
     assert parse_payload["reagent_id"] == reagent_id
-    assert parse_payload["reagent_name"] == "CA-125"
+    assert parse_payload["reagent_name"] == "CA125"
     assert parse_payload["match_type"] == "exact"
 
     inbound_response = client.post("/api/inbound/batch", json={
@@ -1667,7 +1667,7 @@ def test_archived_reagent_can_be_scanned_and_reactivated_by_inbound(tmp_path):
         "items": [{
             "source": "scan",
             "reagent_id": reagent_id,
-            "reagent_name": "CA-125",
+            "reagent_name": "CA125",
             "batch_no": "SCAN-ARCHIVE-BATCH",
             "expiry_date": "2031-12-31",
             "quantity": 3,

@@ -350,6 +350,87 @@ const inventoryPage = {
         return String(name || '').toLowerCase().replace('质控品', '').replace(/\s+/g, '');
     },
 
+    getProjectGroupingName(reagent) {
+        return String(reagent?.name || '')
+            .replace(/校准品$/u, '')
+            .replace(/质控品$/u, '')
+            .replace(/\s+/g, '')
+            .toLowerCase();
+    },
+
+    isQualityControlReagent(reagent) {
+        return String(reagent?.name || '').includes('质控品')
+            || String(reagent?.reagent_group_name || '').includes('质控品');
+    },
+
+    formatProjectGroupName(projectName, suffix) {
+        const baseName = projectName || '未分组';
+        if (baseName.endsWith(suffix)) {
+            return baseName;
+        }
+        return `${baseName}${suffix}`;
+    },
+
+    getProjectDisplayOrder(projectName) {
+        const normalized = String(projectName || '').replace(/试剂|校准品|\s+/g, '');
+        const order = {
+            甲状腺功能: 0,
+            性激素: 1,
+            肿瘤标志物: 2,
+            心肌损伤标志物: 3,
+        };
+        return order[normalized] ?? 9999;
+    },
+
+    buildInventoryGroupResolver(reagents) {
+        const projectByName = new Map();
+        (reagents || []).forEach((reagent) => {
+            if (reagent.is_calibrator || this.isQualityControlReagent(reagent) || !reagent.reagent_group_name) {
+                return;
+            }
+            const key = `${reagent.instrument_id || ''}::${this.getProjectGroupingName(reagent)}`;
+            if (!projectByName.has(key)) {
+                projectByName.set(key, reagent);
+            }
+        });
+
+        return (reagent) => {
+            if (this.isQualityControlReagent(reagent)) {
+                return {
+                    id: 'quality-control',
+                    name: '质控品',
+                    sortOrder: 20000,
+                    categoryOrder: 2,
+                };
+            }
+            if (reagent.is_calibrator) {
+                const matchedProject = projectByName.get(`${reagent.instrument_id || ''}::${this.getProjectGroupingName(reagent)}`);
+                const projectId = matchedProject?.reagent_group_id || reagent.reagent_group_id || null;
+                const projectName = matchedProject?.reagent_group_name || reagent.reagent_group_name || '未分组';
+                const sortOrder = matchedProject?.reagent_group_sort_order ?? reagent.reagent_group_sort_order ?? 9999;
+                const calibratorGroup = {
+                    id: projectId ? `calibrator-${projectId}` : `calibrator-${projectName}`,
+                    name: `校准品：${this.formatProjectGroupName(projectName, '校准品')}`,
+                    projectOrder: this.getProjectDisplayOrder(projectName),
+                    sortOrder,
+                    categoryOrder: 1,
+                };
+                if (matchedProject) {
+                    return calibratorGroup;
+                }
+                return calibratorGroup;
+            }
+            const projectName = reagent.reagent_group_name || '未分组';
+            return {
+                id: reagent.reagent_group_id ? `reagent-${reagent.reagent_group_id}` : `reagent-${projectName}`,
+                name: `试剂库存：${this.formatProjectGroupName(projectName, '试剂')}`,
+                projectOrder: this.getProjectDisplayOrder(projectName),
+                sortOrder: reagent.reagent_group_sort_order ?? 9999,
+                categoryOrder: 0,
+            };
+        };
+    },
+
     getCustomReagentOrder(reagent) {
         if (!['传染病标志物', 'MAGLUMI X8质控品'].includes(reagent.reagent_group_name || '')) {
             return 999;
@@ -369,14 +450,18 @@ const inventoryPage = {
 
     getGroupedReagents(reagents) {
         const grouped = new Map();
+        const resolveGroup = this.buildInventoryGroupResolver(reagents);
         reagents.forEach((reagent) => {
-            const groupName = reagent.reagent_group_name || '未分组';
-            const groupKey = reagent.reagent_group_id ? `group-${reagent.reagent_group_id}` : `ungrouped-${groupName}`;
+            const resolvedGroup = resolveGroup(reagent);
+            const groupName = resolvedGroup.name || '未分组';
+            const groupKey = resolvedGroup.id ? `group-${resolvedGroup.id}` : `ungrouped-${resolvedGroup.categoryOrder || 0}-${groupName}`;
             if (!grouped.has(groupKey)) {
                 grouped.set(groupKey, {
-                    id: reagent.reagent_group_id || null,
+                    id: resolvedGroup.id,
                     name: groupName,
-                    sortOrder: reagent.reagent_group_sort_order ?? 9999,
+                    projectOrder: resolvedGroup.projectOrder ?? 9999,
+                    sortOrder: resolvedGroup.sortOrder,
+                    categoryOrder: resolvedGroup.categoryOrder ?? 0,
                     reagents: []
                 });
             }
@@ -384,15 +469,18 @@ const inventoryPage = {
         });
 
         return [...grouped.values()]
-            .sort((left, right) => (
-                (left.sortOrder ?? 9999) - (right.sortOrder ?? 9999)
-                || left.name.localeCompare(right.name, 'zh-CN')
-            ))
             .map((group) => ({
                 ...group,
                 warningCount: group.reagents.filter((item) => this.isWarningReagent(item)).length,
                 reagents: this.getSortedReagents(group.reagents)
-            }));
+            }))
+            .sort((left, right) => (
+                (left.categoryOrder ?? 0) - (right.categoryOrder ?? 0)
+                || (left.projectOrder ?? 9999) - (right.projectOrder ?? 9999)
+                || (left.projectOrder === 9999 ? Number(right.warningCount > 0) - Number(left.warningCount > 0) : 0)
+                || (left.sortOrder ?? 9999) - (right.sortOrder ?? 9999)
+                || left.name.localeCompare(right.name, 'zh-CN')
+            ));
     },
 
     getFilteredReagents(instrument) {
@@ -770,7 +858,8 @@ const inventoryPage = {
 
         const reagents = this.getFilteredReagents(instrument);
         const groupedReagents = this.getGroupedReagents(reagents);
-        resultMeta.textContent = this.filters.sort === 'group'
+        const shouldGroupReagents = this.filters.sort === 'group' || this.filters.onlyCalibrators;
+        resultMeta.textContent = shouldGroupReagents
             ? `显示 ${groupedReagents.length} 个项目组 / ${reagents.length} 个试剂`
             : `显示 ${reagents.length} / ${instrument.reagents.length} 个试剂`;
 
@@ -780,7 +869,7 @@ const inventoryPage = {
             return;
         }
 
-        if (this.filters.sort === 'group') {
+        if (shouldGroupReagents) {
             container.classList.add('inventory-grouped-mode');
             container.innerHTML = groupedReagents.map((group) => this.renderReagentGroupSection(group)).join('');
         } else {

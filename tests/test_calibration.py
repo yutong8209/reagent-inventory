@@ -168,7 +168,7 @@ def test_create_calibrator_preserves_manual_package_ratio(tmp_path):
         "/api/reagents",
         json={
             "instrument_id": instrument_id,
-            "name": "CA-125校准品",
+            "name": "CA125校准品",
             "match_mode": "exact",
             "match_pattern": "CA125-CAL-001",
             "package_unit": "盒",

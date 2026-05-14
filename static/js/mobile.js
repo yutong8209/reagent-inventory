@@ -301,6 +301,74 @@
     return String(name || '').toLowerCase().replace('质控品', '').replace(/\s+/g, '');
   },
 
+  getProjectGroupingName(item) {
+    return String(item?.reagent_name || item?.name || '')
+      .replace(/校准品$/u, '')
+      .replace(/质控品$/u, '')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+  },
+
+  isQualityControlReagent(item) {
+    return String(item?.reagent_name || item?.name || '').includes('质控品')
+      || String(item?.reagent_group_name || '').includes('质控品');
+  },
+
+  formatProjectGroupName(projectName, suffix) {
+    const baseName = projectName || '未分组';
+    if (baseName.endsWith(suffix)) return baseName;
+    return `${baseName}${suffix}`;
+  },
+
+  getProjectDisplayOrder(projectName) {
+    const normalized = String(projectName || '').replace(/试剂|校准品|\s+/g, '');
+    const order = {
+      甲状腺功能: 0,
+      性激素: 1,
+      肿瘤标志物: 2,
+      心肌损伤标志物: 3,
+    };
+    return order[normalized] ?? 9999;
+  },
+
+  buildInventoryGroupResolver(items) {
+    const projectByName = new Map();
+    (items || []).forEach((item) => {
+      if (item.is_calibrator || this.isQualityControlReagent(item) || !item.reagent_group_name) return;
+      const key = `${item.instrument_id || ''}::${this.getProjectGroupingName(item)}`;
+      if (!projectByName.has(key)) {
+        projectByName.set(key, item);
+      }
+    });
+
+    return (item) => {
+      if (this.isQualityControlReagent(item)) {
+        return {
+          name: '质控品',
+          sortOrder: 20000,
+          categoryOrder: 2,
+        };
+      }
+      if (item.is_calibrator) {
+        const matchedProject = projectByName.get(`${item.instrument_id || ''}::${this.getProjectGroupingName(item)}`);
+        const projectName = matchedProject?.reagent_group_name || item.reagent_group_name || '未分组';
+        return {
+          name: `校准品：${this.formatProjectGroupName(projectName, '校准品')}`,
+          projectOrder: this.getProjectDisplayOrder(projectName),
+          sortOrder: matchedProject?.reagent_group_sort_order ?? item.reagent_group_sort_order ?? 9999,
+          categoryOrder: 1,
+        };
+      }
+      const projectName = item.reagent_group_name || '未分组';
+      return {
+        name: `试剂库存：${this.formatProjectGroupName(projectName, '试剂')}`,
+        projectOrder: this.getProjectDisplayOrder(projectName),
+        sortOrder: item.reagent_group_sort_order ?? 9999,
+        categoryOrder: 0,
+      };
+    };
+  },
+
   getCustomReagentOrder(item) {
     if (!['传染病标志物', 'MAGLUMI X8质控品'].includes(item.reagent_group_name || '')) {
       return 999;
@@ -1771,12 +1839,16 @@
 
   groupInventoryItems(items) {
     const groups = new Map();
+    const resolveGroup = this.buildInventoryGroupResolver(items);
     items.forEach((item) => {
-      const key = item.reagent_group_name || '未分组';
+      const resolvedGroup = resolveGroup(item);
+      const key = resolvedGroup.name || '未分组';
       if (!groups.has(key)) {
         groups.set(key, {
           name: key,
-          sortOrder: item.reagent_group_sort_order ?? 9999,
+          projectOrder: resolvedGroup.projectOrder ?? 9999,
+          sortOrder: resolvedGroup.sortOrder,
+          categoryOrder: resolvedGroup.categoryOrder ?? 0,
           items: [],
         });
       }
@@ -1786,6 +1858,7 @@
     return [...groups.values()]
       .map((group) => ({
         ...group,
+        warningCount: group.items.filter((item) => this.isWarningInventoryItem(item)).length,
         items: [...group.items].sort((left, right) => {
           const priority = { empty: 0, expired: 1, expiring: 2, low: 3, normal: 4 };
           return this.getCustomReagentOrder(left) - this.getCustomReagentOrder(right)
@@ -1794,7 +1867,13 @@
             || left.name.localeCompare(right.name, 'zh-CN');
         }),
       }))
-      .sort((left, right) => (left.sortOrder ?? 9999) - (right.sortOrder ?? 9999) || left.name.localeCompare(right.name, 'zh-CN'));
+      .sort((left, right) => (
+        (left.categoryOrder ?? 0) - (right.categoryOrder ?? 0)
+        || (left.projectOrder ?? 9999) - (right.projectOrder ?? 9999)
+        || (left.projectOrder === 9999 ? Number(right.warningCount > 0) - Number(left.warningCount > 0) : 0)
+        || (left.sortOrder ?? 9999) - (right.sortOrder ?? 9999)
+        || left.name.localeCompare(right.name, 'zh-CN')
+      ));
   },
 
   hasBatchLowWarning(item) {
@@ -1836,7 +1915,7 @@
       <section class="mobile-inventory-group">
         <div class="mobile-inventory-group-head">
           <h3>${this.escapeHtml(group.name)}</h3>
-          <span>${group.items.length} 个试剂</span>
+          <span>${group.items.length} 个试剂${group.warningCount ? ` · ${group.warningCount} 个预警` : ''}</span>
         </div>
         <div class="mobile-card-list mobile-inventory-group-list">
           ${group.items.map((item) => `
