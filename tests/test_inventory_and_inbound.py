@@ -8,7 +8,7 @@ from openpyxl import load_workbook
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from api import barcode, inbound, inventory
+from api import barcode, inbound, inventory, outbound
 from db import get_db
 from db.base import Base
 from models import BarcodeBatchRule, BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
@@ -30,6 +30,7 @@ def build_client(tmp_path):
     app.include_router(barcode.router, prefix="/api")
     app.include_router(inbound.router, prefix="/api")
     app.include_router(inventory.router, prefix="/api")
+    app.include_router(outbound.router, prefix="/api")
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -52,6 +53,70 @@ def get_first_catalog_session(SessionLocal):
             .first()
         )
         return work_group.id, instrument.id
+
+
+def test_outbound_reagent_candidates_exclude_calibrators(tmp_path):
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="CA125",
+            match_mode="exact",
+            match_pattern="CA125-REAGENT",
+            raw_barcode_sample="CA125-REAGENT",
+            manufacturer="厂家",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            is_calibrator=False,
+        )
+        calibrator = Reagent(
+            instrument_id=instrument_id,
+            name="CA125校准品",
+            match_mode="exact",
+            match_pattern="CA125-CAL",
+            raw_barcode_sample="CA125-CAL",
+            manufacturer="厂家",
+            unit="次",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            is_calibrator=True,
+        )
+        db.add_all([reagent, calibrator])
+        db.flush()
+        db.add_all([
+            BatchStock(
+                reagent_id=reagent.id,
+                batch_no="CA125-R",
+                expiry_date=date(2030, 1, 1),
+                quantity=1,
+                package_unit="盒",
+                min_unit="瓶",
+                package_to_min_qty=1,
+            ),
+            BatchStock(
+                reagent_id=calibrator.id,
+                batch_no="CA125-C",
+                expiry_date=date(2030, 1, 1),
+                quantity=1,
+                package_unit="盒",
+                min_unit="次",
+                package_to_min_qty=1,
+            ),
+        ])
+        db.commit()
+
+    response = client.get("/api/outbound/reagents", params={"q": "CA125"})
+    assert response.status_code == 200
+    names = [item["reagent_name"] for item in response.json()]
+    assert "CA125" in names
+    assert "CA125校准品" not in names
 
 
 def test_reagent_list_filters_and_keyword(tmp_path):

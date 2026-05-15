@@ -573,13 +573,13 @@
         API.outbound.searchReagents({ instrument_id: this.instrumentContextId }),
         API.reagents.list({ instrument_id: this.instrumentContextId, status: 'active' })
       ]);
-      this.defaultOutboundResults = outboundItems;
+      this.defaultOutboundResults = outboundItems.filter((item) => !item.is_calibrator);
       this.defaultInboundResults = reagentItems.map((item) => this.mapReagentToInboundItem(item));
       this.defaultCalibrationResults = reagentItems
         .filter((item) => !item.is_calibrator)
         .map((item) => this.mapReagentToCalibrationItem(item));
 
-      const instrumentName = outboundItems[0]?.instrument_name || reagentItems[0]?.instrument_name || '';
+      const instrumentName = this.defaultOutboundResults[0]?.instrument_name || reagentItems[0]?.instrument_name || '';
       this.setInstrumentContextName(instrumentName);
     } catch (error) {
       this.defaultOutboundResults = [];
@@ -923,7 +923,8 @@
       return;
     }
     try {
-      this.outboundResults = await API.outbound.searchReagents({ q: keyword });
+      const results = await API.outbound.searchReagents({ q: keyword });
+      this.outboundResults = results.filter((item) => !item.is_calibrator);
       this.renderOutboundResults();
     } catch (error) {
       Utils.showToast(`试剂搜索失败：${error.message}`, 'error');

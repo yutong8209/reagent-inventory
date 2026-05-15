@@ -436,7 +436,10 @@ def search_outbound_reagents(
         db.query(Reagent)
         .join(Instrument, Reagent.instrument_id == Instrument.id)
         .join(WorkGroup, Instrument.work_group_id == WorkGroup.id)
-        .filter(Reagent.is_archived.is_(False))
+        .filter(
+            Reagent.is_archived.is_(False),
+            Reagent.is_calibrator.is_(False),
+        )
         .order_by(WorkGroup.id.asc(), Instrument.id.asc(), Reagent.id.asc())
     )
 
