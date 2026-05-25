@@ -309,6 +309,30 @@ const inventoryPage = {
         return 'inventory-summary-value inventory-summary-value-success';
     },
 
+    focusSummaryStatus(status, count) {
+        const normalizedStatus = status || 'all';
+        if (normalizedStatus !== 'all' && Number(count || 0) <= 0) {
+            Utils.showToast('当前没有对应状态的试剂', 'warning');
+            return;
+        }
+
+        const instrument = this.getSelectedInstrument();
+        if (!instrument) {
+            return;
+        }
+
+        this.filters.keyword = '';
+        this.filters.status = normalizedStatus;
+        this.filters.onlyWarnings = false;
+        this.filters.onlyCalibrators = false;
+
+        const firstMatch = this.getSortedReagents(instrument.reagents || [])
+            .find((reagent) => this.matchesStatusFilter(reagent, normalizedStatus));
+        this.focusReagentId = firstMatch?.id ?? null;
+        this.syncFilterControls();
+        this.renderInventoryBody();
+    },
+
     getSortedReagents(reagents) {
         const levelPriority = { empty: 0, expired: 1, expiring: 2, low: 3, normal: 4 };
         const next = [...reagents];
@@ -825,22 +849,22 @@ const inventoryPage = {
 
         subtitle.textContent = `${group?.name || '未分组'} / 当前库存页优先展示更多试剂；仪器预警请到资料设置中维护。`;
         summaryContainer.innerHTML = `
-            <div class="inventory-summary-card">
+            <button class="inventory-summary-card inventory-summary-action" type="button" onclick="inventoryPage.focusSummaryStatus('all', ${summary.reagentCount})">
                 <div class="inventory-summary-label">在库试剂数</div>
                 <div class="${this.getSummaryValueClass('reagentCount', summary.reagentCount)}">${summary.reagentCount}</div>
-            </div>
-            <div class="inventory-summary-card inventory-summary-warn">
+            </button>
+            <button class="inventory-summary-card inventory-summary-action inventory-summary-warn" type="button" onclick="inventoryPage.focusSummaryStatus('expiring', ${summary.expiringCount})">
                 <div class="inventory-summary-label">近效期数</div>
                 <div class="${this.getSummaryValueClass('expiring', summary.expiringCount)}">${summary.expiringCount}</div>
-            </div>
-            <div class="inventory-summary-card inventory-summary-caution">
+            </button>
+            <button class="inventory-summary-card inventory-summary-action inventory-summary-caution" type="button" onclick="inventoryPage.focusSummaryStatus('low_or_empty', ${summary.lowStockCount})">
                 <div class="inventory-summary-label">低库存数</div>
                 <div class="${this.getSummaryValueClass('low', summary.lowStockCount)}">${summary.lowStockCount}</div>
-            </div>
-            <div class="inventory-summary-card inventory-summary-danger">
+            </button>
+            <button class="inventory-summary-card inventory-summary-action inventory-summary-danger" type="button" onclick="inventoryPage.focusSummaryStatus('expired', ${summary.expiredBatchCount})">
                 <div class="inventory-summary-label">已过期批次数</div>
                 <div class="${this.getSummaryValueClass('expired', summary.expiredBatchCount)}">${summary.expiredBatchCount}</div>
-            </div>
+            </button>
         `;
     },
 

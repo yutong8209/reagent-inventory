@@ -242,6 +242,9 @@ opacity:.9}
 .inventory-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
 .inventory-summary-card{position:relative;padding:10px 12px;background:linear-gradient(180deg,rgba(255,255,255,.78),rgba(255,255,255,.56));border:1px solid rgba(255,255,255,.76);border-radius:14px;box-shadow:0 12px 22px rgba(19,39,66,.06);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);overflow:hidden}
 .inventory-summary-card::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,255,255,.22),transparent 44%)}
+.inventory-summary-action{width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.inventory-summary-action:hover{transform:translateY(-1px);border-color:rgba(92,139,220,.38);box-shadow:0 16px 28px rgba(19,39,66,.1)}
+.inventory-summary-action:focus-visible{outline:2px solid rgba(47,114,229,.58);outline-offset:2px}
 .inventory-summary-label{font-size:10px;color:#60748c;margin-bottom:4px}
 .inventory-summary-value{font-family:var(--font-number);font-size:19px;font-weight:800;color:#17304f;line-height:1.05;font-variant-numeric:tabular-nums}
 .inventory-number-strong{color:#0d8b72;font-variant-numeric:tabular-nums}
