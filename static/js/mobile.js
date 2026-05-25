@@ -33,6 +33,7 @@
   isSubmittingBatchOutbound: false,
   isSubmittingInbound: false,
   isSubmittingCalibration: false,
+  isArchivingZeroStock: false,
   isInitialized: false,
 
   async init() {
@@ -119,6 +120,7 @@
       this.inventoryFilters.onlyWarnings = event.target.checked;
       this.renderInventory();
     });
+    document.getElementById('mobile-inventory-archive-zero')?.addEventListener('click', () => this.archiveZeroStockReagents());
   },
 
   getActiveInstrumentId() {
@@ -895,6 +897,7 @@
     lowStatEl?.classList.toggle('warning', (summary.low_stock_reagent_count || 0) > 0);
     batchLowStatEl?.classList.toggle('batch-warning', (summary.low_stock_batch_count || 0) > 0);
     emptyStatEl?.classList.toggle('danger', (summary.zero_stock_unarchived_count || 0) > 0);
+    this.updateArchiveZeroStockButton();
 
     const rows = this.overview.recent_outbounds || [];
     if (!rows.length) {
@@ -1817,6 +1820,7 @@
         this.setInstrumentContextName(currentInstrument?.name || '');
       }
       this.renderInventory();
+      this.updateArchiveZeroStockButton();
     } catch (error) {
       this.showEmpty('mobile-inventory-list', `库存加载失败：${error.message}`);
     }
@@ -1951,6 +1955,55 @@
         </div>
       </section>
     `).join('');
+  },
+
+  getZeroStockArchiveCount() {
+    const summaryCount = Number(this.overview?.pending_tasks?.zero_stock_unarchived_count ?? NaN);
+    if (Number.isFinite(summaryCount)) return summaryCount;
+    return this.getFlattenedInventoryItems().filter((item) => Number(item.total_min_quantity || 0) <= 0).length;
+  },
+
+  updateArchiveZeroStockButton() {
+    const button = document.getElementById('mobile-inventory-archive-zero');
+    if (!button) return;
+    const count = this.getZeroStockArchiveCount();
+    button.disabled = this.isArchivingZeroStock || count <= 0;
+    button.textContent = this.isArchivingZeroStock
+      ? '归档中...'
+      : (count > 0 ? `归档零库存 ${count}` : '无零库存');
+  },
+
+  async archiveZeroStockReagents() {
+    if (this.isArchivingZeroStock) return;
+    const count = this.getZeroStockArchiveCount();
+    if (count <= 0) {
+      Utils.showToast('当前没有可归档的零库存试剂或零库存批号', 'warning');
+      this.updateArchiveZeroStockButton();
+      return;
+    }
+    if (!confirm('确定一键归档所有零库存试剂和零库存批号吗？归档后它们将不再出现在库存页面。')) {
+      return;
+    }
+
+    this.isArchivingZeroStock = true;
+    this.updateArchiveZeroStockButton();
+    try {
+      const result = await API.inventory.archiveZeroStockReagents();
+      const reagentCount = result.archived_count || 0;
+      const batchCount = result.archived_batch_count || 0;
+      if (!reagentCount && !batchCount) {
+        Utils.showToast('当前没有可归档的零库存试剂或零库存批号', 'warning');
+      } else {
+        Utils.showToast(`已归档 ${reagentCount} 个零库存试剂、${batchCount} 个零库存批号`, 'success');
+      }
+      await Promise.all([this.refreshOverview(), this.loadInventory(), this.loadDefaultQuickLists()]);
+      this.renderSearchDefaults();
+    } catch (error) {
+      Utils.showToast(`归档失败：${error.message}`, 'error');
+    } finally {
+      this.isArchivingZeroStock = false;
+      this.updateArchiveZeroStockButton();
+    }
   },
 
   toggleInventoryCard(reagentId) {

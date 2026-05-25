@@ -2123,6 +2123,11 @@ body{
   box-shadow:0 10px 18px rgba(224,86,74,.18);
 }
 
+.mobile-danger-btn:disabled{
+  opacity:.55;
+  box-shadow:none;
+}
+
 .mobile-batch-mode-bar{
   display:flex;
   align-items:center;
