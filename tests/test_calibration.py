@@ -102,6 +102,7 @@ def seed_tt4_calibration_case(SessionLocal):
             package_unit="盒",
             min_unit="瓶",
             package_to_min_qty=1,
+            is_archived=True,
             created_at=datetime(2026, 1, 1, 8, 0, 0),
         )
         new_batch = BatchStock(
@@ -197,7 +198,9 @@ def test_calibration_scan_preview_matches_target_and_history_batches(tmp_path):
     assert payload["target_reagent_name"] == "TT4"
     assert payload["default_new_batch_no"] == "TT4-NEW"
     assert payload["default_old_batch_no"] == "TT4-OLD"
-    assert [item["batch_no"] for item in payload["new_batch_candidates"]] == ["TT4-NEW", "TT4-OLD"]
+    assert [item["batch_no"] for item in payload["old_batch_candidates"]] == ["TT4-NEW", "TT4-OLD"]
+    assert payload["old_batch_candidates"][1]["is_archived"] is True
+    assert [item["batch_no"] for item in payload["new_batch_candidates"]] == ["TT4-NEW"]
 
 
 def test_mobile_calibration_preview_prefers_matching_calibrator_stock(tmp_path):
@@ -377,6 +380,7 @@ def test_regular_reagent_scan_preview_uses_current_batch_and_previous_batch(tmp_
     assert payload["calibrator_batch_no"] == "X8NEW"
     assert payload["default_new_batch_no"] == "X8NEW"
     assert payload["default_old_batch_no"] == "X8OLD"
+    assert [item["batch_no"] for item in payload["old_batch_candidates"]] == ["X8NEW", "X8OLD"]
     assert [item["batch_no"] for item in payload["new_batch_candidates"]] == ["X8NEW", "X8OLD"]
 
     create_response = client.post(

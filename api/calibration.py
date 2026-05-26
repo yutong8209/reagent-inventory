@@ -116,20 +116,29 @@ def _serialize_batch_candidate(batch: BatchStock) -> CalibrationBatchCandidate:
         available_min_quantity=_batch_total_min_units(batch),
         min_unit=_clean_text(batch.min_unit) or "次",
         created_at=batch.created_at,
+        is_archived=bool(batch.is_archived),
     )
 
 
-def _load_target_batch_candidates(db: Session, reagent_id: int) -> list[CalibrationBatchCandidate]:
-    batches = (
-        db.query(BatchStock)
-        .filter(
-            BatchStock.reagent_id == reagent_id,
-            BatchStock.is_archived.is_(False),
-        )
-        .order_by(BatchStock.expiry_date.desc(), BatchStock.created_at.desc(), BatchStock.id.desc())
-        .all()
-    )
+def _load_target_batch_candidates(
+    db: Session,
+    reagent_id: int,
+    *,
+    include_archived: bool = False,
+) -> list[CalibrationBatchCandidate]:
+    query = db.query(BatchStock).filter(BatchStock.reagent_id == reagent_id)
+    if not include_archived:
+        query = query.filter(BatchStock.is_archived.is_(False))
+    batches = query.order_by(BatchStock.expiry_date.desc(), BatchStock.created_at.desc(), BatchStock.id.desc()).all()
     return [_serialize_batch_candidate(batch) for batch in batches]
+
+
+def _load_target_old_batch_candidates(db: Session, reagent_id: int) -> list[CalibrationBatchCandidate]:
+    return _load_target_batch_candidates(db, reagent_id, include_archived=True)
+
+
+def _load_target_new_batch_candidates(db: Session, reagent_id: int) -> list[CalibrationBatchCandidate]:
+    return _load_target_batch_candidates(db, reagent_id, include_archived=False)
 
 
 def _load_available_batches(
@@ -193,40 +202,53 @@ def _serialize_target_candidate(reagent: Reagent) -> CalibrationTargetCandidate:
     )
 
 
-def _resolve_default_batch_values(candidates: list[CalibrationBatchCandidate]) -> tuple[str | None, str | None]:
-    if not candidates:
+def _resolve_default_batch_values(
+    old_candidates: list[CalibrationBatchCandidate],
+    new_candidates: list[CalibrationBatchCandidate] | None = None,
+) -> tuple[str | None, str | None]:
+    if new_candidates is None:
+        new_candidates = old_candidates
+    if not old_candidates and not new_candidates:
         return None, None
-    new_batch_no = candidates[0].batch_no
-    old_batch_no = candidates[1].batch_no if len(candidates) > 1 else None
+    new_batch_no = new_candidates[0].batch_no if new_candidates else None
+    old_batch_no = next(
+        (candidate.batch_no for candidate in old_candidates if candidate.batch_no != new_batch_no),
+        None,
+    )
     return old_batch_no, new_batch_no
 
 
 def _resolve_scanned_reagent_batch_values(
-    candidates: list[CalibrationBatchCandidate],
+    old_candidates: list[CalibrationBatchCandidate],
+    new_candidates: list[CalibrationBatchCandidate],
     scanned_batch_no: str | None,
 ) -> tuple[str | None, str | None]:
     cleaned_scanned_batch = _clean_text(scanned_batch_no)
-    if not candidates or not cleaned_scanned_batch:
-        return _resolve_default_batch_values(candidates)
+    if not old_candidates or not cleaned_scanned_batch:
+        return _resolve_default_batch_values(old_candidates, new_candidates)
 
-    for index, candidate in enumerate(candidates):
+    for index, candidate in enumerate(old_candidates):
         if candidate.batch_no != cleaned_scanned_batch:
             continue
-        old_batch_no = candidates[index + 1].batch_no if index + 1 < len(candidates) else None
+        old_batch_no = next(
+            (item.batch_no for item in old_candidates[index + 1 :] if item.batch_no != cleaned_scanned_batch),
+            None,
+        )
         return old_batch_no, candidate.batch_no
 
-    return _resolve_default_batch_values(candidates)
+    return _resolve_default_batch_values(old_candidates, new_candidates)
 
 
 def _build_target_preview_payload(target: Reagent, db: Session) -> CalibrationTargetPreviewResponse:
-    batch_candidates = _load_target_batch_candidates(db, target.id)
-    default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
+    old_batch_candidates = _load_target_old_batch_candidates(db, target.id)
+    new_batch_candidates = _load_target_new_batch_candidates(db, target.id)
+    default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
     return CalibrationTargetPreviewResponse(
         target_reagent_id=target.id,
         target_reagent_name=target.name,
         result_unit=_clean_text(target.calibration_result_unit) or "nmmol/L",
-        old_batch_candidates=batch_candidates,
-        new_batch_candidates=batch_candidates,
+        old_batch_candidates=old_batch_candidates,
+        new_batch_candidates=new_batch_candidates,
         default_old_batch_no=default_old_batch_no,
         default_new_batch_no=default_new_batch_no,
     )
@@ -274,7 +296,8 @@ def _serialize_record(record: CalibrationRecord, db: Session) -> CalibrationReco
         target_candidates = [_serialize_target_candidate(item) for item in _build_target_candidates(db, calibrator)]
     else:
         target_candidates = [_serialize_target_candidate(target)]
-    batch_candidates = _load_target_batch_candidates(db, target.id)
+    old_batch_candidates = _load_target_old_batch_candidates(db, target.id)
+    new_batch_candidates = _load_target_new_batch_candidates(db, target.id)
     calibration_source = "calibrator" if calibrator.is_calibrator else "reagent"
     return CalibrationRecordItem(
         id=record.id,
@@ -301,8 +324,8 @@ def _serialize_record(record: CalibrationRecord, db: Session) -> CalibrationReco
         new_result_4=record.new_result_4,
         new_result_5=record.new_result_5,
         target_options=target_candidates,
-        old_batch_candidates=batch_candidates,
-        new_batch_candidates=batch_candidates,
+        old_batch_candidates=old_batch_candidates,
+        new_batch_candidates=new_batch_candidates,
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
@@ -646,15 +669,18 @@ def calibration_scan_preview(payload: dict, db: Session = Depends(get_db)):
         calibration_source = "calibrator"
         target_candidates = _build_target_candidates(db, scanned_reagent)
         target = target_candidates[0] if target_candidates else None
-        batch_candidates = _load_target_batch_candidates(db, target.id) if target else []
-        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
+        old_batch_candidates = _load_target_old_batch_candidates(db, target.id) if target else []
+        new_batch_candidates = _load_target_new_batch_candidates(db, target.id) if target else []
+        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
     else:
         calibration_source = "reagent"
         target_candidates = [scanned_reagent]
         target = scanned_reagent
-        batch_candidates = _load_target_batch_candidates(db, scanned_reagent.id)
+        old_batch_candidates = _load_target_old_batch_candidates(db, scanned_reagent.id)
+        new_batch_candidates = _load_target_new_batch_candidates(db, scanned_reagent.id)
         default_old_batch_no, default_new_batch_no = _resolve_scanned_reagent_batch_values(
-            batch_candidates,
+            old_batch_candidates,
+            new_batch_candidates,
             scanned_batch.batch_no,
         )
     target_options = [_serialize_target_candidate(item) for item in target_candidates]
@@ -671,8 +697,8 @@ def calibration_scan_preview(payload: dict, db: Session = Depends(get_db)):
         target_reagent_id=target.id if target else None,
         target_reagent_name=target.name if target else None,
         target_options=target_options,
-        old_batch_candidates=batch_candidates,
-        new_batch_candidates=batch_candidates,
+        old_batch_candidates=old_batch_candidates,
+        new_batch_candidates=new_batch_candidates,
         default_old_batch_no=default_old_batch_no,
         default_new_batch_no=default_new_batch_no,
         default_usage_times=1,
@@ -719,14 +745,16 @@ def mobile_calibration_preview(target_reagent_id: int = Query(..., ge=1), db: Se
         matched_source = target
         matched_batch = available_target_batches[0]
 
-    batch_candidates = _load_target_batch_candidates(db, target.id)
+    old_batch_candidates = _load_target_old_batch_candidates(db, target.id)
+    new_batch_candidates = _load_target_new_batch_candidates(db, target.id)
     if calibration_source == "reagent":
         default_old_batch_no, default_new_batch_no = _resolve_scanned_reagent_batch_values(
-            batch_candidates,
+            old_batch_candidates,
+            new_batch_candidates,
             matched_batch.batch_no,
         )
     else:
-        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
+        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
 
     return CalibrationScanPreviewResponse(
         calibration_source=calibration_source,
@@ -740,8 +768,8 @@ def mobile_calibration_preview(target_reagent_id: int = Query(..., ge=1), db: Se
         target_reagent_id=target.id,
         target_reagent_name=target.name,
         target_options=[_serialize_target_candidate(target)],
-        old_batch_candidates=batch_candidates,
-        new_batch_candidates=batch_candidates,
+        old_batch_candidates=old_batch_candidates,
+        new_batch_candidates=new_batch_candidates,
         default_old_batch_no=default_old_batch_no,
         default_new_batch_no=default_new_batch_no,
         default_usage_times=1,
@@ -794,8 +822,9 @@ def calibration_manual_preview(
         if not target:
             raise HTTPException(status_code=400, detail="被校准试剂与当前校准品不匹配")
 
-    batch_candidates = _load_target_batch_candidates(db, target.id)
-    default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(batch_candidates)
+    old_batch_candidates = _load_target_old_batch_candidates(db, target.id)
+    new_batch_candidates = _load_target_new_batch_candidates(db, target.id)
+    default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
 
     return CalibrationScanPreviewResponse(
         calibration_source="calibrator",
@@ -809,8 +838,8 @@ def calibration_manual_preview(
         target_reagent_id=target.id,
         target_reagent_name=target.name,
         target_options=[_serialize_target_candidate(item) for item in target_candidates],
-        old_batch_candidates=batch_candidates,
-        new_batch_candidates=batch_candidates,
+        old_batch_candidates=old_batch_candidates,
+        new_batch_candidates=new_batch_candidates,
         default_old_batch_no=default_old_batch_no,
         default_new_batch_no=default_new_batch_no,
         default_usage_times=1,

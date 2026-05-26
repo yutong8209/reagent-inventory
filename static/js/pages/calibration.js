@@ -489,13 +489,17 @@ const calibrationPage = {
 
     populateBatchSelect(selectId, candidates, selectedBatchNo) {
         const select = document.getElementById(selectId);
+        const normalizedSelected = selectedBatchNo || '';
+        const hasSelected = !normalizedSelected || (candidates || []).some((item) => String(item.batch_no) === String(normalizedSelected));
         select.innerHTML = ['<option value="">未选择</option>'].concat(
+            !hasSelected ? [`<option value="${this.escapeHtml(normalizedSelected)}">${this.escapeHtml(normalizedSelected)}</option>`] : [],
             (candidates || []).map((item) => `
                 <option value="${this.escapeHtml(item.batch_no)}" ${String(item.batch_no) === String(selectedBatchNo || '') ? 'selected' : ''}>
-                    ${this.escapeHtml(item.batch_no)} / ${this.escapeHtml(item.expiry_date)} / 库存 ${item.available_min_quantity}${this.escapeHtml(item.min_unit || '')}
+                    ${this.escapeHtml(item.batch_no)} / ${this.escapeHtml(item.expiry_date)} / 库存 ${item.available_min_quantity}${this.escapeHtml(item.min_unit || '')}${item.is_archived ? ' / 已归档' : ''}
                 </option>
             `)
         ).join('');
+        select.value = normalizedSelected;
     },
 
     syncCreateResultUnitNotes(unitValue) {

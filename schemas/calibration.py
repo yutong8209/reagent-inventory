@@ -12,6 +12,7 @@ class CalibrationBatchCandidate(BaseModel):
     available_min_quantity: int
     min_unit: str
     created_at: datetime
+    is_archived: bool = False
 
 
 class CalibrationTargetCandidate(BaseModel):

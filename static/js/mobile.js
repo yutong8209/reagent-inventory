@@ -1497,7 +1497,7 @@
       '<option value="">未填</option>',
       ...(!hasSelected ? [`<option value="${this.escapeHtml(normalizedSelected)}">${this.escapeHtml(normalizedSelected)}</option>`] : []),
       ...candidates.map((item) => `
-        <option value="${this.escapeHtml(item.batch_no)}">${this.escapeHtml(item.batch_no)} · ${this.escapeHtml(item.expiry_date || '-')}</option>
+        <option value="${this.escapeHtml(item.batch_no)}">${this.escapeHtml(item.batch_no)} · ${this.escapeHtml(item.expiry_date || '-')}${item.is_archived ? ' · 已归档' : ''}</option>
       `)
     ].join('');
     select.value = normalizedSelected;
