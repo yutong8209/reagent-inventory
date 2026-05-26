@@ -333,6 +333,20 @@
     return order[normalized] ?? 9999;
   },
 
+  inferProjectNameFromReagentName(name) {
+    const normalized = this.getProjectGroupingName({ name });
+    const projectAliases = {
+      甲状腺功能: ['ft3', 'ft4', 'tt3', 'tt4', 'tsh'],
+      性激素: ['hlh', 'hfsh', 'e2', 'testo', 'prog', 'prl'],
+      肿瘤标志物: ['afp', 'cea', 'ca125', 'ca153', 'ca15-3', 'ca199', 'ca19-9', 'fer', 'fpsa', 'psa', 'cyfra211', 'cyfra21-1'],
+      心肌损伤标志物: ['ckmb', 'ck-mb', 'hstni', 'myo'],
+    };
+    for (const [projectName, aliases] of Object.entries(projectAliases)) {
+      if (aliases.includes(normalized)) return projectName;
+    }
+    return null;
+  },
+
   buildInventoryGroupResolver(items) {
     const projectByName = new Map();
     (items || []).forEach((item) => {
@@ -353,7 +367,11 @@
       }
       if (item.is_calibrator) {
         const matchedProject = projectByName.get(`${item.instrument_id || ''}::${this.getProjectGroupingName(item)}`);
-        const projectName = matchedProject?.reagent_group_name || item.reagent_group_name || '未分组';
+        const inferredProjectName = this.inferProjectNameFromReagentName(item.reagent_name || item.name);
+        const ownGroupName = ['校准品', '未分组'].includes(item.reagent_group_name || '')
+          ? inferredProjectName
+          : item.reagent_group_name;
+        const projectName = matchedProject?.reagent_group_name || ownGroupName || '未分组';
         return {
           name: `校准品：${this.formatProjectGroupName(projectName, '校准品')}`,
           projectOrder: this.getProjectDisplayOrder(projectName),
