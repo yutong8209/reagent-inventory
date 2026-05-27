@@ -9,6 +9,7 @@ from .operator import Operator
 from .unit_option import UnitOption
 from .barcode_batch_rule import BarcodeBatchRule
 from .calibration_record import CalibrationRecord
+from .stock_adjustment_record import StockAdjustmentRecord
 
 __all__ = [
     "WorkGroup",
@@ -22,4 +23,5 @@ __all__ = [
     "UnitOption",
     "BarcodeBatchRule",
     "CalibrationRecord",
+    "StockAdjustmentRecord",
 ]

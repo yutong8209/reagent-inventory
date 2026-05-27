@@ -37,7 +37,8 @@ const catalogPage = {
         inventory: [],
         selectedWorkGroupId: null,
         selectedInstrumentId: null,
-        drafts: {}
+        drafts: {},
+        records: []
     },
     unitFilterScope: 'all',
     moduleCopy: {
@@ -226,6 +227,13 @@ const catalogPage = {
         return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
     },
 
+    formatDateTime(value) {
+        if (!value) return '-';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return value;
+        return date.toLocaleString('zh-CN', { hour12: false });
+    },
+
     promptAdminPassword(actionLabel) {
         const password = window.prompt(`执行“${actionLabel}”需要输入密码：`);
         if (password === null) {
@@ -367,6 +375,13 @@ const catalogPage = {
             }
         }
         return groups;
+    },
+
+    getStockAdjustmentRecordsForSelectedInstrument() {
+        const instrumentId = Number(this.stockAdjustmentState.selectedInstrumentId);
+        return (this.stockAdjustmentState.records || [])
+            .filter((record) => !instrumentId || Number(record.instrument_id) === instrumentId)
+            .slice(0, 30);
     },
 
     getChangedStockAdjustmentItems() {
@@ -1032,6 +1047,7 @@ const catalogPage = {
         const stockAdjustmentGroup = this.getStockAdjustmentSelectedGroup();
         const stockAdjustmentInstrument = this.getStockAdjustmentSelectedInstrument();
         const stockAdjustmentGroups = this.getStockAdjustmentGroupedReagents(stockAdjustmentInstrument);
+        const stockAdjustmentRecords = this.getStockAdjustmentRecordsForSelectedInstrument();
         const changedItems = this.getChangedStockAdjustmentItems();
         const maintenanceInstruments = this.maintenanceFilters.workGroupId
             ? (this.getWorkGroupById(this.maintenanceFilters.workGroupId)?.instruments || [])
@@ -1129,6 +1145,29 @@ const catalogPage = {
                                     </section>
                                 `).join('') : '<div class="settings-empty-state">当前仪器下暂无可调整的未归档试剂批次。</div>'}
                             </div>
+                            <section class="stock-adjustment-records">
+                                <div class="stock-adjustment-records-head">
+                                    <h5>最近库存调整记录</h5>
+                                    <span>${stockAdjustmentRecords.length ? `显示 ${stockAdjustmentRecords.length} 条` : '暂无记录'}</span>
+                                </div>
+                                ${stockAdjustmentRecords.length ? `
+                                    <div class="stock-adjustment-record-list">
+                                        ${stockAdjustmentRecords.map((record) => `
+                                            <div class="stock-adjustment-record-item">
+                                                <div class="stock-adjustment-record-main">
+                                                    <strong>${this.escapeHtml(record.reagent_name)}</strong>
+                                                    <span>批号 ${this.escapeHtml(record.batch_no)} · 效期 ${this.escapeHtml(record.expiry_date || '-')}</span>
+                                                </div>
+                                                <div class="stock-adjustment-record-qty">
+                                                    <span>${record.old_min_quantity} → ${record.new_min_quantity}</span>
+                                                    <strong class="${Number(record.delta_min_quantity || 0) >= 0 ? 'positive' : 'negative'}">${Number(record.delta_min_quantity || 0) >= 0 ? '+' : ''}${record.delta_min_quantity}${this.escapeHtml(record.min_unit || '')}</strong>
+                                                </div>
+                                                <div class="stock-adjustment-record-time">${this.escapeHtml(this.formatDateTime(record.created_at))}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                ` : '<div class="settings-empty-state compact">保存库存调整后，会在这里看到调整前、调整后和时间。</div>'}
+                            </section>
                         </div>
                     ` : `
                         <div class="stock-adjustment-entry">
@@ -1696,7 +1735,8 @@ const catalogPage = {
             inventory: [],
             selectedWorkGroupId: null,
             selectedInstrumentId: null,
-            drafts: {}
+            drafts: {},
+            records: []
         };
         this.ensureSelections();
         this.render();
@@ -1711,13 +1751,18 @@ const catalogPage = {
             return;
         }
         const inventory = await API.inventory.stockAdjustmentAccess(password);
+        const records = await API.inventory.listStockAdjustmentRecords({
+            password,
+            limit: 100
+        });
         this.stockAdjustmentState = {
             unlocked: true,
             password,
             inventory,
             selectedWorkGroupId: this.stockAdjustmentState.selectedWorkGroupId,
             selectedInstrumentId: this.stockAdjustmentState.selectedInstrumentId,
-            drafts: {}
+            drafts: {},
+            records
         };
         this.ensureStockAdjustmentSelection();
         this.render();
@@ -1730,7 +1775,8 @@ const catalogPage = {
             inventory: [],
             selectedWorkGroupId: null,
             selectedInstrumentId: null,
-            drafts: {}
+            drafts: {},
+            records: []
         };
         this.render();
     },
@@ -1772,7 +1818,12 @@ const catalogPage = {
             items
         });
         const inventory = await API.inventory.stockAdjustmentAccess(this.stockAdjustmentState.password);
+        const records = await API.inventory.listStockAdjustmentRecords({
+            password: this.stockAdjustmentState.password,
+            limit: 100
+        });
         this.stockAdjustmentState.inventory = inventory;
+        this.stockAdjustmentState.records = records;
         this.stockAdjustmentState.drafts = {};
         this.ensureStockAdjustmentSelection();
         this.render();

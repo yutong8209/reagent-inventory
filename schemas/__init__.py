@@ -46,6 +46,8 @@ from .inventory import (
     ClearTransactionsRequest,
     BatchStockAdjustmentItem,
     BatchStockAdjustmentRequest,
+    StockAdjustmentRecordQuery,
+    StockAdjustmentRecordItem,
     ReagentWarningSettingsUpdate,
     ReagentGroupCatalogItem,
 )
@@ -117,6 +119,8 @@ __all__ = [
     "ClearTransactionsRequest",
     "BatchStockAdjustmentItem",
     "BatchStockAdjustmentRequest",
+    "StockAdjustmentRecordQuery",
+    "StockAdjustmentRecordItem",
     "ReagentWarningSettingsUpdate",
     "ReagentGroupCatalogItem",
     "CalibrationBatchCandidate",

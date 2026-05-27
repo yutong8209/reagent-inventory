@@ -345,6 +345,12 @@ const API = {
                 body: JSON.stringify(data)
             });
         },
+        listStockAdjustmentRecords(data) {
+            return API.request('/admin/stock-adjustments/records', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
         resetReagentData(password) {
             return API.request('/admin/reset-reagent-data', {
                 method: 'POST',

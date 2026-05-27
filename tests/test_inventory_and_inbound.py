@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from api import barcode, inbound, inventory, outbound
 from db import get_db
 from db.base import Base
-from models import BarcodeBatchRule, BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, Transaction, WorkGroup
+from models import BarcodeBatchRule, BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, StockAdjustmentRecord, Transaction, WorkGroup
 from services import ensure_default_catalog, ensure_default_operators, ensure_default_unit_options
 
 
@@ -1424,6 +1424,32 @@ def test_stock_adjustment_access_and_apply_updates_batch_totals(tmp_path):
         assert first_batch.loose_min_quantity == 2
         assert second_batch.quantity == 0
         assert second_batch.loose_min_quantity == 3
+        records = (
+            db.query(StockAdjustmentRecord)
+            .filter(StockAdjustmentRecord.reagent_id == reagent_id)
+            .order_by(StockAdjustmentRecord.batch_no.asc())
+            .all()
+        )
+        assert len(records) == 2
+        assert records[0].batch_no == "ADJUST-BATCH-1"
+        assert records[0].old_min_quantity == 9
+        assert records[0].new_min_quantity == 6
+        assert records[1].batch_no == "ADJUST-BATCH-2"
+        assert records[1].old_min_quantity == 4
+        assert records[1].new_min_quantity == 3
+        assert records[0].adjustment_group_id == records[1].adjustment_group_id
+
+    records_response = client.post("/api/admin/stock-adjustments/records", json={
+        "password": "wtsyyjyk",
+        "instrument_id": instrument_id,
+        "limit": 20,
+    })
+    assert records_response.status_code == 200
+    record_payload = records_response.json()
+    assert [item["batch_no"] for item in record_payload[:2]] == ["ADJUST-BATCH-2", "ADJUST-BATCH-1"]
+    assert record_payload[0]["old_min_quantity"] == 4
+    assert record_payload[0]["new_min_quantity"] == 3
+    assert record_payload[0]["delta_min_quantity"] == -1
 
 
 def test_dangerous_admin_actions_require_password(tmp_path):

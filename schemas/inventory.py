@@ -220,6 +220,41 @@ class BatchStockAdjustmentRequest(BaseModel):
     items: List[BatchStockAdjustmentItem] = Field(default_factory=list)
 
 
+class StockAdjustmentRecordQuery(BaseModel):
+    password: str
+    work_group_id: Optional[int] = None
+    instrument_id: Optional[int] = None
+    reagent_id: Optional[int] = None
+    limit: int = Field(default=100, ge=1, le=500)
+
+
+class StockAdjustmentRecordItem(BaseModel):
+    id: int
+    adjustment_group_id: str
+    work_group_id: int
+    work_group_name: str
+    instrument_id: int
+    instrument_name: str
+    reagent_id: int
+    reagent_name: str
+    batch_stock_id: int
+    batch_no: str
+    expiry_date: date
+    old_min_quantity: int
+    new_min_quantity: int
+    delta_min_quantity: int
+    min_unit: str
+    package_unit: str
+    package_to_min_qty: int
+    operator: str
+    source: str
+    remark: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 from .reporting import TransactionListItem
 
 DashboardOverviewResponse.model_rebuild()

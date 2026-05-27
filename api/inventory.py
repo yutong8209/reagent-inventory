@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta
 from io import BytesIO
 from typing import List, Optional
 from urllib.parse import quote
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
@@ -13,11 +14,13 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, aliased
 
 from db import get_db
-from models import BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, ReagentGroup, Transaction, UnitOption, WorkGroup
+from models import BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, ReagentGroup, StockAdjustmentRecord, Transaction, UnitOption, WorkGroup
 from schemas import (
     AdminPasswordRequest,
     BatchInfo,
     BatchStockAdjustmentRequest,
+    StockAdjustmentRecordItem,
+    StockAdjustmentRecordQuery,
     DashboardOverviewResponse,
     DashboardPendingTasks,
     DashboardWarningReagent,
@@ -1721,10 +1724,37 @@ def apply_stock_adjustments(data: BatchStockAdjustmentRequest, db: Session = Dep
 
     updated_batch_count = 0
     updated_reagent_ids: set[int] = set()
+    adjustment_group_id = str(uuid4())
     for batch_id, target_min_quantity in normalized_items.items():
         batch = batch_map[batch_id]
-        if _batch_total_min_units(batch) == target_min_quantity:
+        old_min_quantity = _batch_total_min_units(batch)
+        if old_min_quantity == target_min_quantity:
             continue
+        reagent = batch.reagent
+        instrument = reagent.instrument if reagent else None
+        work_group = instrument.work_group if instrument else None
+        db.add(
+            StockAdjustmentRecord(
+                adjustment_group_id=adjustment_group_id,
+                work_group_id=work_group.id if work_group else 0,
+                work_group_name=work_group.name if work_group else "",
+                instrument_id=instrument.id if instrument else 0,
+                instrument_name=instrument.name if instrument else "",
+                reagent_id=reagent.id if reagent else batch.reagent_id,
+                reagent_name=reagent.name if reagent else "",
+                batch_stock_id=batch.id,
+                batch_no=batch.batch_no,
+                expiry_date=batch.expiry_date,
+                old_min_quantity=old_min_quantity,
+                new_min_quantity=target_min_quantity,
+                delta_min_quantity=target_min_quantity - old_min_quantity,
+                min_unit=_clean_text(batch.min_unit) or _clean_text(reagent.unit if reagent else None) or "最小单位",
+                package_unit=_clean_text(batch.package_unit) or _clean_text(reagent.package_unit if reagent else None) or "包装",
+                package_to_min_qty=_safe_ratio(batch.package_to_min_qty),
+                operator="库存调整",
+                source="stock_adjustment",
+            )
+        )
         _set_batch_total_min_units(batch, target_min_quantity)
         updated_batch_count += 1
         updated_reagent_ids.add(batch.reagent_id)
@@ -1740,9 +1770,28 @@ def apply_stock_adjustments(data: BatchStockAdjustmentRequest, db: Session = Dep
     }
 
 
+@router.post("/admin/stock-adjustments/records", response_model=List[StockAdjustmentRecordItem])
+def list_stock_adjustment_records(data: StockAdjustmentRecordQuery, db: Session = Depends(get_db)):
+    _require_admin_action_password(data.password)
+    query = db.query(StockAdjustmentRecord)
+    if data.work_group_id is not None:
+        query = query.filter(StockAdjustmentRecord.work_group_id == data.work_group_id)
+    if data.instrument_id is not None:
+        query = query.filter(StockAdjustmentRecord.instrument_id == data.instrument_id)
+    if data.reagent_id is not None:
+        query = query.filter(StockAdjustmentRecord.reagent_id == data.reagent_id)
+    return (
+        query
+        .order_by(StockAdjustmentRecord.created_at.desc(), StockAdjustmentRecord.id.desc())
+        .limit(data.limit)
+        .all()
+    )
+
+
 @router.post("/admin/reset-reagent-data")
 def reset_reagent_data(data: AdminPasswordRequest, db: Session = Depends(get_db)):
     _require_admin_action_password(data.password)
+    db.query(StockAdjustmentRecord).delete(synchronize_session=False)
     db.query(CalibrationRecord).delete(synchronize_session=False)
     db.query(Transaction).delete(synchronize_session=False)
     db.query(BatchStock).delete(synchronize_session=False)
