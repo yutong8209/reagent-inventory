@@ -41,7 +41,7 @@ if (Test-Health) {
 $pythonExe = Resolve-PythonExe
 
 Start-Process -FilePath $pythonExe `
-    -ArgumentList '-m','uvicorn','main:app','--host','0.0.0.0','--port','8000' `
+    -ArgumentList '-m','uvicorn','main:app','--host','0.0.0.0','--port','8000','--reload' `
     -WorkingDirectory $projectRoot `
     -RedirectStandardOutput $stdoutLog `
     -RedirectStandardError $stderrLog `
