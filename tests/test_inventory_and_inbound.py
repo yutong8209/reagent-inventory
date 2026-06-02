@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from api import barcode, inbound, inventory, outbound
 from db import get_db
 from db.base import Base
-from models import BarcodeBatchRule, BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, StockAdjustmentRecord, Transaction, WorkGroup
+from models import BarcodeBatchRule, BatchStock, CalibrationRecord, Instrument, Operator, ParseLog, Reagent, ReagentGroup, StockAdjustmentRecord, Transaction, WorkGroup
 from services import ensure_default_catalog, ensure_default_operators, ensure_default_unit_options
 
 
@@ -842,7 +842,7 @@ def test_dashboard_overview_returns_pending_tasks_warnings_and_recent_outbounds(
     assert payload["pending_tasks"]["expired_batch_count"] == 1
     assert payload["pending_tasks"]["low_stock_batch_count"] == 3
     assert payload["pending_tasks"]["low_or_empty_reagent_count"] == 1
-    assert payload["pending_tasks"]["zero_stock_unarchived_count"] == 1
+    assert payload["pending_tasks"]["zero_stock_unarchived_count"] == 2
 
     warning_names = [item["reagent_name"] for item in payload["warning_reagents"]]
     assert warning_names[:2] == ["DASH-EXPIRED", "DASH-EMPTY"]
@@ -1778,25 +1778,23 @@ def test_archived_reagent_can_be_scanned_and_reactivated_by_inbound(tmp_path):
         assert batch.quantity == 3
 
 
-def test_export_inventory_all_work_groups_creates_group_sheets(tmp_path):
+def test_export_inventory_all_work_groups_splits_reagents_calibrators_and_qc(tmp_path):
     client, SessionLocal = build_client(tmp_path)
 
     with SessionLocal() as db:
         work_groups = db.query(WorkGroup).order_by(WorkGroup.id.asc()).all()
         first_group = work_groups[0]
-        second_group = work_groups[1]
+        first_group_name = first_group.name
         first_instrument = (
             db.query(Instrument)
             .filter(Instrument.work_group_id == first_group.id)
             .order_by(Instrument.id.asc())
             .first()
         )
-        second_instrument = (
-            db.query(Instrument)
-            .filter(Instrument.work_group_id == second_group.id)
-            .order_by(Instrument.id.asc())
-            .first()
-        )
+        earlier_reagent_group = ReagentGroup(name="EXPORT-ORDER-1", sort_order=10, is_active=True)
+        later_reagent_group = ReagentGroup(name="EXPORT-ORDER-2", sort_order=20, is_active=True)
+        db.add_all([earlier_reagent_group, later_reagent_group])
+        db.flush()
 
         reagent_one = Reagent(
             instrument_id=first_instrument.id,
@@ -1811,9 +1809,10 @@ def test_export_inventory_all_work_groups_creates_group_sheets(tmp_path):
             warning_days=30,
             warning_stock=5,
             follow_instrument=False,
+            reagent_group_id=later_reagent_group.id,
         )
         reagent_two = Reagent(
-            instrument_id=second_instrument.id,
+            instrument_id=first_instrument.id,
             name="EXPORT-ALL-B",
             match_mode="exact",
             match_pattern="EXPORT-ALL-B",
@@ -1822,6 +1821,37 @@ def test_export_inventory_all_work_groups_creates_group_sheets(tmp_path):
             unit="瓶",
             package_unit="盒",
             package_to_min_qty=3,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+            reagent_group_id=earlier_reagent_group.id,
+        )
+        calibrator = Reagent(
+            instrument_id=first_instrument.id,
+            name="EXPORT-ALL-C校准品",
+            match_mode="exact",
+            match_pattern="EXPORT-ALL-C",
+            raw_barcode_sample="EXPORT-ALL-C",
+            manufacturer="Maker C",
+            unit="次",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+            is_calibrator=True,
+            reagent_group_id=earlier_reagent_group.id,
+        )
+        qc = Reagent(
+            instrument_id=first_instrument.id,
+            name="EXPORT-ALL-Q质控品",
+            match_mode="exact",
+            match_pattern="EXPORT-ALL-Q",
+            raw_barcode_sample="EXPORT-ALL-Q",
+            manufacturer="Maker Q",
+            unit="支",
+            package_unit="盒",
+            package_to_min_qty=1,
             warning_days=30,
             warning_stock=5,
             follow_instrument=False,
@@ -1841,29 +1871,26 @@ def test_export_inventory_all_work_groups_creates_group_sheets(tmp_path):
             follow_instrument=False,
             is_archived=True,
         )
-        db.add_all([reagent_one, reagent_two, archived_reagent])
+        db.add_all([reagent_one, reagent_two, calibrator, qc, archived_reagent])
         db.flush()
 
-        db.add(BatchStock(
-            reagent_id=reagent_one.id,
-            batch_no="BATCH-A1",
-            expiry_date=date.today().fromordinal(date.today().toordinal() + 15),
-            quantity=4,
-            loose_min_quantity=1,
-            package_unit="盒",
-            min_unit="瓶",
-            package_to_min_qty=2,
-        ))
-        db.add(BatchStock(
-            reagent_id=reagent_two.id,
-            batch_no="BATCH-B1",
-            expiry_date=date.today().fromordinal(date.today().toordinal() + 25),
-            quantity=2,
-            loose_min_quantity=0,
-            package_unit="盒",
-            min_unit="瓶",
-            package_to_min_qty=3,
-        ))
+        batch_specs = [
+            (reagent_one.id, "BATCH-A1", "瓶", 2),
+            (reagent_two.id, "BATCH-B1", "瓶", 3),
+            (calibrator.id, "BATCH-C1", "次", 1),
+            (qc.id, "BATCH-Q1", "支", 1),
+        ]
+        for reagent_id, batch_no, min_unit, ratio in batch_specs:
+            db.add(BatchStock(
+                reagent_id=reagent_id,
+                batch_no=batch_no,
+                expiry_date=date.today().fromordinal(date.today().toordinal() + 15),
+                quantity=2,
+                loose_min_quantity=0,
+                package_unit="盒",
+                min_unit=min_unit,
+                package_to_min_qty=ratio,
+            ))
         db.add(BatchStock(
             reagent_id=archived_reagent.id,
             batch_no="BATCH-X1",
@@ -1875,7 +1902,6 @@ def test_export_inventory_all_work_groups_creates_group_sheets(tmp_path):
             package_to_min_qty=1,
         ))
         db.commit()
-        group_names = [group.name for group in work_groups]
 
     response = client.get("/api/inventory/export")
     assert response.status_code == 200
@@ -1885,14 +1911,22 @@ def test_export_inventory_all_work_groups_creates_group_sheets(tmp_path):
     assert "attachment;" in response.headers["content-disposition"]
 
     workbook = load_workbook(filename=BytesIO(response.content))
-    assert workbook.sheetnames == group_names
+    assert workbook.sheetnames == ["试剂库存", "校准品库存", "质控品库存"]
 
-    first_sheet_values = list(workbook[group_names[0]].iter_rows(values_only=True))
-    second_sheet_values = list(workbook[group_names[1]].iter_rows(values_only=True))
-    assert first_sheet_values[0][0] == "工作组"
-    assert any(row[3] == "EXPORT-ALL-A" for row in first_sheet_values[1:])
-    assert any(row[3] == "EXPORT-ALL-B" for row in second_sheet_values[1:])
-    assert all(row[3] != "EXPORT-ARCHIVED" for row in first_sheet_values[1:])
+    reagent_sheet_values = list(workbook["试剂库存"].iter_rows(values_only=True))
+    calibrator_sheet_values = list(workbook["校准品库存"].iter_rows(values_only=True))
+    qc_sheet_values = list(workbook["质控品库存"].iter_rows(values_only=True))
+    assert reagent_sheet_values[0][0] == "工作组"
+    assert reagent_sheet_values[0][3:6] == ("试剂名称", "批号", "该批号库存最小单位数")
+    assert {row[3] for row in reagent_sheet_values[1:]} >= {"EXPORT-ALL-A", "EXPORT-ALL-B"}
+    first_group_rows = [
+        row for row in reagent_sheet_values[1:]
+        if row[0] == first_group_name and str(row[3]).startswith("EXPORT-ALL-")
+    ]
+    assert [row[3] for row in first_group_rows[:2]] == ["EXPORT-ALL-B", "EXPORT-ALL-A"]
+    assert {row[3] for row in calibrator_sheet_values[1:]} == {"EXPORT-ALL-C校准品"}
+    assert {row[3] for row in qc_sheet_values[1:]} == {"EXPORT-ALL-Q质控品"}
+    assert all(row[3] != "EXPORT-ARCHIVED" for row in reagent_sheet_values[1:])
 
 
 def test_export_inventory_by_work_group_only_contains_that_group(tmp_path):
@@ -1903,7 +1937,6 @@ def test_export_inventory_by_work_group_only_contains_that_group(tmp_path):
         target_group = work_groups[0]
         other_group = work_groups[1]
         target_group_id = target_group.id
-        target_group_name = target_group.name
         target_instruments = (
             db.query(Instrument)
             .filter(Instrument.work_group_id == target_group.id)
@@ -1979,8 +2012,8 @@ def test_export_inventory_by_work_group_only_contains_that_group(tmp_path):
     assert response.status_code == 200
 
     workbook = load_workbook(filename=BytesIO(response.content))
-    assert workbook.sheetnames == [target_group_name]
-    sheet_rows = list(workbook[target_group_name].iter_rows(values_only=True))[1:]
+    assert workbook.sheetnames == ["试剂库存", "校准品库存", "质控品库存"]
+    sheet_rows = list(workbook["试剂库存"].iter_rows(values_only=True))[1:]
     exported_reagents = {row[3] for row in sheet_rows}
     assert exported_reagents == {"EXPORT-GROUP-A", "EXPORT-GROUP-B"}
 
@@ -1991,7 +2024,6 @@ def test_export_inventory_by_instrument_only_contains_that_instrument(tmp_path):
     with SessionLocal() as db:
         work_group = db.query(WorkGroup).order_by(WorkGroup.id.asc()).first()
         work_group_id = work_group.id
-        work_group_name = work_group.name
         instruments = (
             db.query(Instrument)
             .filter(Instrument.work_group_id == work_group.id)
@@ -2062,8 +2094,8 @@ def test_export_inventory_by_instrument_only_contains_that_instrument(tmp_path):
     assert response.status_code == 200
 
     workbook = load_workbook(filename=BytesIO(response.content))
-    assert workbook.sheetnames == [work_group_name]
-    sheet_rows = list(workbook[work_group_name].iter_rows(values_only=True))[1:]
+    assert workbook.sheetnames == ["试剂库存", "校准品库存", "质控品库存"]
+    sheet_rows = list(workbook["试剂库存"].iter_rows(values_only=True))[1:]
     exported_instruments = {row[1] for row in sheet_rows}
     exported_reagents = {row[3] for row in sheet_rows}
     assert exported_instruments == {target_instrument_name}

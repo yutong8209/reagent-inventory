@@ -1978,7 +1978,12 @@
   getZeroStockArchiveCount() {
     const summaryCount = Number(this.overview?.pending_tasks?.zero_stock_unarchived_count ?? NaN);
     if (Number.isFinite(summaryCount)) return summaryCount;
-    return this.getFlattenedInventoryItems().filter((item) => Number(item.total_min_quantity || 0) <= 0).length;
+    return this.getFlattenedInventoryItems().reduce((count, item) => {
+      if (Number(item.total_min_quantity || 0) <= 0) {
+        return count + 1;
+      }
+      return count + (item.batches || []).filter((batch) => Number(batch.available_min_quantity || 0) <= 0).length;
+    }, 0);
   },
 
   updateArchiveZeroStockButton() {

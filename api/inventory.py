@@ -59,6 +59,8 @@ EXPORT_HEADERS = [
     "仪器名称",
     "仪器型号",
     "试剂名称",
+    "批号",
+    "该批号库存最小单位数",
     "厂家",
     "试剂状态",
     "失效预警天数",
@@ -69,8 +71,6 @@ EXPORT_HEADERS = [
     "距最近效期天数",
     "批次数",
     "最近出入库时间",
-    "批号",
-    "该批号库存最小单位数",
     "批号有效期",
     "该批号距失效天数",
     "是否过期",
@@ -624,6 +624,12 @@ def _build_dashboard_pending_tasks(inventory_data: list[WorkGroupInfo]) -> Dashb
                     low_or_empty_reagent_count += 1
                 if reagent.total_min_quantity <= 0:
                     zero_stock_unarchived_count += 1
+                else:
+                    zero_stock_unarchived_count += sum(
+                        1
+                        for batch in reagent.batches
+                        if batch.available_min_quantity <= 0
+                    )
                 low_stock_batch_count += sum(
                     1
                     for batch in reagent.batches
@@ -781,8 +787,7 @@ def _build_export_rows(group: WorkGroupInfo) -> list[list[str | int]]:
             instrument.reagents,
             key=lambda item: (
                 instrument.name,
-                item.name,
-                _status_sort_key(item),
+                _reagent_grouped_sort_key(item),
             ),
         )
         for reagent in reagents:
@@ -792,6 +797,8 @@ def _build_export_rows(group: WorkGroupInfo) -> list[list[str | int]]:
                     instrument.name,
                     instrument.model or "",
                     reagent.name,
+                    batch.batch_no,
+                    batch.available_min_quantity,
                     reagent.manufacturer or "",
                     STATUS_LABELS.get(reagent.status_level, reagent.status_level),
                     reagent.effective_warning_days,
@@ -802,8 +809,6 @@ def _build_export_rows(group: WorkGroupInfo) -> list[list[str | int]]:
                     reagent.nearest_expiry_days if reagent.nearest_expiry_days is not None else "",
                     reagent.batch_count,
                     _format_export_datetime(reagent.last_transaction_at),
-                    batch.batch_no,
-                    batch.available_min_quantity,
                     batch.expiry_date,
                     batch.expiry_days_left,
                     "是" if batch.is_expired else "否",
@@ -816,6 +821,15 @@ def _build_export_rows(group: WorkGroupInfo) -> list[list[str | int]]:
     return rows
 
 
+def _export_reagent_category(reagent: ReagentInfo) -> str:
+    name = _clean_text(reagent.name)
+    if name.endswith("质控品"):
+        return "qc"
+    if reagent.is_calibrator or name.endswith("校准品"):
+        return "calibrator"
+    return "reagent"
+
+
 def _apply_export_styles(worksheet):
     header_font = Font(bold=True)
     for cell in worksheet[1]:
@@ -824,7 +838,7 @@ def _apply_export_styles(worksheet):
     worksheet.freeze_panes = "A2"
     worksheet.auto_filter.ref = worksheet.dimensions
 
-    status_col = 6
+    status_col = EXPORT_HEADERS.index("试剂状态") + 1
     for row_index in range(2, worksheet.max_row + 1):
         status_value = worksheet.cell(row=row_index, column=status_col).value
         if status_value in {STATUS_LABELS[level] for level in STATUS_RED_LEVELS}:
@@ -851,14 +865,50 @@ def _build_inventory_export_workbook(
     workbook = Workbook()
     workbook.remove(workbook.active)
     used_titles: set[str] = set()
+    category_sheets = [
+        ("reagent", "试剂库存"),
+        ("calibrator", "校准品库存"),
+        ("qc", "质控品库存"),
+    ]
+    rows_by_category: dict[str, list[list[str | int]]] = {
+        category: [] for category, _ in category_sheets
+    }
 
     for group in inventory_data:
-        sheet = workbook.create_sheet(title=_sanitize_sheet_title(group.name, used_titles))
+        for instrument in sorted(group.instruments, key=lambda item: (item.name, item.id)):
+            reagents = sorted(
+                instrument.reagents,
+                key=lambda item: (
+                    instrument.name,
+                    _reagent_grouped_sort_key(item),
+                ),
+            )
+            for reagent in reagents:
+                rows_by_category[_export_reagent_category(reagent)].extend(
+                    _build_export_rows(
+                        WorkGroupInfo(
+                            id=group.id,
+                            name=group.name,
+                            instruments=[
+                                InstrumentInfo(
+                                    id=instrument.id,
+                                    name=instrument.name,
+                                    model=instrument.model,
+                                    default_warning_days=instrument.default_warning_days,
+                                    default_warning_stock=instrument.default_warning_stock,
+                                    default_single_batch_warning_stock=instrument.default_single_batch_warning_stock,
+                                    reagents=[reagent],
+                                )
+                            ],
+                        )
+                    )
+                )
+
+    for category, sheet_title in category_sheets:
+        sheet = workbook.create_sheet(title=_sanitize_sheet_title(sheet_title, used_titles))
         sheet.append(EXPORT_HEADERS)
-        rows = _build_export_rows(group)
-        if rows:
-            for row in rows:
-                sheet.append(row)
+        for row in rows_by_category[category]:
+            sheet.append(row)
         _apply_export_styles(sheet)
 
     if not workbook.sheetnames:

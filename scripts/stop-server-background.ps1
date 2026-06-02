@@ -1,5 +1,13 @@
 $ErrorActionPreference = 'SilentlyContinue'
 
+$watchdogProcesses = Get-CimInstance Win32_Process |
+    Where-Object { $_.CommandLine -like '*start-server-background.ps1*' }
+foreach ($process in $watchdogProcesses) {
+    if ($process.ProcessId -and $process.ProcessId -ne $PID) {
+        Stop-Process -Id $process.ProcessId -Force
+    }
+}
+
 $connections = Get-NetTCPConnection -LocalPort 8000 -State Listen
 if (-not $connections) {
     Write-Host 'No running service found on port 8000.'
