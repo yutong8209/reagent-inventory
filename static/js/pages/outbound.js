@@ -187,7 +187,7 @@ const outboundPage = {
     async queuePendingItem(nextItem) {
         const mergeTarget = this.findMergeTarget(nextItem);
         if (!mergeTarget) {
-            this.pendingItems.push({ ...nextItem, id: this.createItemId() });
+            this.pendingItems.unshift({ ...nextItem, id: this.createItemId() });
             this.renderPendingItems();
             return;
         }

@@ -475,7 +475,7 @@ const inboundPage = {
             existing.quantity += item.quantity;
             return true;
         }
-        list.push(item);
+        list.unshift(item);
         return false;
     },
 
