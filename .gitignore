@@ -22,3 +22,11 @@ server-test.err.log
 server-test.out.log
 server-autostart.err.log
 server-autostart.out.log
+
+# Server logs
+*.log
+server*.err.log
+server*.out.log
+
+# Unrelated projects
+animal-island-ui/

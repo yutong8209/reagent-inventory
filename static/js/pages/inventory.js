@@ -187,9 +187,16 @@ const inventoryPage = {
         return null;
     },
 
+    hasZeroStockBatch(reagent) {
+        return (reagent.batches || []).some((batch) => Number(batch.available_min_quantity ?? 0) <= 0);
+    },
+
     matchesStatusFilter(reagent, status) {
         if (!status || status === 'all') {
             return true;
+        }
+        if (status === 'empty') {
+            return reagent.status_level === 'empty' || this.hasZeroStockBatch(reagent);
         }
         if (status === 'batch_low') {
             return this.hasBatchLowWarning(reagent);

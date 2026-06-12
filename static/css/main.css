@@ -3373,3 +3373,543 @@ padding-bottom:18px;
 #page-calibration .form-section{
   overflow:visible;
 }
+
+/* Animal Island inspired visual refresh */
+:root{
+--island-ink:#234038;
+--island-muted:#68837b;
+--island-leaf:#4aa879;
+--island-leaf-deep:#27795a;
+--island-sky:#6aaee8;
+--island-coral:#f07c66;
+--island-sun:#f4c95d;
+--island-paper:#fffdf7;
+--island-paper-soft:#f7fbf2;
+--island-line:#d9ead8;
+--island-shadow:0 16px 0 rgba(66,112,91,.08),0 22px 36px rgba(30,72,58,.12);
+--island-soft-shadow:0 8px 0 rgba(66,112,91,.06),0 15px 24px rgba(30,72,58,.08);
+}
+
+html{
+background:
+linear-gradient(135deg,rgba(255,255,255,.42) 25%,transparent 25%) 0 0/22px 22px,
+linear-gradient(225deg,rgba(255,255,255,.34) 25%,transparent 25%) 0 0/22px 22px,
+linear-gradient(180deg,#dff3ec 0%,#eaf7ff 46%,#fff8e2 100%) fixed;
+}
+
+body{
+color:var(--island-ink);
+}
+
+body::before{
+background:
+repeating-linear-gradient(90deg,rgba(74,168,121,.055) 0 1px,transparent 1px 18px),
+repeating-linear-gradient(0deg,rgba(106,174,232,.045) 0 1px,transparent 1px 18px);
+mask-image:linear-gradient(180deg,rgba(0,0,0,.72),rgba(0,0,0,.22));
+}
+
+.header{
+top:14px;
+padding:15px 18px;
+background:linear-gradient(180deg,rgba(255,253,247,.94),rgba(245,251,242,.88));
+border:2px solid rgba(255,255,255,.96);
+border-bottom-color:rgba(194,222,191,.95);
+border-radius:26px;
+box-shadow:var(--island-shadow);
+}
+
+.header h1,
+.page h2,
+.page h3,
+.page h4{
+color:var(--island-ink);
+letter-spacing:0;
+}
+
+.header h1{
+font-weight:850;
+}
+
+.nav{
+gap:7px;
+}
+
+.nav-link{
+padding:8px 13px;
+color:#476b62;
+background:rgba(255,255,255,.42);
+border:1px solid rgba(212,232,211,.86);
+box-shadow:inset 0 -2px 0 rgba(74,168,121,.08);
+}
+
+.nav-link.active,
+.nav-link:hover{
+background:linear-gradient(180deg,#65c492,#43a976);
+color:#fff;
+box-shadow:0 5px 0 rgba(39,121,90,.22),0 12px 20px rgba(39,121,90,.16);
+}
+
+.page,
+.form-section,
+.dashboard-side-section,
+.inventory-overview-panel,
+.catalog-panel,
+.modal-content,
+.outbound-preview-card,
+.item-card,
+.dashboard-task-card,
+.dashboard-warning-card,
+.dashboard-recent-item,
+.inventory-summary-card,
+.candidate-item,
+.catalog-item,
+.search-result-item,
+.confirm-item,
+.calibration-edit-section,
+.calibration-result-group{
+background:linear-gradient(180deg,rgba(255,253,247,.94),rgba(246,252,242,.82));
+border-color:rgba(255,255,255,.96);
+box-shadow:var(--island-soft-shadow);
+}
+
+.page{
+border-radius:20px;
+border-width:2px;
+box-shadow:var(--island-shadow);
+}
+
+.page::before,
+.form-section::before,
+.dashboard-side-section::before,
+.inventory-overview-panel::before,
+.item-card::before,
+.outbound-preview-card::before,
+.dashboard-task-card::before,
+.dashboard-warning-card::before,
+.dashboard-recent-item::before,
+.inventory-summary-card::before,
+.mobile-panel::before{
+background:linear-gradient(135deg,rgba(255,255,255,.38),transparent 52%);
+}
+
+.dashboard-copy,
+.hint,
+.field-hint,
+.dashboard-warning-meta,
+.dashboard-warning-metrics,
+.dashboard-recent-meta,
+.inventory-overview-copy,
+.inventory-summary-label,
+.item-card-meta,
+.item-card-submeta,
+.candidate-meta,
+.catalog-item-meta,
+.confirm-item-detail{
+color:var(--island-muted);
+}
+
+.form-input,
+.form-select,
+.display-field{
+background:rgba(255,255,255,.94);
+border:1px solid rgba(174,210,184,.92);
+border-bottom-color:rgba(127,177,143,.7);
+border-radius:12px;
+color:var(--island-ink);
+box-shadow:inset 0 2px 0 rgba(255,255,255,.92),0 3px 0 rgba(74,168,121,.06);
+}
+
+.form-input:focus,
+.form-select:focus{
+border-color:var(--island-leaf);
+box-shadow:0 0 0 3px rgba(74,168,121,.18),0 5px 0 rgba(74,168,121,.08);
+}
+
+.btn,
+.mode-tab,
+.inventory-tab,
+.inventory-subtab,
+.summary-pill,
+.inventory-status,
+.item-status{
+border-radius:999px;
+}
+
+.btn{
+box-shadow:0 5px 0 rgba(35,64,56,.12),0 12px 18px rgba(35,64,56,.1);
+}
+
+.btn-primary,
+.mode-tab.active{
+background:linear-gradient(180deg,#65c492,#3ca572);
+color:#fff;
+box-shadow:0 5px 0 rgba(39,121,90,.22),0 14px 22px rgba(39,121,90,.18);
+}
+
+.btn-secondary,
+.mode-tab,
+.inventory-tab,
+.inventory-subtab,
+.dashboard-mobile-entry,
+.dashboard-mobile-qr-wrap{
+background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(240,249,237,.88));
+border-color:rgba(204,230,201,.95);
+color:#44675e;
+}
+
+.btn-danger{
+background:linear-gradient(180deg,#ff8c76,#e55f4d);
+box-shadow:0 5px 0 rgba(188,70,52,.22),0 14px 22px rgba(188,70,52,.16);
+}
+
+.inventory-tab.active{
+background:linear-gradient(180deg,#65c492,#3ca572);
+box-shadow:0 5px 0 rgba(39,121,90,.22),0 14px 22px rgba(39,121,90,.18);
+}
+
+/* Quick-date buttons and settings nav — match green animal-island palette */
+.reports-quick-btn{
+background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(240,249,237,.88));
+border:1px solid rgba(204,230,201,.95);
+color:#44675e;
+}
+
+.reports-quick-btn.active{
+background:linear-gradient(180deg,#65c492,#3ca572);
+color:#fff;
+border-color:transparent;
+box-shadow:0 4px 0 rgba(39,121,90,.18),0 10px 18px rgba(39,121,90,.14);
+}
+
+.settings-nav-item.active{
+background:linear-gradient(180deg,#65c492,#3ca572);
+color:#fff;
+border-color:transparent;
+box-shadow:0 4px 0 rgba(39,121,90,.18),0 10px 18px rgba(39,121,90,.14);
+}
+
+.inventory-subtab.active{
+background:linear-gradient(180deg,#fff7d8,#f3d67a);
+color:#7a5a0e;
+border-color:rgba(239,202,92,.9);
+box-shadow:0 4px 0 rgba(184,141,31,.16);
+}
+
+.inventory-tab-badge{
+background:var(--island-coral);
+box-shadow:0 2px 0 rgba(169,78,61,.22);
+}
+
+.dashboard-task-danger,
+.dashboard-warning-expired,
+.dashboard-warning-empty{
+background:linear-gradient(180deg,#fff7f3,#fffdf7);
+border-color:rgba(250,190,178,.96);
+}
+
+.dashboard-task-warning,
+.dashboard-warning-expiring,
+.dashboard-warning-low{
+background:linear-gradient(180deg,#fff9df,#fffdf7);
+border-color:rgba(241,211,121,.96);
+}
+
+.dashboard-task-batch-warning{
+background:linear-gradient(180deg,#eef9ff,#fffdf7);
+border-color:rgba(151,207,236,.96);
+}
+
+.inventory-card,
+.inventory-group-section,
+.reports-table-wrap,
+.catalog-group,
+.batch-item,
+.mobile-stock-card{
+border-radius:8px;
+}
+
+.inventory-card,
+.inventory-group-section,
+.reports-table-wrap,
+.batch-item,
+.catalog-group{
+background:linear-gradient(180deg,rgba(255,253,247,.96),rgba(248,253,244,.86));
+border-color:rgba(213,235,209,.95);
+box-shadow:0 7px 0 rgba(66,112,91,.055),0 14px 22px rgba(30,72,58,.08);
+}
+
+.inventory-card-accent{
+background:linear-gradient(180deg,var(--island-leaf),var(--island-sky));
+}
+
+.inventory-status-normal,
+.item-status.success{
+background:#e7f7ed;
+color:#247557;
+}
+
+.inventory-status-low,
+.inventory-status-expiring,
+.item-status.warning{
+background:#fff4ca;
+color:#8b6208;
+}
+
+.inventory-status-empty,
+.inventory-status-expired,
+.item-status.danger{
+background:#ffe8df;
+color:#ae3d2c;
+}
+
+.summary-pill{
+background:linear-gradient(180deg,#e9f8ef,#d5f0df);
+color:#26785a;
+border:1px solid rgba(255,255,255,.9);
+}
+
+.modal{
+background:rgba(35,64,56,.34);
+}
+
+.modal-header,
+.modal-footer{
+background:rgba(255,253,247,.54);
+border-color:rgba(211,232,209,.92);
+}
+
+.modal-close{
+background:#fff8df;
+color:#7a5a0e;
+border-radius:999px;
+}
+
+/* === Animal Island deep polish: transitions & micro-interactions === */
+
+/* Smooth page transitions */
+.page{
+  animation:islandFadeIn .32s cubic-bezier(.4,0,.2,1);
+}
+
+@keyframes islandFadeIn{
+  from{opacity:0;transform:translateY(8px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* Button press feel (game-like) */
+.btn:active:not(:disabled){
+  transform:translateY(3px);
+  box-shadow:0 2px 0 rgba(35,64,56,.08),0 4px 8px rgba(35,64,56,.06)!important;
+  transition:transform .08s,box-shadow .08s;
+}
+
+.btn-primary:active:not(:disabled){
+  box-shadow:0 2px 0 rgba(39,121,90,.16),0 6px 12px rgba(39,121,90,.12)!important;
+}
+
+.btn-danger:active:not(:disabled){
+  box-shadow:0 2px 0 rgba(188,70,52,.16),0 6px 12px rgba(188,70,52,.12)!important;
+}
+
+/* Card hover lift */
+.inventory-card:hover,
+.dashboard-task-card:hover,
+.dashboard-warning-card:hover,
+.item-card:hover{
+  transform:translateY(-2px);
+  transition:transform .22s cubic-bezier(.4,0,.2,1),box-shadow .22s;
+}
+
+/* Nav link press feel */
+.nav-link:active{
+  transform:translateY(2px);
+  transition:transform .08s;
+}
+
+/* Summary pill hover */
+.summary-pill{
+  transition:transform .18s,box-shadow .18s;
+}
+.summary-pill:hover{
+  transform:translateY(-1px);
+  box-shadow:0 6px 14px rgba(35,64,56,.1);
+}
+
+/* Badge bounce on load */
+@keyframes islandBounce{
+  0%,100%{transform:scale(1)}
+  50%{transform:scale(1.15)}
+}
+
+.inventory-tab-badge,
+.dashboard-task-count{
+  animation:islandBounce .4s ease-out;
+}
+
+/* Tooltip styling */
+.tooltip{
+  background:rgba(35,64,56,.94);
+  color:#fff;
+  border-radius:12px;
+  padding:8px 14px;
+  font-size:12px;
+  font-weight:500;
+  box-shadow:0 8px 24px rgba(30,50,42,.22);
+  backdrop-filter:blur(8px);
+  border:1px solid rgba(255,255,255,.12);
+}
+
+/* Toast styling polish */
+.toast{
+  border-radius:16px;
+  font-weight:600;
+  letter-spacing:.01em;
+  box-shadow:0 12px 36px rgba(30,50,42,.22);
+  border:1px solid rgba(255,255,255,.18);
+  backdrop-filter:blur(12px);
+}
+
+/* Form section glass effect */
+.form-section{
+  position:relative;
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+
+/* Scrollbar polish */
+::-webkit-scrollbar{
+  width:8px;
+  height:8px;
+}
+::-webkit-scrollbar-track{
+  background:rgba(240,248,237,.5);
+  border-radius:99px;
+}
+::-webkit-scrollbar-thumb{
+  background:rgba(120,170,148,.35);
+  border-radius:99px;
+  border:2px solid rgba(240,248,237,.5);
+}
+::-webkit-scrollbar-thumb:hover{
+  background:rgba(120,170,148,.55);
+}
+
+/* Focus visible for accessibility (yellow ring, not blue) */
+.btn:focus-visible{
+  outline:2px solid #f4c95d;
+  outline-offset:2px;
+}
+.form-input:focus-visible,
+.form-select:focus-visible{
+  outline:none;
+}
+
+/* Status dot pulse for warnings */
+@keyframes islandPulse{
+  0%,100%{opacity:1}
+  50%{opacity:.55}
+}
+
+.inventory-status-empty::before,
+.inventory-status-expired::before,
+.item-status.danger::before{
+  content:"";
+  display:inline-block;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:currentColor;
+  margin-right:5px;
+  animation:islandPulse 2s ease-in-out infinite;
+}
+
+/* Page header h2 refinement */
+.page h2{
+  font-weight:800;
+  letter-spacing:.01em;
+}
+
+/* Mode tabs polish */
+.mode-tab{
+  position:relative;
+  font-weight:600;
+  letter-spacing:.01em;
+}
+.mode-tab.active{
+  z-index:1;
+}
+
+/* Inventory overview panel polish */
+.inventory-overview-panel{
+  position:relative;
+  overflow:hidden;
+}
+.inventory-overview-panel::after{
+  content:"";
+  position:absolute;
+  top:-40px;
+  right:-40px;
+  width:120px;
+  height:120px;
+  background:radial-gradient(circle,rgba(74,168,121,.08),transparent 70%);
+  border-radius:50%;
+  pointer-events:none;
+}
+
+/* Dashboard copy text polish */
+.dashboard-copy{
+  font-size:13px;
+  line-height:1.5;
+  color:var(--island-muted);
+}
+
+/* Smooth collapse for hidden elements */
+.hidden{
+  display:none!important;
+}
+
+/* Selection highlight for interactive cards */
+.batch-item{
+  transition:all .18s cubic-bezier(.4,0,.2,1);
+}
+.batch-item:hover{
+  border-color:rgba(74,168,121,.4);
+  background:rgba(230,249,246,.45);
+}
+.batch-item.selected{
+  border-color:var(--island-leaf);
+  background:rgba(230,249,246,.6);
+  box-shadow:0 0 0 3px rgba(74,168,121,.12);
+}
+.batch-item.expired{
+  border-color:rgba(240,124,102,.45);
+  background:rgba(255,247,243,.6);
+}
+
+/* Inventory group section subtle top decoration */
+.inventory-group-section{
+  position:relative;
+}
+.inventory-group-section::before{
+  content:"";
+  position:absolute;
+  top:0;
+  left:16px;
+  right:16px;
+  height:2px;
+  background:linear-gradient(90deg,transparent,rgba(74,168,121,.18),transparent);
+  border-radius:2px;
+}
+
+/* Reports table wrap polish */
+.reports-table-wrap{
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+}
+
+/* Print-friendly: hide decorative elements on print */
+@media print{
+  .header,.mobile-header,.mobile-tabbar,.nav-link,.toast,.tooltip{display:none!important}
+  .page{box-shadow:none!important;border:none!important;background:#fff!important}
+  body::before{display:none!important}
+}
