@@ -630,12 +630,8 @@ def _build_dashboard_pending_tasks(inventory_data: list[WorkGroupInfo]) -> Dashb
                         for batch in reagent.batches
                         if batch.available_min_quantity <= 0
                     )
-                low_stock_batch_count += sum(
-                    1
-                    for batch in reagent.batches
-                    if batch.available_min_quantity
-                    <= max(_safe_int(reagent.effective_single_batch_warning_stock, 0), 0)
-                )
+                if _has_single_batch_warning(reagent.batches, reagent.effective_single_batch_warning_stock):
+                    low_stock_batch_count += 1
 
     return DashboardPendingTasks(
         expired_batch_count=expired_batch_count,

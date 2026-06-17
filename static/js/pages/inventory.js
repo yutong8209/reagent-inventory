@@ -302,12 +302,13 @@ const inventoryPage = {
             reagentCount: reagents.length,
             expiringCount: reagents.filter((item) => item.status_level === 'expiring').length,
             lowStockCount: reagents.filter((item) => item.status_level === 'low' || item.status_level === 'empty').length,
-            expiredBatchCount: reagents.reduce((sum, item) => sum + item.batches.filter((batch) => batch.is_expired).length, 0)
+            expiredBatchCount: reagents.reduce((sum, item) => sum + item.batches.filter((batch) => batch.is_expired).length, 0),
+            batchLowCount: reagents.filter((item) => this.hasBatchLowWarning(item)).length
         };
     },
 
     getSummaryValueClass(kind, count) {
-        if (kind === 'expiring' || kind === 'low') {
+        if (kind === 'expiring' || kind === 'low' || kind === 'batch_low') {
             return count > 0 ? 'inventory-summary-value inventory-summary-value-warning' : 'inventory-summary-value inventory-summary-value-success';
         }
         if (kind === 'expired') {
@@ -890,6 +891,10 @@ const inventoryPage = {
             <button class="inventory-summary-card inventory-summary-action inventory-summary-danger" type="button" onclick="inventoryPage.focusSummaryStatus('expired', ${summary.expiredBatchCount})">
                 <div class="inventory-summary-label">已过期批次数</div>
                 <div class="${this.getSummaryValueClass('expired', summary.expiredBatchCount)}">${summary.expiredBatchCount}</div>
+            </button>
+            <button class="inventory-summary-card inventory-summary-action inventory-summary-warn" type="button" onclick="inventoryPage.focusSummaryStatus('batch_low', ${summary.batchLowCount})">
+                <div class="inventory-summary-label">单批号预警</div>
+                <div class="${this.getSummaryValueClass('batch_low', summary.batchLowCount)}">${summary.batchLowCount}</div>
             </button>
         `;
     },
