@@ -794,8 +794,8 @@ def calibration_manual_preview(
     db: Session = Depends(get_db),
 ):
     calibrator = db.query(Reagent).filter(Reagent.id == calibrator_reagent_id).first()
-    if not calibrator or calibrator.is_archived or not calibrator.is_calibrator:
-        raise HTTPException(status_code=404, detail="校准品不存在或已归档")
+    if not calibrator or calibrator.is_archived:
+        raise HTTPException(status_code=404, detail="试剂不存在或已归档")
 
     calibrator_batch = (
         db.query(BatchStock)
@@ -807,27 +807,38 @@ def calibration_manual_preview(
         .first()
     )
     if not calibrator_batch:
-        raise HTTPException(status_code=404, detail="校准品批号不存在或与校准品不匹配")
+        raise HTTPException(status_code=404, detail="批号不存在或与试剂不匹配")
 
-    if _batch_total_min_units(calibrator_batch) <= 0:
-        raise HTTPException(status_code=400, detail="所选校准品批号暂无可用库存")
+    if calibrator.is_calibrator:
+        if _batch_total_min_units(calibrator_batch) <= 0:
+            raise HTTPException(status_code=400, detail="所选校准品批号暂无可用库存")
 
-    target_candidates = _build_target_candidates(db, calibrator)
-    if not target_candidates:
-        raise HTTPException(status_code=404, detail="当前校准品没有可匹配的被校准试剂")
+        calibration_source = "calibrator"
+        target_candidates = _build_target_candidates(db, calibrator)
+        if not target_candidates:
+            raise HTTPException(status_code=404, detail="当前校准品没有可匹配的被校准试剂")
 
-    target = target_candidates[0]
-    if target_reagent_id is not None:
-        target = next((item for item in target_candidates if item.id == target_reagent_id), None)
-        if not target:
-            raise HTTPException(status_code=400, detail="被校准试剂与当前校准品不匹配")
+        target = target_candidates[0]
+        if target_reagent_id is not None:
+            target = next((item for item in target_candidates if item.id == target_reagent_id), None)
+            if not target:
+                raise HTTPException(status_code=400, detail="被校准试剂与当前校准品不匹配")
 
-    old_batch_candidates = _load_target_old_batch_candidates(db, target.id)
-    new_batch_candidates = _load_target_new_batch_candidates(db, target.id)
-    default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
+        old_batch_candidates = _load_target_old_batch_candidates(db, target.id)
+        new_batch_candidates = _load_target_new_batch_candidates(db, target.id)
+        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
+    else:
+        calibration_source = "reagent"
+        target_candidates = [calibrator]
+        target = calibrator
+        if _batch_total_min_units(calibrator_batch) <= 0:
+            raise HTTPException(status_code=400, detail="所选试剂批号暂无可用库存")
+        old_batch_candidates = _load_target_old_batch_candidates(db, calibrator.id)
+        new_batch_candidates = _load_target_new_batch_candidates(db, calibrator.id)
+        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
 
     return CalibrationScanPreviewResponse(
-        calibration_source="calibrator",
+        calibration_source=calibration_source,
         calibrator_reagent_id=calibrator.id,
         calibrator_name=calibrator.name,
         calibrator_batch_stock_id=calibrator_batch.id,

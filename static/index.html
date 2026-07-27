@@ -504,7 +504,16 @@
 
                     <div id="calibration-manual-mode" class="form-section">
                         <h3>手动选择校准品</h3>
-                        <p class="hint">适合条码不方便扫描时使用。先选择校准品和库存批号，再生成本次校准表单。</p>
+                        <p class="hint">适合条码不方便扫描时使用。先选择校准来源和库存批号，再生成本次校准表单。</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="calibration-manual-source-type">校准来源类型</label>
+                                <select id="calibration-manual-source-type" class="form-select" onchange="calibrationPage.switchManualSourceType(this.value)">
+                                    <option value="calibrator">独立校准品</option>
+                                    <option value="reagent">试剂（自带校准）</option>
+                                </select>
+                            </div>
+                        </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label for="calibration-manual-search">关键词快速选择</label>
@@ -528,7 +537,7 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="calibration-manual-calibrator">校准品</label>
+                                <label for="calibration-manual-calibrator" id="calibration-manual-calibrator-label">校准品</label>
                                 <select id="calibration-manual-calibrator" class="form-select">
                                     <option value="">请选择校准品</option>
                                 </select>
@@ -536,7 +545,7 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="calibration-manual-batch">校准品批号</label>
+                                <label for="calibration-manual-batch" id="calibration-manual-batch-label">校准品批号</label>
                                 <select id="calibration-manual-batch" class="form-select">
                                     <option value="">请先选择校准品</option>
                                 </select>

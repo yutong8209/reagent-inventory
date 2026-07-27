@@ -7,6 +7,7 @@ const calibrationPage = {
     manualCalibrators: [],
     manualBatches: [],
     manualSearchResults: [],
+    manualSourceType: 'calibrator',
     outboundBatches: [],
     recentRecords: [],
     editRecordId: null,
@@ -209,18 +210,39 @@ const calibrationPage = {
         }
     },
 
+    switchManualSourceType(sourceType) {
+        this.manualSourceType = sourceType === 'reagent' ? 'reagent' : 'calibrator';
+        const select = document.getElementById('calibration-manual-source-type');
+        if (select) select.value = this.manualSourceType;
+        const isReagent = this.manualSourceType === 'reagent';
+        const calibratorLabel = document.getElementById('calibration-manual-calibrator-label');
+        const batchLabel = document.getElementById('calibration-manual-batch-label');
+        const searchInput = document.getElementById('calibration-manual-search');
+        if (calibratorLabel) calibratorLabel.textContent = isReagent ? '试剂' : '校准品';
+        if (batchLabel) batchLabel.textContent = isReagent ? '试剂批号' : '校准品批号';
+        if (searchInput) searchInput.placeholder = isReagent ? '输入试剂、仪器或工作组关键词' : '输入校准品、仪器或工作组关键词';
+        document.getElementById('calibration-form-panel')?.classList.add('hidden');
+        this.preview = null;
+        this.resetOutboundControls();
+        this.loadManualCalibrators();
+    },
+
     async loadManualCalibrators() {
         const calibratorSelect = document.getElementById('calibration-manual-calibrator');
         const batchSelect = document.getElementById('calibration-manual-batch');
         if (!calibratorSelect || !batchSelect) return;
         const previousCalibrator = calibratorSelect.value || '';
+        const isReagent = this.manualSourceType === 'reagent';
         const reagents = await API.reagents.list({
             status: 'active',
             work_group_id: document.getElementById('calibration-manual-work-group')?.value || null,
             instrument_id: document.getElementById('calibration-manual-instrument')?.value || null,
         });
-        this.manualCalibrators = reagents.filter((item) => item.is_calibrator);
-        calibratorSelect.innerHTML = '<option value="">请选择校准品</option>' + this.manualCalibrators
+        this.manualCalibrators = isReagent
+            ? reagents.filter((item) => !item.is_calibrator)
+            : reagents.filter((item) => item.is_calibrator);
+        const placeholder = isReagent ? '请选择试剂' : '请选择校准品';
+        calibratorSelect.innerHTML = `<option value="">${placeholder}</option>` + this.manualCalibrators
             .map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)} / ${this.escapeHtml(item.instrument_name || '')}</option>`)
             .join('');
         if (previousCalibrator && this.manualCalibrators.some((item) => String(item.id) === String(previousCalibrator))) {
@@ -229,7 +251,7 @@ const calibrationPage = {
             return;
         }
         this.manualBatches = [];
-        batchSelect.innerHTML = '<option value="">请先选择校准品</option>';
+        batchSelect.innerHTML = `<option value="">${isReagent ? '请先选择试剂' : '请先选择校准品'}</option>`;
         this.renderManualSummary();
     },
 
@@ -237,9 +259,10 @@ const calibrationPage = {
         const calibratorId = document.getElementById('calibration-manual-calibrator')?.value || '';
         const batchSelect = document.getElementById('calibration-manual-batch');
         if (!batchSelect) return;
+        const isReagent = this.manualSourceType === 'reagent';
         if (!calibratorId) {
             this.manualBatches = [];
-            batchSelect.innerHTML = '<option value="">请先选择校准品</option>';
+            batchSelect.innerHTML = `<option value="">${isReagent ? '请先选择试剂' : '请先选择校准品'}</option>`;
             this.renderManualSummary();
             return;
         }
@@ -302,7 +325,8 @@ const calibrationPage = {
                 .some((value) => String(value || '').toLowerCase().includes(keyword)))
             .slice(0, 8);
         if (!this.manualSearchResults.length) {
-            results.innerHTML = '<div class="inventory-empty">没有匹配的校准品</div>';
+            const emptyText = this.manualSourceType === 'reagent' ? '没有匹配的试剂' : '没有匹配的校准品';
+            results.innerHTML = `<div class="inventory-empty">${emptyText}</div>`;
             results.classList.remove('hidden');
             return;
         }
@@ -329,6 +353,15 @@ const calibrationPage = {
     },
 
     clearManualSelection() {
+        this.manualSourceType = 'calibrator';
+        const sourceTypeSelect = document.getElementById('calibration-manual-source-type');
+        if (sourceTypeSelect) sourceTypeSelect.value = 'calibrator';
+        const calibratorLabel = document.getElementById('calibration-manual-calibrator-label');
+        const batchLabel = document.getElementById('calibration-manual-batch-label');
+        const searchInput = document.getElementById('calibration-manual-search');
+        if (calibratorLabel) calibratorLabel.textContent = '校准品';
+        if (batchLabel) batchLabel.textContent = '校准品批号';
+        if (searchInput) searchInput.placeholder = '输入校准品、仪器或工作组关键词';
         document.getElementById('calibration-manual-work-group').value = '';
         document.getElementById('calibration-manual-instrument').innerHTML = '<option value="">全部仪器</option>';
         document.getElementById('calibration-manual-calibrator').innerHTML = '<option value="">请选择校准品</option>';
@@ -349,7 +382,8 @@ const calibrationPage = {
         const calibratorId = document.getElementById('calibration-manual-calibrator')?.value || '';
         const batchId = document.getElementById('calibration-manual-batch')?.value || '';
         if (!calibratorId || !batchId) {
-            return Utils.showToast('请先选择校准品和校准品批号', 'warning');
+            const msg = this.manualSourceType === 'reagent' ? '请先选择试剂和试剂批号' : '请先选择校准品和校准品批号';
+            return Utils.showToast(msg, 'warning');
         }
         try {
             const preview = await API.calibration.manualPreview({
@@ -465,7 +499,7 @@ const calibrationPage = {
         document.getElementById('calibration-calibrator-name').value = preview.calibrator_name || '';
         document.getElementById('calibration-calibrator-batch').value = preview.calibrator_batch_no || '';
         const sourceLabel = preview.raw_barcode?.startsWith('MANUAL::')
-            ? '手动选择校准品'
+            ? (preview.calibration_source === 'reagent' ? '手动选择试剂' : '手动选择校准品')
             : preview.calibration_source === 'reagent'
                 ? '当前扫码试剂'
                 : '当前校准品';
