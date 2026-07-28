@@ -331,11 +331,24 @@ const calibrationPage = {
             return;
         }
         results.innerHTML = this.manualSearchResults.map((item) => `
-            <button class="candidate-item" type="button" onclick="calibrationPage.selectManualCalibratorFromSearch(${item.id})">
+            <div class="candidate-item" role="button" tabindex="0" data-calibrator-id="${item.id}">
                 <span>${this.escapeHtml(item.name)}</span>
                 <small>${this.escapeHtml(item.work_group_name || '')} / ${this.escapeHtml(item.instrument_name || '')}</small>
-            </button>
+            </div>
         `).join('');
+        results.querySelectorAll('.candidate-item').forEach((el) => {
+            const id = parseInt(el.dataset.calibratorId, 10);
+            el.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                this.selectManualCalibratorFromSearch(id);
+            });
+            el.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    this.selectManualCalibratorFromSearch(id);
+                }
+            });
+        });
         results.classList.remove('hidden');
     },
 
