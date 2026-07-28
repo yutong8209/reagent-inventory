@@ -31,6 +31,13 @@ const calibrationPage = {
         document.querySelectorAll('[data-calibration-mode]').forEach((button) => {
             button.addEventListener('click', () => this.switchMode(button.dataset.calibrationMode || 'scan'));
         });
+        document.addEventListener('pointerdown', (event) => {
+            const results = document.getElementById('calibration-manual-search-results');
+            const input = document.getElementById('calibration-manual-search');
+            if (results && !results.contains(event.target) && event.target !== input) {
+                results.style.display = 'none';
+            }
+        });
         document.getElementById('calibration-preview-btn')?.addEventListener('click', () => this.scanPreview());
         document.getElementById('calibration-barcode')?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
@@ -133,7 +140,7 @@ const calibrationPage = {
         document.getElementById('calibration-manual-mode')?.classList.toggle('hidden', nextMode !== 'manual');
         document.getElementById('calibration-manual-search').value = '';
         document.getElementById('calibration-manual-search-results').innerHTML = '';
-        document.getElementById('calibration-manual-search-results').classList.add('hidden');
+        document.getElementById('calibration-manual-search-results').style.display = 'none';
         if (!options.preserveForm) {
             document.getElementById('calibration-form-panel')?.classList.add('hidden');
             this.preview = null;
@@ -317,7 +324,7 @@ const calibrationPage = {
         if (!keyword) {
             this.manualSearchResults = [];
             results.innerHTML = '';
-            results.classList.add('hidden');
+            results.style.display = 'none';
             return;
         }
         this.manualSearchResults = this.manualCalibrators
@@ -327,36 +334,23 @@ const calibrationPage = {
         if (!this.manualSearchResults.length) {
             const emptyText = this.manualSourceType === 'reagent' ? '没有匹配的试剂' : '没有匹配的校准品';
             results.innerHTML = `<div class="inventory-empty">${emptyText}</div>`;
-            results.classList.remove('hidden');
+            results.style.display = 'block';
             return;
         }
         results.innerHTML = this.manualSearchResults.map((item) => `
-            <div class="candidate-item" role="button" tabindex="0" data-calibrator-id="${item.id}">
+            <button class="candidate-item" type="button" onpointerdown="event.preventDefault();calibrationPage.selectManualCalibratorFromSearch(${item.id})">
                 <span>${this.escapeHtml(item.name)}</span>
                 <small>${this.escapeHtml(item.work_group_name || '')} / ${this.escapeHtml(item.instrument_name || '')}</small>
-            </div>
+            </button>
         `).join('');
-        results.querySelectorAll('.candidate-item').forEach((el) => {
-            const id = parseInt(el.dataset.calibratorId, 10);
-            el.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                this.selectManualCalibratorFromSearch(id);
-            });
-            el.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    this.selectManualCalibratorFromSearch(id);
-                }
-            });
-        });
-        results.classList.remove('hidden');
+        results.style.display = 'block';
     },
 
     async selectManualCalibratorFromSearch(calibratorId) {
         const select = document.getElementById('calibration-manual-calibrator');
         if (!select) return;
         select.value = String(calibratorId);
-        document.getElementById('calibration-manual-search-results')?.classList.add('hidden');
+        document.getElementById('calibration-manual-search-results').style.display = 'none';
         await this.selectManualCalibrator();
         const firstBatch = this.manualBatches[0];
         if (firstBatch) {
@@ -381,7 +375,7 @@ const calibrationPage = {
         document.getElementById('calibration-manual-batch').innerHTML = '<option value="">请先选择校准品</option>';
         document.getElementById('calibration-manual-search').value = '';
         document.getElementById('calibration-manual-search-results').innerHTML = '';
-        document.getElementById('calibration-manual-search-results').classList.add('hidden');
+        document.getElementById('calibration-manual-search-results').style.display = 'none';
         document.getElementById('calibration-form-panel')?.classList.add('hidden');
         this.preview = null;
         this.resetOutboundControls();
