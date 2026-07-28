@@ -6,7 +6,6 @@ const calibrationPage = {
     preview: null,
     manualCalibrators: [],
     manualBatches: [],
-    manualSearchResults: [],
     manualSourceType: 'calibrator',
     outboundBatches: [],
     recentRecords: [],
@@ -31,13 +30,6 @@ const calibrationPage = {
         document.querySelectorAll('[data-calibration-mode]').forEach((button) => {
             button.addEventListener('click', () => this.switchMode(button.dataset.calibrationMode || 'scan'));
         });
-        document.addEventListener('pointerdown', (event) => {
-            const results = document.getElementById('calibration-manual-search-results');
-            const input = document.getElementById('calibration-manual-search');
-            if (results && !results.contains(event.target) && event.target !== input) {
-                results.style.display = 'none';
-            }
-        });
         document.getElementById('calibration-preview-btn')?.addEventListener('click', () => this.scanPreview());
         document.getElementById('calibration-barcode')?.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
@@ -58,7 +50,6 @@ const calibrationPage = {
         });
         document.getElementById('calibration-manual-instrument')?.addEventListener('change', () => this.loadManualCalibrators());
         document.getElementById('calibration-manual-calibrator')?.addEventListener('change', () => this.selectManualCalibrator());
-        document.getElementById('calibration-manual-search')?.addEventListener('input', () => this.searchManualCalibrators());
         document.getElementById('calibration-manual-batch')?.addEventListener('change', () => this.renderManualSummary());
         document.getElementById('calibration-manual-preview-btn')?.addEventListener('click', () => this.generateManualPreview());
         document.getElementById('calibration-manual-clear-btn')?.addEventListener('click', () => this.clearManualSelection());
@@ -139,8 +130,6 @@ const calibrationPage = {
         document.getElementById('calibration-scan-mode')?.classList.toggle('hidden', nextMode !== 'scan');
         document.getElementById('calibration-manual-mode')?.classList.toggle('hidden', nextMode !== 'manual');
         document.getElementById('calibration-manual-search').value = '';
-        document.getElementById('calibration-manual-search-results').innerHTML = '';
-        document.getElementById('calibration-manual-search-results').style.display = 'none';
         if (!options.preserveForm) {
             document.getElementById('calibration-form-panel')?.classList.add('hidden');
             this.preview = null;
@@ -227,11 +216,31 @@ const calibrationPage = {
         const searchInput = document.getElementById('calibration-manual-search');
         if (calibratorLabel) calibratorLabel.textContent = isReagent ? '试剂' : '校准品';
         if (batchLabel) batchLabel.textContent = isReagent ? '试剂批号' : '校准品批号';
-        if (searchInput) searchInput.placeholder = isReagent ? '输入试剂、仪器或工作组关键词' : '输入校准品、仪器或工作组关键词';
+        if (searchInput) searchInput.placeholder = isReagent ? '输入关键词筛选试剂' : '输入关键词筛选校准品';
         document.getElementById('calibration-form-panel')?.classList.add('hidden');
         this.preview = null;
         this.resetOutboundControls();
+        if (searchInput) searchInput.value = '';
         this.loadManualCalibrators();
+    },
+
+    filterCalibratorDropdown() {
+        const keyword = (document.getElementById('calibration-manual-search')?.value || '').trim().toLowerCase();
+        const calibratorSelect = document.getElementById('calibration-manual-calibrator');
+        if (!calibratorSelect) return;
+        const previousValue = calibratorSelect.value;
+        const isReagent = this.manualSourceType === 'reagent';
+        const placeholder = isReagent ? '请选择试剂' : '请选择校准品';
+        const filtered = keyword
+            ? this.manualCalibrators.filter((item) => [item.name, item.work_group_name, item.instrument_name]
+                .some((v) => String(v || '').toLowerCase().includes(keyword)))
+            : this.manualCalibrators;
+        calibratorSelect.innerHTML = `<option value="">${placeholder}</option>` + filtered
+            .map((item) => `<option value="${item.id}">${this.escapeHtml(item.name)} / ${this.escapeHtml(item.instrument_name || '')}</option>`)
+            .join('');
+        if (previousValue && filtered.some((item) => String(item.id) === String(previousValue))) {
+            calibratorSelect.value = previousValue;
+        }
     },
 
     async loadManualCalibrators() {
@@ -316,49 +325,6 @@ const calibrationPage = {
         `;
     },
 
-    searchManualCalibrators() {
-        const input = document.getElementById('calibration-manual-search');
-        const results = document.getElementById('calibration-manual-search-results');
-        if (!input || !results) return;
-        const keyword = input.value.trim().toLowerCase();
-        if (!keyword) {
-            this.manualSearchResults = [];
-            results.innerHTML = '';
-            results.style.display = 'none';
-            return;
-        }
-        this.manualSearchResults = this.manualCalibrators
-            .filter((item) => [item.name, item.work_group_name, item.instrument_name]
-                .some((value) => String(value || '').toLowerCase().includes(keyword)))
-            .slice(0, 8);
-        if (!this.manualSearchResults.length) {
-            const emptyText = this.manualSourceType === 'reagent' ? '没有匹配的试剂' : '没有匹配的校准品';
-            results.innerHTML = `<div class="inventory-empty">${emptyText}</div>`;
-            results.style.display = 'block';
-            return;
-        }
-        results.innerHTML = this.manualSearchResults.map((item) => `
-            <button class="candidate-item" type="button" onpointerdown="event.preventDefault();calibrationPage.selectManualCalibratorFromSearch(${item.id})">
-                <span>${this.escapeHtml(item.name)}</span>
-                <small>${this.escapeHtml(item.work_group_name || '')} / ${this.escapeHtml(item.instrument_name || '')}</small>
-            </button>
-        `).join('');
-        results.style.display = 'block';
-    },
-
-    async selectManualCalibratorFromSearch(calibratorId) {
-        const select = document.getElementById('calibration-manual-calibrator');
-        if (!select) return;
-        select.value = String(calibratorId);
-        document.getElementById('calibration-manual-search-results').style.display = 'none';
-        await this.selectManualCalibrator();
-        const firstBatch = this.manualBatches[0];
-        if (firstBatch) {
-            document.getElementById('calibration-manual-batch').value = String(firstBatch.id);
-            this.renderManualSummary();
-        }
-    },
-
     clearManualSelection() {
         this.manualSourceType = 'calibrator';
         const sourceTypeSelect = document.getElementById('calibration-manual-source-type');
@@ -368,14 +334,12 @@ const calibrationPage = {
         const searchInput = document.getElementById('calibration-manual-search');
         if (calibratorLabel) calibratorLabel.textContent = '校准品';
         if (batchLabel) batchLabel.textContent = '校准品批号';
-        if (searchInput) searchInput.placeholder = '输入校准品、仪器或工作组关键词';
+        if (searchInput) searchInput.placeholder = '输入关键词筛选校准品';
         document.getElementById('calibration-manual-work-group').value = '';
         document.getElementById('calibration-manual-instrument').innerHTML = '<option value="">全部仪器</option>';
         document.getElementById('calibration-manual-calibrator').innerHTML = '<option value="">请选择校准品</option>';
         document.getElementById('calibration-manual-batch').innerHTML = '<option value="">请先选择校准品</option>';
         document.getElementById('calibration-manual-search').value = '';
-        document.getElementById('calibration-manual-search-results').innerHTML = '';
-        document.getElementById('calibration-manual-search-results').style.display = 'none';
         document.getElementById('calibration-form-panel')?.classList.add('hidden');
         this.preview = null;
         this.resetOutboundControls();

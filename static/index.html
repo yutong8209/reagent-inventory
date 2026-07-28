@@ -514,12 +514,11 @@
                                 </select>
                             </div>
                         </div>
-                        <div class="form-row" style="position:relative;">
+                        <div class="form-row">
                             <div class="form-group">
-                                <label for="calibration-manual-search">关键词快速选择</label>
-                                <input type="text" id="calibration-manual-search" class="form-input" placeholder="输入校准品、仪器或工作组关键词">
+                                <label for="calibration-manual-search">关键词快速筛选</label>
+                                <input type="text" id="calibration-manual-search" class="form-input" placeholder="输入关键词实时筛选下方下拉框" oninput="calibrationPage.filterCalibratorDropdown()">
                             </div>
-                            <div id="calibration-manual-search-results" class="calibration-search-dropdown"></div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
