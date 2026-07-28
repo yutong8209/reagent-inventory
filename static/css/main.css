@@ -27,6 +27,7 @@ radial-gradient(circle at 12% 10%,rgba(255,255,255,.52),transparent 24%),
 radial-gradient(circle at 88% 18%,rgba(167,206,255,.16),transparent 20%);
 opacity:.9}
 .page > *{position:relative;z-index:1}
+#page-calibration{overflow:visible}
 .page.active{display:block}
 .page h2{font-size:24px;margin-bottom:24px;color:#10243e;font-weight:700;letter-spacing:.01em}
 .page h3{font-size:17px;margin-bottom:14px;color:#162b45;font-weight:700;letter-spacing:.01em}

@@ -49,7 +49,6 @@ const calibrationPage = {
             await this.loadManualCalibrators();
         });
         document.getElementById('calibration-manual-instrument')?.addEventListener('change', () => this.loadManualCalibrators());
-        document.getElementById('calibration-manual-calibrator')?.addEventListener('change', () => this.selectManualCalibrator());
         document.getElementById('calibration-manual-batch')?.addEventListener('change', () => this.renderManualSummary());
         document.getElementById('calibration-manual-preview-btn')?.addEventListener('click', () => this.generateManualPreview());
         document.getElementById('calibration-manual-clear-btn')?.addEventListener('click', () => this.clearManualSelection());
@@ -240,9 +239,9 @@ const calibrationPage = {
                 .some((v) => String(v || '').toLowerCase().includes(keyword)))
             .slice(0, 20);
         datalist.innerHTML = matches.map((item) =>
-            `<option value="${this.escapeHtml(item.name)}" data-id="${item.id}">${this.escapeHtml(item.work_group_name || '')} / ${this.escapeHtml(item.instrument_name || '')}</option>`
+            `<option value="${this.escapeHtml(item.name)}">${this.escapeHtml(item.work_group_name || '')} / ${this.escapeHtml(item.instrument_name || '')}</option>`
         ).join('');
-        const exact = this.manualCalibrators.find((item) => item.name === trimmed);
+        const exact = this.manualCalibrators.find((item) => item.name.toLowerCase() === keyword);
         if (exact) {
             this.pickFromSearch(exact.id);
         }

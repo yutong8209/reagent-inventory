@@ -668,9 +668,11 @@ def calibration_scan_preview(payload: dict, db: Session = Depends(get_db)):
     if scanned_reagent.is_calibrator:
         calibration_source = "calibrator"
         target_candidates = _build_target_candidates(db, scanned_reagent)
-        target = target_candidates[0] if target_candidates else None
-        old_batch_candidates = _load_target_old_batch_candidates(db, target.id) if target else []
-        new_batch_candidates = _load_target_new_batch_candidates(db, target.id) if target else []
+        if not target_candidates:
+            raise HTTPException(status_code=404, detail="当前校准品没有可匹配的被校准试剂")
+        target = target_candidates[0]
+        old_batch_candidates = _load_target_old_batch_candidates(db, target.id)
+        new_batch_candidates = _load_target_new_batch_candidates(db, target.id)
         default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
     else:
         calibration_source = "reagent"
@@ -835,7 +837,9 @@ def calibration_manual_preview(
             raise HTTPException(status_code=400, detail="所选试剂批号暂无可用库存")
         old_batch_candidates = _load_target_old_batch_candidates(db, calibrator.id)
         new_batch_candidates = _load_target_new_batch_candidates(db, calibrator.id)
-        default_old_batch_no, default_new_batch_no = _resolve_default_batch_values(old_batch_candidates, new_batch_candidates)
+        default_old_batch_no, default_new_batch_no = _resolve_scanned_reagent_batch_values(
+            old_batch_candidates, new_batch_candidates, calibrator_batch.batch_no,
+        )
 
     return CalibrationScanPreviewResponse(
         calibration_source=calibration_source,
@@ -955,34 +959,37 @@ def create_calibration_record(data: CalibrationRecordCreate, db: Session = Depen
 
         _set_batch_total_min_units(calibrator_batch, available_min_quantity - data.usage_times)
 
-    transaction = Transaction(
-        reagent_id=calibrator.id,
-        batch_stock_id=calibrator_batch.id,
-        type="CALIBRATION",
-        quantity=data.usage_times,
-        operator=operator,
-        source="scan",
-        raw_barcode=_clean_text(data.raw_barcode) or f"CAL::{calibrator.id}",
-        package_unit=calibrator_batch.package_unit,
-        min_unit=calibrator_batch.min_unit,
-        package_to_min_qty=_safe_ratio(calibrator_batch.package_to_min_qty),
-        remark=_calibration_transaction_remark(
-            target_reagent_id=target.id,
-            target_reagent_name=target.name,
-            target_old_batch_no=data.target_old_batch_no,
-            target_new_batch_no=data.target_new_batch_no,
-            usage_times=data.usage_times,
-            result_unit=_clean_text(data.result_unit) or _clean_text(target.calibration_result_unit) or "nmmol/L",
-        ),
-    )
-    db.add(transaction)
-    db.flush()
+    transaction_id = None
+    if should_deduct_calibration_source:
+        transaction = Transaction(
+            reagent_id=calibrator.id,
+            batch_stock_id=calibrator_batch.id,
+            type="CALIBRATION",
+            quantity=data.usage_times,
+            operator=operator,
+            source="scan",
+            raw_barcode=_clean_text(data.raw_barcode) or f"CAL::{calibrator.id}",
+            package_unit=calibrator_batch.package_unit,
+            min_unit=calibrator_batch.min_unit,
+            package_to_min_qty=_safe_ratio(calibrator_batch.package_to_min_qty),
+            remark=_calibration_transaction_remark(
+                target_reagent_id=target.id,
+                target_reagent_name=target.name,
+                target_old_batch_no=data.target_old_batch_no,
+                target_new_batch_no=data.target_new_batch_no,
+                usage_times=data.usage_times,
+                result_unit=_clean_text(data.result_unit) or _clean_text(target.calibration_result_unit) or "nmmol/L",
+            ),
+        )
+        db.add(transaction)
+        db.flush()
+        transaction_id = transaction.id
 
     record = CalibrationRecord(
         calibrator_reagent_id=calibrator.id,
         calibrator_batch_stock_id=calibrator_batch.id,
         target_reagent_id=target.id,
-        transaction_id=transaction.id,
+        transaction_id=transaction_id,
         raw_barcode=_clean_text(data.raw_barcode) or None,
         target_old_batch_no=_clean_text(data.target_old_batch_no) or None,
         target_new_batch_no=_clean_text(data.target_new_batch_no) or None,
@@ -1067,7 +1074,7 @@ def update_calibration_record(record_id: int, data: CalibrationRecordUpdate, db:
     record.new_result_4 = _clean_text(data.new_result_4) or None
     record.new_result_5 = _clean_text(data.new_result_5) or None
 
-    if record.transaction_id:
+    if record.transaction_id and calibrator and calibrator.is_calibrator:
         transaction = db.query(Transaction).filter(Transaction.id == record.transaction_id).first()
         if transaction:
             transaction.quantity = data.usage_times

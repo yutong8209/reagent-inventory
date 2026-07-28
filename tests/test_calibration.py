@@ -406,9 +406,7 @@ def test_regular_reagent_scan_preview_uses_current_batch_and_previous_batch(tmp_
         new_batch = db.query(BatchStock).filter(BatchStock.id == new_batch_id).first()
         assert new_batch.quantity == 3
         transaction = db.query(Transaction).filter(Transaction.type == "CALIBRATION").first()
-        assert transaction is not None
-        assert transaction.reagent_id == reagent_id
-        assert transaction.batch_stock_id == new_batch_id
+        assert transaction is None
 
     outbound_response = client.post(
         "/api/calibration/records",
