@@ -516,9 +516,10 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label for="calibration-manual-search">关键词快速选择</label>
-                                <input type="text" id="calibration-manual-search" class="form-input" placeholder="输入校准品、仪器或工作组关键词" oninput="calibrationPage.onSearchInput(this.value)">
-                                <div id="calibration-manual-search-results"></div>
+                                <label for="calibration-manual-search" id="calibration-manual-calibrator-label">校准品</label>
+                                <input type="text" id="calibration-manual-search" class="form-input" list="calibration-manual-datalist" placeholder="输入关键词搜索并选择" oninput="calibrationPage.onSearchInput(this.value)">
+                                <datalist id="calibration-manual-datalist"></datalist>
+                                <select id="calibration-manual-calibrator" style="display:none;"></select>
                             </div>
                         </div>
                         <div class="form-row">
@@ -532,14 +533,6 @@
                                 <label for="calibration-manual-instrument">仪器</label>
                                 <select id="calibration-manual-instrument" class="form-select">
                                     <option value="">全部仪器</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label for="calibration-manual-calibrator" id="calibration-manual-calibrator-label">校准品</label>
-                                <select id="calibration-manual-calibrator" class="form-select">
-                                    <option value="">请选择校准品</option>
                                 </select>
                             </div>
                         </div>

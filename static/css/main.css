@@ -3373,24 +3373,6 @@ padding-bottom:18px;
 #page-calibration .form-section{
   overflow:visible;
 }
-#calibration-manual-search-results{
-  margin-top:8px;
-}
-#calibration-manual-search-results .candidate-item{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:10px 12px;
-  background:rgba(255,255,255,.85);
-  border:1px solid rgba(189,205,224,.5);
-  border-radius:10px;
-  cursor:pointer;
-  font-size:13px;
-}
-#calibration-manual-search-results .candidate-item:hover{
-  background:rgba(230,240,255,.9);
-  border-color:rgba(100,160,255,.5);
-}
 
 /* Animal Island inspired visual refresh */
 :root{
