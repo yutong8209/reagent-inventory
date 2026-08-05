@@ -317,3 +317,38 @@ def test_x8_expiry_after_production_date_suffix_17_is_detected(tmp_path):
     assert payload["extracted_production_date"] == "2025-12-17"
     assert payload["extracted_expiry_date"] == "2027-06-17"
     assert payload["extracted_batch_no"] == "223250211"
+
+
+def test_expiry_not_taken_from_gtin_internal_17(tmp_path):
+    """H1 回归：GTIN 内含 '17'+合法日期时，效期必须取真实的 AI 17，而非 GTIN 内部片段"""
+    client, _ = build_client(tmp_path)
+    barcode = "01069471723010141727061010LOT123"  # GTIN 内 '17230101'，真实 AI 17 为 2027-06-10
+
+    response = client.post("/api/barcode/parse", json={"barcode": barcode})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["extracted_expiry_date"] == "2027-06-10"
+    assert payload["extracted_batch_no"] == "LOT123"
+
+
+def test_batch_no_without_ai17_not_taken_from_serial_tail(tmp_path):
+    """H3 回归：无 AI 17 的条码，批号必须取 AI 10 后的完整批号，而非序列号尾部的 '10'"""
+    client, _ = build_client(tmp_path)
+    barcode = "01069471455123851125121710223250211240130201036M"
+
+    response = client.post("/api/barcode/parse", json={"barcode": barcode})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["extracted_batch_no"] == "223250211"
+
+
+def test_batch_no_truncated_at_ai21_serial(tmp_path):
+    """M1 回归：批号后跟 AI 21 序列号时应截断，不把序列号吞进批号"""
+    client, _ = build_client(tmp_path)
+    barcode = "010694714551238517270610101234521SERIAL123"
+
+    response = client.post("/api/barcode/parse", json={"barcode": barcode})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["extracted_batch_no"] == "12345"
+    assert payload["extracted_expiry_date"] == "2027-06-10"

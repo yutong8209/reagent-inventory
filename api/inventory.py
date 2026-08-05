@@ -208,6 +208,8 @@ def _effective_warning_values(reagent: Reagent) -> tuple[int, int, str]:
 
 
 def _effective_single_batch_warning_stock(reagent: Reagent, effective_warning_stock: int) -> int:
+    if reagent.single_batch_warning_stock is not None:
+        return _safe_int(reagent.single_batch_warning_stock, effective_warning_stock)
     instrument = reagent.instrument
     if instrument and instrument.default_single_batch_warning_stock is not None:
         return _safe_int(instrument.default_single_batch_warning_stock, effective_warning_stock)
@@ -984,7 +986,7 @@ def get_mobile_overview(
 
 @router.get("/mobile/qr")
 def get_mobile_qr(
-    target: str = Query(..., min_length=1),
+    target: str = Query(..., min_length=1, max_length=512),
 ):
     qr = qrcode.QRCode(
         version=None,
@@ -992,8 +994,11 @@ def get_mobile_qr(
         box_size=8,
         border=1,
     )
-    qr.add_data(target)
-    qr.make(fit=True)
+    try:
+        qr.add_data(target)
+        qr.make(fit=True)
+    except qrcode.exceptions.DataOverflowError:
+        raise HTTPException(status_code=400, detail="二维码内容过长")
 
     image = qr.make_image(image_factory=SvgPathImage)
     buffer = BytesIO()
@@ -1113,11 +1118,11 @@ def update_work_group(work_group_id: int, data: WorkGroupUpdate, db: Session = D
 def delete_work_group(work_group_id: int, db: Session = Depends(get_db)):
     work_group = db.query(WorkGroup).filter(WorkGroup.id == work_group_id).first()
     if not work_group:
-        raise HTTPException(status_code=404, detail="宸ヤ綔缁勪笉瀛樺湪")
+        raise HTTPException(status_code=404, detail="工作组不存在")
 
     instrument_count = db.query(Instrument).filter(Instrument.work_group_id == work_group_id).count()
     if instrument_count > 0:
-        raise HTTPException(status_code=400, detail=f"褰撳墠宸ヤ綔缁勪笅杩樻湁 {instrument_count} 鍙颁华鍣紝璇峰厛鍒犻櫎鎴栬浆绉诲悗鍐嶅垹闄?")
+        raise HTTPException(status_code=400, detail=f"当前工作组下还有 {instrument_count} 台仪器，请先删除或转移后再删除")
 
     db.delete(work_group)
     db.commit()
@@ -1197,11 +1202,11 @@ def create_instrument(data: InstrumentCreate, db: Session = Depends(get_db)):
 def delete_instrument(instrument_id: int, db: Session = Depends(get_db)):
     instrument = db.query(Instrument).filter(Instrument.id == instrument_id).first()
     if not instrument:
-        raise HTTPException(status_code=404, detail="浠櫒涓嶅瓨鍦?")
+        raise HTTPException(status_code=404, detail="仪器不存在")
 
     reagent_count = db.query(Reagent).filter(Reagent.instrument_id == instrument_id).count()
     if reagent_count > 0:
-        raise HTTPException(status_code=400, detail=f"褰撳墠浠櫒涓嬭繕鏈? {reagent_count} 涓瘯鍓傛。妗堬紝璇峰厛澶勭悊璇曞墏鍚庡啀鍒犻櫎")
+        raise HTTPException(status_code=400, detail=f"当前仪器下还有 {reagent_count} 个试剂档案，请先处理试剂后再删除")
 
     db.delete(instrument)
     db.commit()
@@ -1412,7 +1417,8 @@ def update_reagent(reagent_id: int, data: ReagentUpdate, db: Session = Depends(g
     reagent.package_to_min_qty = data.package_to_min_qty
     reagent.warning_days = _safe_int(data.warning_days, 30)
     reagent.warning_stock = _safe_int(data.warning_stock, 5)
-    reagent.single_batch_warning_stock = None
+    if "single_batch_warning_stock" in data.model_fields_set:
+        reagent.single_batch_warning_stock = data.single_batch_warning_stock
     reagent.follow_instrument = bool(data.follow_instrument)
     (
         db.query(BatchStock)
@@ -1445,7 +1451,8 @@ def update_reagent_warning_settings(
     reagent.follow_instrument = bool(data.follow_instrument)
     reagent.warning_days = _safe_int(data.warning_days, 30)
     reagent.warning_stock = _safe_int(data.warning_stock, 5)
-    reagent.single_batch_warning_stock = None
+    if "single_batch_warning_stock" in data.model_fields_set:
+        reagent.single_batch_warning_stock = data.single_batch_warning_stock
     db.commit()
     db.refresh(reagent)
 
@@ -1585,11 +1592,11 @@ def update_reagent_group(group_id: int, data: ReagentGroupUpdate, db: Session = 
 def delete_reagent_group(group_id: int, db: Session = Depends(get_db)):
     group = db.query(ReagentGroup).filter(ReagentGroup.id == group_id).first()
     if not group:
-        raise HTTPException(status_code=404, detail="椤圭洰鍒嗙粍涓嶅瓨鍦?")
+        raise HTTPException(status_code=404, detail="项目分组不存在")
 
     reagent_count = db.query(Reagent).filter(Reagent.reagent_group_id == group_id).count()
     if reagent_count > 0:
-        raise HTTPException(status_code=400, detail=f"褰撳墠鍒嗙粍宸茶 {reagent_count} 涓瘯鍓備娇鐢紝璇峰厛鏇存敼璇曞墏鍒嗙粍鍚庡啀鍒犻櫎")
+        raise HTTPException(status_code=400, detail=f"当前分组已被 {reagent_count} 个试剂使用，请先更改试剂分组后再删除")
 
     db.delete(group)
     db.commit()
@@ -1671,7 +1678,7 @@ def update_unit_option(option_id: int, data: UnitOptionUpdate, db: Session = Dep
 def delete_unit_option(option_id: int, db: Session = Depends(get_db)):
     option = db.query(UnitOption).filter(UnitOption.id == option_id).first()
     if not option:
-        raise HTTPException(status_code=404, detail="鍗曚綅閫夐」涓嶅瓨鍦?")
+        raise HTTPException(status_code=404, detail="单位选项不存在")
 
     db.delete(option)
     db.commit()

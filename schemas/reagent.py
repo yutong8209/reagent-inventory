@@ -15,8 +15,8 @@ class ReagentCreate(BaseModel):
     unit: str = "瓶"
     package_unit: str = "盒"
     package_to_min_qty: int = Field(default=1, gt=0)
-    warning_days: int = 30
-    warning_stock: int = 5
+    warning_days: int = Field(default=30, ge=0)
+    warning_stock: int = Field(default=5, ge=0)
     single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
     follow_instrument: bool = True
     is_calibrator: Optional[bool] = None
@@ -56,8 +56,8 @@ class ReagentUpdate(BaseModel):
     unit: str = "瓶"
     package_unit: str = "盒"
     package_to_min_qty: int = Field(default=1, gt=0)
-    warning_days: int = 30
-    warning_stock: int = 5
+    warning_days: int = Field(default=30, ge=0)
+    warning_stock: int = Field(default=5, ge=0)
     single_batch_warning_stock: Optional[int] = Field(default=None, ge=0)
     follow_instrument: bool = False
     is_calibrator: bool = False

@@ -39,27 +39,15 @@ DEFAULT_CATALOG = [
 
 
 def _get_or_create_group(group_name: str, legacy_names: list[str], db: Session) -> WorkGroup:
+    # 只补缺、不改造：优先匹配现名，其次旧名（仅避免重复建档），不做改名/合并/覆写
     target_group = db.query(WorkGroup).filter(WorkGroup.name == group_name).first()
+    if target_group:
+        return target_group
 
     for legacy_name in legacy_names:
         legacy_group = db.query(WorkGroup).filter(WorkGroup.name == legacy_name).first()
-        if not legacy_group:
-            continue
-
-        if target_group and target_group.id != legacy_group.id:
-            instruments = db.query(Instrument).filter(Instrument.work_group_id == legacy_group.id).all()
-            for instrument in instruments:
-                instrument.work_group_id = target_group.id
-            db.delete(legacy_group)
-            db.flush()
-            return target_group
-
-        legacy_group.name = group_name
-        db.flush()
-        return legacy_group
-
-    if target_group:
-        return target_group
+        if legacy_group:
+            return legacy_group
 
     new_group = WorkGroup(name=group_name)
     db.add(new_group)
@@ -78,10 +66,10 @@ def _sync_group_instruments(group: WorkGroup, instrument_specs: list[dict], db: 
 
         instrument = instruments_by_name.get(target_name)
         if instrument:
-            instrument.model = target_model
             used_ids.add(instrument.id)
             continue
 
+        # 仅用别名避免重复建档，不做改名/覆写 model
         instrument = None
         for alias in spec.get("aliases", []):
             alias_match = instruments_by_name.get(alias)
@@ -90,8 +78,6 @@ def _sync_group_instruments(group: WorkGroup, instrument_specs: list[dict], db: 
                 break
 
         if instrument:
-            instrument.name = target_name
-            instrument.model = target_model
             used_ids.add(instrument.id)
             continue
 

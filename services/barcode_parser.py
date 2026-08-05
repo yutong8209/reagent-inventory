@@ -228,6 +228,7 @@ class BarcodeParser:
 
     def _extract_production_date(self, barcode: str) -> Optional[date]:
         product_code = self._extract_product_code(barcode)
+        search_region = barcode
         if product_code:
             product_prefix = f"01{product_code}"
             product_index = barcode.find(product_prefix)
@@ -237,13 +238,15 @@ class BarcodeParser:
                     parsed_date = self._parse_ai_date(barcode[ai_start + 2:ai_start + 8])
                     if parsed_date:
                         return parsed_date
+                search_region = barcode[ai_start:]
 
-        for ai_match in re.finditer(r"(?=11(\d{6}))", barcode):
+        # 仅在产品码之后按 AI 11 顺序解码，避免 GTIN/序列号内误匹配
+        for ai_match in re.finditer(r"(?=11(\d{6}))", search_region):
             parsed_date = self._parse_ai_date(ai_match.group(1))
             if parsed_date:
                 return parsed_date
 
-        heuristic_match = re.search(r"21\d(\d{6})17", barcode)
+        heuristic_match = re.search(r"21\d(\d{6})17", search_region)
         if heuristic_match:
             return self._parse_ai_date(heuristic_match.group(1))
 
@@ -421,41 +424,79 @@ class BarcodeParser:
         return extracted or None
 
     def _extract_batch_no(self, barcode: str) -> Optional[str]:
-        ai_sequence_match = re.search(r"11\d{6}17\d{6}10(.+)", barcode)
+        product_code = self._extract_product_code(barcode)
+        search_start = 0
+        if product_code:
+            product_prefix = f"01{product_code}"
+            product_index = barcode.find(product_prefix)
+            if product_index >= 0:
+                search_start = product_index + len(product_prefix)
+
+        region = barcode[search_start:]
+
+        # 1) 标准 AI 序列：11<生产日期>17<效期>10<批号>
+        ai_sequence_match = re.search(r"11\d{6}17\d{6}10(.+)", region)
         if ai_sequence_match:
-            lot = ai_sequence_match.group(1).strip()
+            lot = self._normalize_lot(ai_sequence_match.group(1))
             if lot:
-                normalized_lot = self._extract_structured_lot(lot)
-                return normalized_lot or lot
+                return lot
 
-        expiry_matches = list(re.finditer(r"17\d{6}", barcode))
-        for expiry_match in reversed(expiry_matches):
-            lot_anchor = barcode.find("10", expiry_match.end())
-            if lot_anchor < 0:
-                continue
-            lot = barcode[lot_anchor + 2 :].strip()
+        # 2) 无生产日期：17<效期>10<批号>（17 紧跟产品码之后）
+        if region.startswith("17"):
+            ai_match = re.match(r"17\d{6}10(.+)", region)
+            if ai_match:
+                lot = self._normalize_lot(ai_match.group(1))
+                if lot:
+                    return lot
+
+        # 3) 无效期：11<生产日期>10<批号>
+        ai_match = re.match(r"11\d{6}10(.+)", region)
+        if ai_match:
+            lot = self._normalize_lot(ai_match.group(1))
             if lot:
-                normalized_lot = self._extract_structured_lot(lot)
-                return normalized_lot or lot
+                return lot
 
-        lot_anchor = barcode.rfind("10")
+        # 4) 从日期字段之后找第一个 10 作为批号锚点（排除序列号尾部）
+        batch_search_start = 0
+        for date_pattern in (r"11\d{6}", r"17\d{6}"):
+            date_match = re.match(date_pattern, region[batch_search_start:])
+            if date_match:
+                batch_search_start += date_match.end()
+
+        lot_anchor = region.find("10", batch_search_start)
         if lot_anchor >= 0:
-            lot = barcode[lot_anchor + 2 :].strip()
+            lot = self._normalize_lot(region[lot_anchor + 2:])
             if lot:
-                normalized_lot = self._extract_structured_lot(lot)
-                return normalized_lot or lot
+                return lot
 
-        patterns = [
-            r"[A-Z]{2,}\d{4,}",
-            r"\d{6,}[A-Z]{0,2}",
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, barcode)
+        # 5) 回退：字母/数字模式（排除产品码区段）
+        for pattern in (r"[A-Z]{2,}\d{4,}", r"\d{6,}[A-Z]{0,2}"):
+            match = re.search(pattern, region)
             if match:
                 return match.group(0)
 
         return None
+
+    def _normalize_lot(self, lot: str) -> Optional[str]:
+        if not lot:
+            return None
+        raw = lot.strip()
+        if not raw:
+            return None
+
+        structured = self._extract_structured_lot(self._normalize_rule_value(raw))
+        if structured:
+            return structured
+
+        normalized = self._normalize_rule_value(raw)
+        # 仅在批号后紧跟 GS1 AI 21（序列号，字母开头）时截断，避免吞掉后续序列号
+        # （不做纯数字 AI 截断，防止把批号内部的数字误判成 AI）
+        ai_cut = re.search(r"21[A-Z]", normalized)
+        if ai_cut:
+            candidate = normalized[:ai_cut.start()]
+            if candidate:
+                return candidate
+        return raw
 
     def _extract_structured_lot(self, lot: str) -> Optional[str]:
         normalized_lot = self._normalize_rule_value(lot)
@@ -575,19 +616,34 @@ class BarcodeParser:
             start = index + 1
 
     def _extract_expiry_date(self, barcode: str) -> Optional[date]:
-        for ai_match in re.finditer(r"(?=17(\d{6}))", barcode):
-            ai_date = self._parse_ai_date(ai_match.group(1))
-            if ai_date:
-                return ai_date
+        production_date = self._extract_production_date(barcode)
+        product_code = self._extract_product_code(barcode)
+        search_region = barcode
+        if product_code:
+            product_prefix = f"01{product_code}"
+            product_index = barcode.find(product_prefix)
+            if product_index >= 0:
+                ai_start = product_index + len(product_prefix)
+                if barcode[ai_start:ai_start + 2] == "11":
+                    ai_start += 8
+                if barcode[ai_start:ai_start + 2] == "17":
+                    parsed_date = self._parse_ai_date(barcode[ai_start + 2:ai_start + 8])
+                    if parsed_date:
+                        return parsed_date
+                search_region = barcode[ai_start:]
 
-        patterns = [
-            (r"(\d{4})(\d{2})(\d{2})", True),
-            (r"(\d{2})(\d{2})(\d{2})", False),
-        ]
+        # 仅在产品码之后按 AI 17 顺序解码，避免 GTIN/批号内误匹配
+        for ai_match in re.finditer(r"(?=17(\d{6}))", search_region):
+            parsed_date = self._parse_ai_date(ai_match.group(1))
+            if parsed_date:
+                return parsed_date
 
-        for pattern, is_full_year in patterns:
-            match = re.search(pattern, barcode)
-            if match:
+        # 数字日期回退：遍历全部候选，排除嵌在更长数字串内的片段
+        for pattern, is_full_year in (
+            (r"(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)", True),
+            (r"(?<!\d)(\d{2})(\d{2})(\d{2})(?!\d)", False),
+        ):
+            for match in re.finditer(pattern, search_region):
                 try:
                     if is_full_year:
                         year = int(match.group(1))
@@ -599,7 +655,10 @@ class BarcodeParser:
                         day = int(match.group(3))
 
                     if 2020 <= year <= 2050 and 1 <= month <= 12 and 1 <= day <= 31:
-                        return date(year, month, day)
+                        parsed = date(year, month, day)
+                        if production_date and parsed < production_date:
+                            continue
+                        return parsed
                 except ValueError:
                     continue
 

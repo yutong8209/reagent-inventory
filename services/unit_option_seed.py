@@ -24,12 +24,7 @@ def ensure_default_unit_options(db: Session):
     for spec in DEFAULT_UNIT_OPTIONS:
         option = existing.get(spec["name"])
         if option:
-            if option.scope != spec["scope"] or option.sort_order != spec["sort_order"]:
-                option.scope = spec["scope"]
-                option.sort_order = spec["sort_order"]
-                if not option.is_active:
-                    option.is_active = True
-                changed = True
+            # 只补缺，不覆写用户自定义的 scope/sort_order/is_active
             continue
 
         db.add(

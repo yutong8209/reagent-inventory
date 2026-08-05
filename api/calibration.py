@@ -80,8 +80,9 @@ def _batch_total_min_units(batch: BatchStock) -> int:
 
 def _set_batch_total_min_units(batch: BatchStock, total_min_units: int):
     ratio = _safe_ratio(batch.package_to_min_qty)
-    batch.quantity = total_min_units // ratio
-    batch.loose_min_quantity = total_min_units % ratio
+    normalized_total = max(int(total_min_units or 0), 0)
+    batch.quantity = normalized_total // ratio
+    batch.loose_min_quantity = normalized_total % ratio
 
 
 def _require_operator(operator_name: str, db: Session) -> str:
@@ -592,6 +593,10 @@ def _create_linked_outbound_transaction(
         if not target_batch:
             raise HTTPException(status_code=400, detail="出库批号不存在或与试剂不匹配")
     else:
+        # 未显式指定出库批号时，仅当出库对象就是校准试剂自身（试剂自带校准）时
+        # 才用校准批次兜底；否则无法确定目标批次，拒绝操作避免重复扣减/流水错配
+        if outbound_reagent.id != source_reagent.id:
+            raise HTTPException(status_code=400, detail="同步出库必须指定出库批号")
         target_batch = source_batch
 
     package_to_min_qty = _safe_ratio(target_batch.package_to_min_qty)

@@ -566,8 +566,8 @@ def test_inventory_uses_instrument_defaults_until_reagent_override(tmp_path):
     })
     assert update_response.status_code == 200
     assert update_response.json()["warning_source"] == "reagent"
-    assert update_response.json()["single_batch_warning_stock"] is None
-    assert update_response.json()["effective_single_batch_warning_stock"] == 5
+    assert update_response.json()["single_batch_warning_stock"] == 3
+    assert update_response.json()["effective_single_batch_warning_stock"] == 3
 
     inventory_response = client.get("/api/inventory")
     reagent_payload = next(
@@ -580,8 +580,8 @@ def test_inventory_uses_instrument_defaults_until_reagent_override(tmp_path):
     assert reagent_payload["warning_source"] == "reagent"
     assert reagent_payload["effective_warning_days"] == 2
     assert reagent_payload["effective_warning_stock"] == 5
-    assert reagent_payload["single_batch_warning_stock"] is None
-    assert reagent_payload["effective_single_batch_warning_stock"] == 5
+    assert reagent_payload["single_batch_warning_stock"] == 3
+    assert reagent_payload["effective_single_batch_warning_stock"] == 3
     assert reagent_payload["status_level"] == "normal"
 
 
@@ -2140,3 +2140,65 @@ def test_manual_inbound_new_reagent_inherits_instrument_defaults(tmp_path):
         assert reagent.warning_days == 14
         assert reagent.warning_stock == 7
         assert reagent.follow_instrument is False
+
+
+def test_single_batch_warning_stock_persists_and_is_not_cleared(tmp_path):
+    """试剂级单批号预警：显式传值应生效；保存档案未传该字段时不应清空已有值"""
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="单批号预警试剂",
+            match_mode="exact",
+            match_pattern="SBW-001",
+            raw_barcode_sample="SBW-001",
+            manufacturer="测试厂家",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=True,
+        )
+        db.add(reagent)
+        db.commit()
+        reagent_id = reagent.id
+
+    # 1) 显式设置单批号预警 -> 应保存生效
+    resp = client.put(f"/api/reagents/{reagent_id}/warning-settings", json={
+        "follow_instrument": False,
+        "warning_days": 10,
+        "warning_stock": 4,
+        "single_batch_warning_stock": 2,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["single_batch_warning_stock"] == 2
+    assert resp.json()["effective_single_batch_warning_stock"] == 2
+
+    # 2) 保存档案但不传该字段 -> 不应清空已有值
+    resp = client.put(f"/api/reagents/{reagent_id}", json={
+        "instrument_id": instrument_id,
+        "name": "单批号预警试剂",
+        "unit": "瓶",
+        "package_unit": "盒",
+        "package_to_min_qty": 1,
+        "warning_days": 30,
+        "warning_stock": 5,
+        "follow_instrument": False,
+        "is_calibrator": False,
+        "calibration_result_unit": "nmmol/L",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["single_batch_warning_stock"] == 2, "未传字段时不应清空单批号预警"
+
+    # 3) 显式传 null -> 应清空
+    resp = client.put(f"/api/reagents/{reagent_id}/warning-settings", json={
+        "follow_instrument": False,
+        "warning_days": 10,
+        "warning_stock": 4,
+        "single_batch_warning_stock": None,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["single_batch_warning_stock"] is None

@@ -29,7 +29,7 @@ class StockInRequest(BaseModel):
     quantity: int = Field(gt=0)
     operator: str
     raw_barcode: str
-    package_unit: str = "鐩?"
+    package_unit: str = "盒"
     min_unit: Optional[str] = None
     package_to_min_qty: int = Field(default=1, gt=0)
     source: Literal["scan", "manual"] = "scan"
@@ -53,7 +53,7 @@ class StockInBatchItem(BaseModel):
     batch_no: str
     expiry_date: date
     quantity: int = Field(gt=0)
-    package_unit: str = "鐩?"
+    package_unit: str = "盒"
     min_unit: Optional[str] = None
     package_to_min_qty: int = Field(default=1, gt=0)
     warning_days: Optional[int] = Field(default=None, ge=0)

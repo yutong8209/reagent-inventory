@@ -1,5 +1,8 @@
+import logging
 import re
 from datetime import date
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -308,7 +311,8 @@ def _process_batch_inbound(request: StockInBatchRequest, db: Session) -> StockIn
         raise
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"入库失败：{exc}") from exc
+        logger.exception("批量入库失败")
+        raise HTTPException(status_code=500, detail="入库失败，请稍后重试") from exc
 
     return StockInBatchResponse(
         success=True,

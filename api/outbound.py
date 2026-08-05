@@ -1,4 +1,6 @@
+import logging
 import json
+logger = logging.getLogger(__name__)
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -65,8 +67,9 @@ def _batch_total_min_units(batch: BatchStock) -> int:
 
 def _set_batch_total_min_units(batch: BatchStock, total_min_units: int):
     ratio = _safe_ratio(batch.package_to_min_qty)
-    batch.quantity = total_min_units // ratio
-    batch.loose_min_quantity = total_min_units % ratio
+    normalized_total = max(int(total_min_units or 0), 0)
+    batch.quantity = normalized_total // ratio
+    batch.loose_min_quantity = normalized_total % ratio
 
 
 def _is_batch_expired(batch: BatchStock) -> bool:
@@ -404,7 +407,8 @@ def _process_batch_outbound(request: StockOutBatchRequest, db: Session) -> Stock
         raise
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"出库失败：{exc}") from exc
+        logger.exception("批量出库失败")
+        raise HTTPException(status_code=500, detail="出库失败，请稍后重试") from exc
 
     return StockOutBatchResponse(
         success=True,
