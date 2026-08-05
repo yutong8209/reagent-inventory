@@ -994,7 +994,7 @@ def test_mobile_overview_filters_by_instrument(tmp_path):
                 batch_stock_id=first_batch.id,
                 type="OUT",
                 quantity=1,
-                operator="闄堣尳",
+                operator="陈茹",
                 source="manual",
                 raw_barcode="FILTER-A",
                 package_unit="盒",
@@ -1008,7 +1008,7 @@ def test_mobile_overview_filters_by_instrument(tmp_path):
                 batch_stock_id=second_batch.id,
                 type="OUT",
                 quantity=1,
-                operator="闄堣尳",
+                operator="陈茹",
                 source="manual",
                 raw_barcode="FILTER-B",
                 package_unit="盒",
@@ -2202,3 +2202,96 @@ def test_single_batch_warning_stock_persists_and_is_not_cleared(tmp_path):
     })
     assert resp.status_code == 200
     assert resp.json()["single_batch_warning_stock"] is None
+
+
+def test_outbound_insufficient_stock_returns_400(tmp_path):
+    """失败路径回归：出库数量超过库存应返回 400（而非 500/成功）"""
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="库存不足试剂",
+            match_mode="exact",
+            match_pattern="LOW-STOCK-REAGENT",
+            raw_barcode_sample="LOW-STOCK-REAGENT",
+            manufacturer="厂家",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add(reagent)
+        db.flush()
+        db.add(BatchStock(
+            reagent_id=reagent.id,
+            batch_no="LOW-001",
+            expiry_date=date(2030, 1, 1),
+            quantity=1,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        ))
+        db.commit()
+        reagent_id = reagent.id
+
+    response = client.post("/api/outbound/preview", json={
+        "source": "manual",
+        "reagent_id": reagent_id,
+        "quantity": 5,
+        "outbound_unit": "package",
+        "deduction_mode": "fefo",
+    })
+    assert response.status_code == 400
+    assert "库存不足" in response.json()["detail"]
+
+
+def test_outbound_invalid_operator_returns_400(tmp_path):
+    """失败路径回归：未知/停用操作人应返回 400"""
+    client, SessionLocal = build_client(tmp_path)
+    _, instrument_id = get_first_catalog_session(SessionLocal)
+
+    with SessionLocal() as db:
+        reagent = Reagent(
+            instrument_id=instrument_id,
+            name="操作人校验试剂",
+            match_mode="exact",
+            match_pattern="OP-CHECK-REAGENT",
+            raw_barcode_sample="OP-CHECK-REAGENT",
+            manufacturer="厂家",
+            unit="瓶",
+            package_unit="盒",
+            package_to_min_qty=1,
+            warning_days=30,
+            warning_stock=5,
+            follow_instrument=False,
+        )
+        db.add(reagent)
+        db.flush()
+        db.add(BatchStock(
+            reagent_id=reagent.id,
+            batch_no="OP-001",
+            expiry_date=date(2030, 1, 1),
+            quantity=5,
+            package_unit="盒",
+            min_unit="瓶",
+            package_to_min_qty=1,
+        ))
+        db.commit()
+        reagent_id = reagent.id
+
+    response = client.post("/api/outbound/batch", json={
+        "operator": "不存在的操作人XYZ",
+        "items": [{
+            "source": "manual",
+            "reagent_id": reagent_id,
+            "quantity": 1,
+            "outbound_unit": "package",
+            "deduction_mode": "fefo",
+        }],
+    })
+    assert response.status_code == 400
+    assert "不存在" in response.json()["detail"]

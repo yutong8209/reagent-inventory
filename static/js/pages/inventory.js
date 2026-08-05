@@ -89,11 +89,20 @@ const inventoryPage = {
     },
 
     async loadInventory(options = {}) {
-        this.inventoryData = await API.inventory.get();
-        this.lastLoadedAt = new Date();
-        this.ensureSelection(options);
-        this.syncFilterControls();
-        this.render();
+        try {
+            this.inventoryData = await API.inventory.get();
+            this.lastLoadedAt = new Date();
+            this.ensureSelection(options);
+            this.syncFilterControls();
+            this.render();
+        } catch (error) {
+            console.error('加载库存失败', error);
+            Utils.showToast('库存加载失败，请稍后重试', 'error');
+            if (!this.inventoryData) {
+                this.inventoryData = [];
+                this.render();
+            }
+        }
     },
 
     consumeNavigationContext() {
@@ -665,22 +674,6 @@ const inventoryPage = {
         return null;
     },
 
-    async batchUpdateInstrumentWarnings() {
-        const instrument = this.getSelectedInstrument();
-        if (!instrument) {
-            return;
-        }
-
-        const payload = this.readBatchWarningInputs();
-        if (!confirm(`确定批量设置“${instrument.name}”下全部试剂的预警值吗？`)) {
-            return;
-        }
-
-        const result = await API.inventory.batchUpdateInstrumentWarnings(instrument.id, payload);
-        Utils.showToast(`已批量更新 ${result.updated_count} 个试剂，并同步保存为当前仪器默认值`, 'success');
-        await this.loadInventory();
-    },
-
     async archiveReagent(reagentId) {
         const reagent = this.findReagentById(reagentId);
         if (!reagent || reagent.total_min_quantity > 0) {
@@ -871,9 +864,6 @@ const inventoryPage = {
         const group = this.getSelectedWorkGroup();
         const summary = this.getInstrumentSummary(instrument);
         title.textContent = instrument.model ? `${instrument.name} (${instrument.model})` : instrument.name;
-        subtitle.textContent = `${group?.name || '未分组'} / 当前库存页优先展示更多试剂；仪器预警请到资料设置中维护。`;
-        subtitle.textContent = `${group?.name || '未分组'} · 在这里可以批量设置当前仪器下试剂的预警值，并同步保存为以后新试剂的默认值。`;
-
         subtitle.textContent = `${group?.name || '未分组'} / 当前库存页优先展示更多试剂；仪器预警请到资料设置中维护。`;
         summaryContainer.innerHTML = `
             <button class="inventory-summary-card inventory-summary-action" type="button" onclick="inventoryPage.focusSummaryStatus('all', ${summary.reagentCount})">
@@ -1127,75 +1117,4 @@ const inventoryPage = {
         return 'inventory-batch-stock-normal';
     },
 
-    renderReagentCard(reagent) {
-        const manufacturerHtml = reagent.manufacturer
-            ? `<div class="inventory-card-maker">${this.escapeHtml(reagent.manufacturer)}</div>`
-            : '';
-        const settingsButtonHtml = `<button class="btn btn-secondary btn-small inventory-card-manage-btn" onclick="inventoryPage.openReagentModal(${reagent.id})">设置试剂信息</button>`;
-        const archiveButtonHtml = reagent.status_level === 'empty'
-            ? `<button class="btn btn-danger btn-small" onclick="inventoryPage.archiveReagent(${reagent.id})">归档</button>`
-            : '';
-        const actionButtonsHtml = archiveButtonHtml
-            ? `
-            <div class="inventory-card-actions inventory-card-actions-inline">
-                ${archiveButtonHtml}
-            </div>
-        `
-            : '';
-
-        const batchListHtml = reagent.batches.length > 1 ? `
-            <div class="inventory-batch-list">
-                ${reagent.batches.map((batch) => `
-                    <div class="inventory-batch-row ${this.getBatchStatus(batch, reagent)}">
-                        <div class="inventory-batch-primary">
-                            <span class="inventory-batch-code">批号 ${this.escapeHtml(batch.batch_no)}</span>
-                            <span class="inventory-batch-expiry">有效期 ${this.escapeHtml(batch.expiry_date)}</span>
-                            <span class="inventory-batch-days">${this.escapeHtml(this.formatDaysLabel(batch.expiry_days_left))}</span>
-                        </div>
-                        <div class="inventory-batch-secondary">
-                            <span class="inventory-batch-stock-text ${this.getBatchStockClass(batch, reagent)}">当前库存 ${batch.available_min_quantity} ${this.escapeHtml(batch.min_unit)}</span>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        ` : '';
-
-        return `
-            <article class="inventory-card inventory-card-${reagent.status_level}">
-                <div class="inventory-card-accent"></div>
-                <div class="inventory-card-header">
-                    <div class="inventory-card-main">
-                        <div class="inventory-card-title-row">
-                            <div class="inventory-card-title-main">
-                                <h4>${this.escapeHtml(reagent.name)}</h4>
-                                <span class="inventory-status inventory-status-${reagent.status_level}">${this.getStatusLabel(reagent.status_level)}</span>
-                            </div>
-                            ${settingsButtonHtml}
-                        </div>
-                        ${manufacturerHtml}
-                        <div class="inventory-key-metrics">
-                            <div class="inventory-key-metric">
-                                <span>当前总库存</span>
-                                <strong class="inventory-number-strong">${reagent.total_min_quantity} ${this.escapeHtml(reagent.unit || '瓶')}</strong>
-                            </div>
-                            <div class="inventory-key-metric">
-                                <span>最近效期</span>
-                                <strong>${this.escapeHtml(reagent.nearest_expiry_date || '暂无')}</strong>
-                            </div>
-                            <div class="inventory-key-metric">
-                                <span>离失效剩余</span>
-                                <strong>${this.escapeHtml(this.formatDaysLabel(reagent.nearest_expiry_days))}</strong>
-                            </div>
-                            <div class="inventory-key-metric">
-                                <span>批次数</span>
-                                <strong>${reagent.batch_count}</strong>
-                            </div>
-                        </div>
-                    </div>
-                    ${actionButtonsHtml}
-                </div>
-                ${batchListHtml}
-            </article>
-        `;
-    }
 };

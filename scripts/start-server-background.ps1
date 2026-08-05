@@ -63,7 +63,7 @@ try {
         if (-not (Test-Health)) {
             Stop-ListeningServer
             Start-Process -FilePath $pythonExe `
-                -ArgumentList '-m','uvicorn','main:app','--host','0.0.0.0','--port','8000','--reload' `
+                -ArgumentList '-m','uvicorn','main:app','--host','0.0.0.0','--port','8000' `
                 -WorkingDirectory $projectRoot `
                 -RedirectStandardOutput $stdoutLog `
                 -RedirectStandardError $stderrLog `

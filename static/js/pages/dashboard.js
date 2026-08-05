@@ -20,9 +20,6 @@ const dashboardPage = {
         document.getElementById('dashboard-refresh-btn')?.addEventListener('click', () => {
             this.refreshOverview();
         });
-        document.getElementById('dashboard-open-inventory-btn')?.addEventListener('click', () => {
-            this.openInventory();
-        });
     },
 
     renderMobileQr() {

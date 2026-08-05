@@ -1494,8 +1494,14 @@ def restore_reagent(reagent_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/reagents/archive-zero-stock")
-def archive_zero_stock_reagents(db: Session = Depends(get_db)):
-    reagents = db.query(Reagent).filter(Reagent.is_archived.is_(False)).all()
+def archive_zero_stock_reagents(
+    instrument_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(Reagent).filter(Reagent.is_archived.is_(False))
+    if instrument_id is not None:
+        query = query.filter(Reagent.instrument_id == instrument_id)
+    reagents = query.all()
     archived_ids: list[int] = []
     archived_batch_ids: list[int] = []
 

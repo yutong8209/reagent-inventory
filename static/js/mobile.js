@@ -28,13 +28,15 @@
   inboundBatchSuggestions: [],
   inventoryFilters: { keyword: '', status: 'all', onlyWarnings: false },
   expandedInventoryIds: new Set(),
-  isWarningFoldExpanded: false,
   isSubmittingOutbound: false,
   isSubmittingBatchOutbound: false,
   isSubmittingInbound: false,
   isSubmittingCalibration: false,
   isArchivingZeroStock: false,
   isInitialized: false,
+  _outboundSearchSeq: 0,
+  _inboundSearchSeq: 0,
+  _calibrationSearchSeq: 0,
 
   async init() {
     this.parseInstrumentContext();
@@ -74,7 +76,6 @@
     document.getElementById('mobile-batch-outbound-sheet')?.addEventListener('click', (event) => {
       if (event.target.classList.contains('mobile-sheet-backdrop')) this.closeBatchOutboundSheet({ keepSelection: true });
     });
-    document.getElementById('mobile-warning-toggle')?.addEventListener('click', () => this.toggleWarningFold());
     document.getElementById('mobile-outbound-search')?.addEventListener('input', Utils.debounce((event) => this.searchOutboundReagents(event.target.value.trim()), 220));
     document.getElementById('mobile-inbound-search')?.addEventListener('input', Utils.debounce((event) => this.searchInboundReagents(event.target.value.trim()), 220));
     document.getElementById('mobile-calibration-search')?.addEventListener('input', Utils.debounce((event) => this.searchCalibrationReagents(event.target.value.trim()), 220));
@@ -226,13 +227,6 @@
     if (days < 0) return `已过期 ${Math.abs(days)} 天`;
     if (days === 0) return '今天到期';
     return `剩余 ${days} 天`;
-  },
-
-  getStatusTone(status) {
-    if (status === 'empty' || status === 'expired') return 'danger';
-    if (status === 'expiring' || status === 'low') return 'warning';
-    if (status === 'normal') return 'success';
-    return 'neutral';
   },
 
   getStockTone(quantity, warningStock = 0) {
@@ -660,6 +654,11 @@
       this.batchOutboundItems = this.batchOutboundItems.filter((item) => Number(item.reagent_id) !== id);
     } else {
       this.batchOutboundSelection.add(id);
+      // 选中时立即缓存试剂元数据，避免搜索结果变化后丢失（批量出库静默丢项）
+      const reagent = this.getOutboundReagentById(id);
+      if (reagent && !this.batchOutboundItems.some((item) => Number(item.reagent_id) === id)) {
+        this.batchOutboundItems.push({ reagent_id: id, reagent, batches: null, selectedBatchId: null, outboundUnit: 'min', quantity: 1, error: '' });
+      }
     }
     this.renderBatchOutboundBar();
     this.refreshOutboundListView();
@@ -938,16 +937,20 @@
   },
 
   async searchOutboundReagents(keyword) {
+    const seq = ++this._outboundSearchSeq;
     if (!keyword) {
       this.outboundResults = [];
       this.renderSearchDefaults();
       return;
     }
     try {
-      const results = await API.outbound.searchReagents({ q: keyword });
+      const instrumentId = this.getActiveInstrumentId();
+      const results = await API.outbound.searchReagents(instrumentId ? { q: keyword, instrument_id: instrumentId } : { q: keyword });
+      if (seq !== this._outboundSearchSeq) return;
       this.outboundResults = results.filter((item) => !item.is_calibrator);
       this.renderOutboundResults();
     } catch (error) {
+      if (seq !== this._outboundSearchSeq) return;
       Utils.showToast(`试剂搜索失败：${error.message}`, 'error');
     }
   },
@@ -1152,6 +1155,7 @@
     }
   },
   async searchInboundReagents(keyword) {
+    const seq = ++this._inboundSearchSeq;
     if (!keyword) {
       this.inboundResults = [];
       document.getElementById('mobile-inbound-results')?.classList.remove('hidden');
@@ -1160,7 +1164,9 @@
       return;
     }
     try {
-      const reagents = await API.reagents.list({ keyword, status: 'active' });
+      const instrumentId = this.getActiveInstrumentId();
+      const reagents = await API.reagents.list(instrumentId ? { keyword, status: 'active', instrument_id: instrumentId } : { keyword, status: 'active' });
+      if (seq !== this._inboundSearchSeq) return;
       this.inboundResults = reagents.map((item) => ({
         reagent_id: item.id,
         reagent_name: item.name,
@@ -1229,7 +1235,7 @@
         .slice(0, 8);
     } else {
       try {
-        const batches = await API.outbound.getStock(`${reagentId}?include_zero_stock=true`);
+        const batches = await API.outbound.getStock(reagentId, { include_zero_stock: true });
         this.inboundBatchSuggestions = batches.slice(0, 8);
       } catch (error) {
         this.inboundBatchSuggestions = [];
@@ -1356,13 +1362,16 @@
   },
 
   async searchCalibrationReagents(keyword) {
+    const seq = ++this._calibrationSearchSeq;
     if (!keyword) {
       this.calibrationResults = [];
       this.renderSearchDefaults();
       return;
     }
     try {
-      const reagents = await API.reagents.list({ keyword, status: 'active' });
+      const instrumentId = this.getActiveInstrumentId();
+      const reagents = await API.reagents.list(instrumentId ? { keyword, status: 'active', instrument_id: instrumentId } : { keyword, status: 'active' });
+      if (seq !== this._calibrationSearchSeq) return;
       this.calibrationResults = reagents
         .filter((item) => !item.is_calibrator)
         .map((item) => ({
@@ -2011,7 +2020,7 @@
     this.isArchivingZeroStock = true;
     this.updateArchiveZeroStockButton();
     try {
-      const result = await API.inventory.archiveZeroStockReagents();
+      const result = await API.inventory.archiveZeroStockReagents(this.getActiveInstrumentId());
       const reagentCount = result.archived_count || 0;
       const batchCount = result.archived_batch_count || 0;
       if (!reagentCount && !batchCount) {
@@ -2033,15 +2042,6 @@
     if (this.expandedInventoryIds.has(reagentId)) this.expandedInventoryIds.delete(reagentId);
     else this.expandedInventoryIds.add(reagentId);
     this.renderInventory();
-  },
-
-  openInventoryFocus(reagentId) {
-    this.switchPage('inventory');
-    this.expandedInventoryIds.add(reagentId);
-    this.renderInventory();
-    requestAnimationFrame(() => {
-      document.querySelector(`.mobile-stock-card[data-reagent-id="${reagentId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
   },
 
   openInventoryByStatus(status) {

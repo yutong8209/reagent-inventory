@@ -26,7 +26,7 @@ try {
     }
 
     Write-Step 'Running backend tests'
-    python -m pytest tests/test_barcode_learning.py tests/test_inventory_and_inbound.py tests/test_calibration.py
+    python -m pytest tests/test_barcode_learning.py tests/test_inventory_and_inbound.py tests/test_calibration.py tests/test_reports.py
     if ($LASTEXITCODE -ne 0) { throw 'Backend tests failed' }
 
     Write-Step 'Running Playwright tests on isolated test database'

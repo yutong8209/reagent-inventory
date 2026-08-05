@@ -30,3 +30,9 @@ server*.out.log
 
 # Unrelated projects
 animal-island-ui/
+# 根目录遗留的旧数据库占位文件（真实库在 data/reagent.db）
+/*.db
+
+# 测试/截图产物
+output/
+tmp_*.png

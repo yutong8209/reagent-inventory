@@ -516,21 +516,12 @@ const catalogPage = {
         const body = document.getElementById('catalog-module-body');
         if (this.activeModule === 'structure') {
             body.innerHTML = this.renderStructureModule();
-            const singleBatchWarningInput = document.getElementById('catalog-structure-instrument-single-batch-warning-stock');
-            if (singleBatchWarningInput) {
-                singleBatchWarningInput.placeholder = '留空则跟随库存预警';
-                const label = body.querySelector('label[for="catalog-structure-instrument-single-batch-warning-stock"]');
-                if (label) {
-                    label.textContent = '单批号预警最小单位数';
-                }
-            }
             this.attachDeleteButtons();
             return;
         }
         if (this.activeModule === 'reagents') {
             body.innerHTML = this.renderReagentModule();
             this.refreshReagentRelationPreview();
-            document.getElementById('catalog-reagent-single-batch-warning-stock')?.closest('.form-group')?.remove();
             this.attachDeleteButtons();
             return;
         }
@@ -629,8 +620,8 @@ const catalogPage = {
                         <input type="number" id="catalog-structure-instrument-warning-stock" class="form-input" min="0" value="${selectedInstrument?.default_warning_stock ?? 5}">
                     </div>
                     <div class="form-group">
-                        <label for="catalog-structure-instrument-single-batch-warning-stock">鍗曟壒鍙烽璀︽渶灏忓崟浣嶆暟</label>
-                        <input type="number" id="catalog-structure-instrument-single-batch-warning-stock" class="form-input" min="0" value="${selectedInstrument?.default_single_batch_warning_stock ?? ''}" placeholder="鐣欑┖鍒欒窡闅忓簱瀛橀璀?">
+                        <label for="catalog-structure-instrument-single-batch-warning-stock">单批号预警最小单位数</label>
+                        <input type="number" id="catalog-structure-instrument-single-batch-warning-stock" class="form-input" min="0" value="${selectedInstrument?.default_single_batch_warning_stock ?? ''}" placeholder="留空则跟随库存预警">
                     </div>
                 </div>
                 <div class="button-group">
@@ -848,8 +839,8 @@ const catalogPage = {
                                 <input type="number" id="catalog-reagent-warning-stock" class="form-input" min="0" value="${selected.warning_stock}">
                             </div>
                             <div class="form-group">
-                                <label for="catalog-reagent-single-batch-warning-stock">鍗曟壒鍙烽璀︽渶灏忓崟浣嶆暟</label>
-                                <input type="number" id="catalog-reagent-single-batch-warning-stock" class="form-input" min="0" value="${selected.single_batch_warning_stock ?? ''}" placeholder="鐣欑┖鍒欒窡闅忓簱瀛橀璀?">
+                                <label for="catalog-reagent-single-batch-warning-stock">单批号预警最小单位数</label>
+                                <input type="number" id="catalog-reagent-single-batch-warning-stock" class="form-input" min="0" value="${selected.single_batch_warning_stock ?? ''}" placeholder="留空则跟随库存预警">
                             </div>
                         </div>
                         <div class="form-row">

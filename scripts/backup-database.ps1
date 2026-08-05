@@ -57,6 +57,9 @@ finally:
 '@
 
 $pythonCode | & $pythonExe - $sourceDb $backupFile
+if ($LASTEXITCODE -ne 0) {
+    throw "Backup failed with exit code $LASTEXITCODE"
+}
 
 Get-ChildItem -Path $backupRoot -Filter 'reagent_*.db' -File |
     Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$RetentionDays) } |

@@ -87,7 +87,7 @@ const Utils = {
             options.push(`<option value="">${emptyLabel}</option>`);
         }
         this.operators.forEach((operator) => {
-            options.push(`<option value="${operator.name}">${operator.name}</option>`);
+            options.push(`<option value="${this.escapeHtml(operator.name)}">${this.escapeHtml(operator.name)}</option>`);
         });
         select.innerHTML = options.join('');
         if (preferredValue) {
@@ -190,7 +190,10 @@ const Utils = {
         const toast = document.getElementById('toast');
         toast.textContent = message;
         toast.className = `toast ${type}`;
-        setTimeout(() => toast.classList.add('hidden'), duration);
+        if (this._toastTimer) {
+            clearTimeout(this._toastTimer);
+        }
+        this._toastTimer = setTimeout(() => toast.classList.add('hidden'), duration);
     },
 
     escapeHtml(value) {

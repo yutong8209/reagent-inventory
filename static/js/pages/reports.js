@@ -209,24 +209,29 @@ const reportsPage = {
     populateWorkGroups(scope) {
         const select = document.getElementById(`reports-${scope}-work-group`);
         const currentValues = this.getSelectedValues(`reports-${scope}-work-group`);
-        select.innerHTML = this.workGroups.map((group) => `<option value="${group.id}">${group.name}</option>`).join('');
+        select.innerHTML = this.workGroups.map((group) => `<option value="${group.id}">${this.escapeHtml(group.name)}</option>`).join('');
         this.selectValues(`reports-${scope}-work-group`, currentValues);
         Utils.syncCheckboxSelect(`reports-${scope}-work-group`, '全部工作组');
     },
 
     async loadInstruments(scope) {
-        const workGroupIds = this.getSelectedValues(`reports-${scope}-work-group`);
-        let instruments = await API.inventory.getInstruments(null);
-        if (workGroupIds.length) {
-            const workGroupSet = new Set(workGroupIds.map(String));
-            instruments = instruments.filter((instrument) => workGroupSet.has(String(instrument.work_group_id)));
-        }
-        const select = document.getElementById(`reports-${scope}-instrument`);
-        const currentValues = this.getSelectedValues(`reports-${scope}-instrument`);
+        try {
+            const workGroupIds = this.getSelectedValues(`reports-${scope}-work-group`);
+            let instruments = await API.inventory.getInstruments(null);
+            if (workGroupIds.length) {
+                const workGroupSet = new Set(workGroupIds.map(String));
+                instruments = instruments.filter((instrument) => workGroupSet.has(String(instrument.work_group_id)));
+            }
+            const select = document.getElementById(`reports-${scope}-instrument`);
+            const currentValues = this.getSelectedValues(`reports-${scope}-instrument`);
 
-        select.innerHTML = instruments.map((instrument) => `<option value="${instrument.id}">${instrument.name}</option>`).join('');
-        this.selectValues(`reports-${scope}-instrument`, currentValues);
-        Utils.syncCheckboxSelect(`reports-${scope}-instrument`, '全部仪器');
+            select.innerHTML = instruments.map((instrument) => `<option value="${instrument.id}">${this.escapeHtml(instrument.name)}</option>`).join('');
+            this.selectValues(`reports-${scope}-instrument`, currentValues);
+            Utils.syncCheckboxSelect(`reports-${scope}-instrument`, '全部仪器');
+        } catch (error) {
+            console.error('加载仪器列表失败', error);
+            Utils.showToast('仪器列表加载失败，请稍后重试', 'error');
+        }
     },
 
     formatReagentLabel(reagent) {
@@ -393,12 +398,13 @@ const reportsPage = {
     },
 
     async loadReagents(scope) {
-        const workGroupIds = this.getSelectedValues(`reports-${scope}-work-group`);
-        const instrumentIds = this.getSelectedValues(`reports-${scope}-instrument`);
-        const reagents = await API.reports.listReagents({
-            work_group_ids: workGroupIds.join(','),
-            instrument_ids: instrumentIds.join(',')
-        });
+        try {
+            const workGroupIds = this.getSelectedValues(`reports-${scope}-work-group`);
+            const instrumentIds = this.getSelectedValues(`reports-${scope}-instrument`);
+            const reagents = await API.reports.listReagents({
+                work_group_ids: workGroupIds.join(','),
+                instrument_ids: instrumentIds.join(',')
+            });
 
         const state = this.getScopeState(scope);
         state.reagentOptions = reagents.map((reagent) => ({
@@ -423,7 +429,11 @@ const reportsPage = {
             input.value = '';
         }
 
-        this.renderReagentDropdown(scope);
+            this.renderReagentDropdown(scope);
+        } catch (error) {
+            console.error('加载试剂列表失败', error);
+            Utils.showToast('试剂列表加载失败，请稍后重试', 'error');
+        }
     },
 
     validateDates(scope) {
@@ -527,12 +537,12 @@ const reportsPage = {
             <tr>
                 <td>${Utils.formatDateTime(item.created_at)}</td>
                 <td><span class="item-status ${typeClass(item.type)}">${typeLabel(item.type)}</span></td>
-                <td>${item.work_group_name || '-'}</td>
-                <td>${item.instrument_name || '-'}</td>
-                <td>${item.reagent_name}</td>
-                <td>${item.batch_no || '-'}</td>
-                <td>${item.quantity_min} ${item.min_unit || ''}</td>
-                <td>${item.operator}</td>
+                <td>${this.escapeHtml(item.work_group_name || '-')}</td>
+                <td>${this.escapeHtml(item.instrument_name || '-')}</td>
+                <td>${this.escapeHtml(item.reagent_name)}</td>
+                <td>${this.escapeHtml(item.batch_no || '-')}</td>
+                <td>${item.quantity_min} ${this.escapeHtml(item.min_unit || '')}</td>
+                <td>${this.escapeHtml(item.operator)}</td>
                 <td>${item.source === 'scan' ? '扫码' : '手工'}</td>
             </tr>
         `).join('');
@@ -550,14 +560,14 @@ const reportsPage = {
 
         body.innerHTML = this.usageRows.map((item) => `
             <tr>
-                <td>${item.work_group_name || '-'}</td>
-                <td>${item.instrument_name || '-'}</td>
-                <td>${item.reagent_name}</td>
-                <td>${item.manufacturer || '-'}</td>
+                <td>${this.escapeHtml(item.work_group_name || '-')}</td>
+                <td>${this.escapeHtml(item.instrument_name || '-')}</td>
+                <td>${this.escapeHtml(item.reagent_name)}</td>
+                <td>${this.escapeHtml(item.manufacturer || '-')}</td>
                 <td>${item.start_date}</td>
                 <td>${item.end_date}</td>
                 <td>${item.total_usage_min}</td>
-                <td>${item.min_unit || ''}</td>
+                <td>${this.escapeHtml(item.min_unit || '')}</td>
             </tr>
         `).join('');
     }

@@ -91,12 +91,6 @@ const API = {
 
     // Inbound
     inbound: {
-        stockIn(data) {
-            return API.request('/inbound', {
-                method: 'POST',
-                body: JSON.stringify(data)
-            });
-        },
         stockInBatch(data) {
             return API.request('/inbound/batch', {
                 method: 'POST',
@@ -107,8 +101,15 @@ const API = {
 
     // Outbound
     outbound: {
-        getStock(reagentId) {
-            return API.request(`/stock/${reagentId}`);
+        getStock(reagentId, params = {}) {
+            const query = new URLSearchParams();
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== null && value !== undefined && String(value).trim() !== '') {
+                    query.set(key, value);
+                }
+            });
+            const suffix = query.toString() ? `?${query.toString()}` : '';
+            return API.request(`/stock/${reagentId}${suffix}`);
         },
         searchReagents(params = {}) {
             const searchParams = new URLSearchParams();
@@ -128,12 +129,6 @@ const API = {
         },
         stockOutBatch(data) {
             return API.request('/outbound/batch', {
-                method: 'POST',
-                body: JSON.stringify(data)
-            });
-        },
-        stockOut(data) {
-            return API.request('/outbound', {
                 method: 'POST',
                 body: JSON.stringify(data)
             });
@@ -316,8 +311,9 @@ const API = {
                 method: 'POST'
             });
         },
-        archiveZeroStockReagents() {
-            return API.request('/reagents/archive-zero-stock', {
+        archiveZeroStockReagents(instrumentId) {
+            const params = instrumentId ? `?instrument_id=${instrumentId}` : '';
+            return API.request(`/reagents/archive-zero-stock${params}`, {
                 method: 'POST'
             });
         },

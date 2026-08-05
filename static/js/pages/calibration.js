@@ -415,8 +415,13 @@ const calibrationPage = {
         if (!this.validateRecordFilterDates()) {
             return;
         }
-        this.recentRecords = await API.calibration.listRecords(this.getRecordFilterParams(true));
-        this.renderRecentRecords();
+        try {
+            this.recentRecords = await API.calibration.listRecords(this.getRecordFilterParams(true));
+            this.renderRecentRecords();
+        } catch (error) {
+            console.error('加载校准记录失败', error);
+            Utils.showToast('校准记录加载失败，请稍后重试', 'error');
+        }
     },
 
     async exportRecords() {
