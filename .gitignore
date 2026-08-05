@@ -36,3 +36,7 @@ animal-island-ui/
 # 测试/截图产物
 output/
 tmp_*.png
+
+# SQLite WAL 临时文件
+*.db-shm
+*.db-wal
